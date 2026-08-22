@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { explainAvailabilityRefusal, isPast, summarise } from "@/availability/rules";
+import { loadBoardData } from "@/board/load";
+import { poolForDate, viewPost } from "@/board/post-view";
 import { formatStartsAt } from "@/dates/race-date";
+import { RungBadge } from "@/post/CandidateList";
+import { explainPostRefusal } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
 import { setAvailability } from "./actions";
 
@@ -19,6 +23,12 @@ export const dynamic = "force-dynamic";
  * AC 4). A person with no rating is sent to /profile first and the toggles are withheld
  * (AC 5); a date already started is shown but its toggle disabled. Both rules are applied
  * again in the Server Action, and the first in the database.
+ *
+ * Under each date, every open post for it with its rung (story #19 AC 3). THE RUNG IS
+ * COMPUTED ON THIS READ — suggest() over the crew available for the date, through
+ * post-view.ts — which is ADR 004's lazy-relaxation fallback shipped first; the persisted,
+ * monotone rung arrives with the notification ledger (#23/#25). Until then two reads of the
+ * board can disagree about a rung, in either direction, and that is by design.
  */
 export default async function BoardPage({
   searchParams,
@@ -29,17 +39,18 @@ export default async function BoardPage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  const [{ data: me }, { data: dates }, { data: availability }] = await Promise.all([
+  const [{ data: me }, data] = await Promise.all([
     user
       ? client.from("person").select("display_name, is_admin, rating").eq("id", user.id).maybeSingle()
       : Promise.resolve({ data: null }),
-    client.from("race_date").select("id, starts_at, title").eq("published", true).order("starts_at"),
-    client.from("availability").select("person_id, race_date_id"),
+    loadBoardData(client),
   ]);
+  const { dates, availability } = data;
   const { error } = await searchParams;
   const now = new Date();
   const unrated = !me || me.rating == null;
-  const byDate = summarise(availability ?? [], user?.id ?? "");
+  const byDate = summarise(availability, user?.id ?? "");
+  const openPosts = data.posts.filter((p) => p.closed_at === null);
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
@@ -53,7 +64,10 @@ export default async function BoardPage({
           Before you can mark the days you can sail, <Link href="/profile">set your competence on your profile</Link>.
         </p>
       )}
-      {error && <p role="alert">{explainAvailabilityRefusal(error)}</p>}
+      {error && <p role="alert">{error === "refused" ? explainPostRefusal(error) : explainAvailabilityRefusal(error)}</p>}
+      <p>
+        <Link href="/boats">Your boats</Link> · <Link href="/post/new">Post a crew need</Link>
+      </p>
 
       <h2>Race days</h2>
       {!dates?.length ? (
@@ -64,6 +78,8 @@ export default async function BoardPage({
             const f = formatStartsAt(d.starts_at);
             const s = byDate.get(d.id) ?? { count: 0, mine: false };
             const past = isPast(d.starts_at, now);
+            const posts = openPosts.filter((p) => p.race_date_id === d.id);
+            const pool = poolForDate([...data.people.values()], availability, d.id);
             return (
               <li
                 key={d.id}
@@ -89,6 +105,24 @@ export default async function BoardPage({
                     </button>
                   </form>
                 )}
+                {posts.length > 0 && (
+                  <ul data-posts={posts.length} style={{ flexBasis: "100%", listStyle: "none", padding: "0 0 0 1rem", margin: 0, display: "grid", gap: "0.35rem" }}>
+                    {posts.map((p) => {
+                      const boat = data.boats.get(p.boat_id);
+                      if (!boat) return null;
+                      const v = viewPost({ starts_at: d.starts_at, boatClass: boat.class, minimum: p.minimum }, pool, now);
+                      return (
+                        <li key={p.id} data-post={p.id} data-rung={v.rung} data-candidates={v.candidateCount}>
+                          <RungBadge rung={v.rung} colour={v.colour} />{" "}
+                          <Link href={`/post/${p.id}`}>
+                            <strong>{boat.name}</strong> ({boat.class}) needs crew
+                          </Link>{" "}
+                          — {v.candidateCount} {v.candidateCount === 1 ? "candidate" : "candidates"}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}
@@ -100,7 +134,7 @@ export default async function BoardPage({
         </p>
       )}
 
-      <p>Posts arrive with the next story.</p>
+      <p>Answering a post arrives with the next story.</p>
       <form action="/auth/signout" method="post">
         <button type="submit">Sign out</button>
       </form>
