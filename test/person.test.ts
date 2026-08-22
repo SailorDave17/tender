@@ -79,15 +79,22 @@ describe("person and person_contact (0002) — shape", () => {
       { table_name: "club", privilege_type: "SELECT", column_name: "created_at" },
       { table_name: "club", privilege_type: "SELECT", column_name: "id" },
       { table_name: "club", privilege_type: "SELECT", column_name: "name" },
+      { table_name: "person", privilege_type: "SELECT", column_name: "any_hull" },
       { table_name: "person", privilege_type: "SELECT", column_name: "created_at" },
       { table_name: "person", privilege_type: "SELECT", column_name: "display_name" },
+      { table_name: "person", privilege_type: "SELECT", column_name: "hulls" },
       { table_name: "person", privilege_type: "SELECT", column_name: "id" },
       { table_name: "person", privilege_type: "SELECT", column_name: "is_admin" },
+      { table_name: "person", privilege_type: "SELECT", column_name: "rating" },
+      { table_name: "person", privilege_type: "UPDATE", column_name: "any_hull" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "display_name" },
+      { table_name: "person", privilege_type: "UPDATE", column_name: "hulls" },
+      { table_name: "person", privilege_type: "UPDATE", column_name: "rating" },
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "email" },
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "person_id" },
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "phone" },
-    ]);
+      { table_name: "person_contact", privilege_type: "UPDATE", column_name: "phone" },
+    ]); // rating/any_hull/hulls and the phone update arrive with 0005 (story #18)
   });
 
   it("authenticated holds no whole-table privilege on person, person_contact or club", async () => {
@@ -230,12 +237,12 @@ describe("person (0002) — who can change what", () => {
     expect(r.rows).toEqual([{ is_admin: false }]);
   });
 
-  it("a person cannot write their own contact row (no grant)", async () => {
+  it("a person cannot write their own email (no grant) — phone became writable in 0005, see availability.test.ts", async () => {
     await expect(
       as(
         db,
         "authenticated",
-        `update public.person_contact set phone = '000' where person_id = '${ALICE}'`,
+        `update public.person_contact set email = 'alice@elsewhere.org' where person_id = '${ALICE}'`,
         ALICE,
       ),
     ).rejects.toThrow(/permission denied for table person_contact/);

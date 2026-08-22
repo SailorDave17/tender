@@ -6,6 +6,8 @@ describe("the proxy's decision (AC 1 / AC 5)", () => {
     expect(redirectFor("/board", false)).toBe(SIGN_IN_PATH);
     expect(redirectFor("/board/2027-05-02", false)).toBe(SIGN_IN_PATH);
     expect(redirectFor("/admin", false)).toBe(SIGN_IN_PATH);
+    expect(redirectFor("/profile", false)).toBe(SIGN_IN_PATH); // #18: the profile is behind sign-in
+    expect(redirectFor("/profile/ann", false)).toBe(SIGN_IN_PATH);
   });
 
   it("lets a signed-in request through everywhere", () => {
