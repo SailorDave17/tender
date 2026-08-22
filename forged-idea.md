@@ -32,6 +32,12 @@ club's coach and sees the whole fleet, which is a legitimate source of one. If e
 is where it was decided. The two checks that would convert them to *measured* are listed under
 *Still unchecked* and cost a week.
 
+*2026-08-22 (#52): all four checks ran as stories #8–#11 and none converted a claim to* measured.
+*Claim 1's count **cannot be taken** — the club keeps no such record — so its kill condition was
+replaced with a prospective dock tally; claim 3's answer was positive but the per-person tally was
+not kept. The record is `docs/charter.md` § Forge checks; the tables below are left as the forge
+wrote them.*
+
 ## Load-bearing claims
 
 | # | Claim | Tag | Kill condition | How to check |
@@ -123,12 +129,17 @@ matching survive without the coach.
 - **Availability-only with no ladder** — the owner's first answer, reversed at the narrowing gate:
   the engine must suggest pairs, relaxing its criteria when nobody strict is available.
 
-## Still unchecked
+## Still unchecked — all four answered 2026-08-22
 
-1. Count last season's boats that did not sail for want of crew (claim 1 → *measured*).
-2. Ask five graduates whether they would *race* (claim 3 → *measured*).
-3. Does HSC's ClubSpot have a crew feature? (ask the administrator)
-4. Does the club mind its burgee colours in the app? (one conversation)
+1. Count last season's boats that did not sail for want of crew (claim 1 → *measured*). **#8:
+   not countable** — no record is kept; "it happens often" (owner). Claim 1 stays *reported*; its
+   kill condition is now a prospective dock tally (`docs/charter.md` § Forge checks).
+2. Ask five graduates whether they would *race* (claim 3 → *measured*). **#9: positive** —
+   "plenty of positive answers"; the per-person tally was not recorded, so still *reported*.
+3. Does HSC's ClubSpot have a crew feature? (ask the administrator) **#10: the club does not use
+   one, or is not willing to.** The "not proven absent" above is closed for this club.
+4. Does the club mind its burgee colours in the app? (one conversation) **#11: consent.** The
+   Hoover pair is the club row's theme; the seed itself lands with #41.
 
 ## For charter-project
 
