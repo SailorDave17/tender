@@ -70,6 +70,21 @@ instrument for that, and it probes with `limit=0` so it can never write.
    in the SQL editor. Put the URL and anon key in `.env.local`, and in Vercel's environment.
    Enable the **Cron** integration and confirm a job can be scheduled on this plan — ADR 004's
    kill condition; its fallback is named there.
+
+   Then set three fields under **Authentication → URL Configuration / Sign In**. They are listed
+   because a field nobody sets stays at the vendor's default permanently, and a default leaves no
+   wrong value to notice — Supabase ships **Site URL** as `http://localhost:3000`, which points
+   every confirmation email it ever sends at the recipient's own machine:
+
+   | Field | Value |
+   |---|---|
+   | Site URL | `https://tender.madcowsailing.com` |
+   | Redirect URLs | `https://tender.madcowsailing.com/**` and `http://localhost:3000/**` |
+   | Allow new users to sign up | **OFF** — Tender is invite-only; people arrive through the invite code |
+
+   Check it without the dashboard: `GET /auth/v1/settings` reports signups disabled, and a
+   deliberately failing `GET /auth/v1/verify?token=x` redirects to `tender.madcowsailing.com`
+   rather than to localhost.
 2. **Custom SMTP**: Supabase's built-in mailer sends 2 emails an hour to team members only
    (measured 2026-08-21). Point Auth → SMTP at Resend, sending from `tender.madcowsailing.com`;
    add Resend's DNS records in the Cloudflare zone.
@@ -80,7 +95,18 @@ instrument for that, and it probes with `limit=0` so it can never write.
 4. **GitHub secrets** `SUPABASE_URL` and `SUPABASE_ANON_KEY` for `.github/workflows/keepalive.yml`,
    which reads the project once a week so Supabase Free never pauses it (7 idle days). GitHub
    disables scheduled workflows after 60 days of repo inactivity — check it in spring.
-5. `git config core.hooksPath githooks` in every clone.
+5. **`git config core.hooksPath githooks` in every clone.** `.git/` is not tracked, so this is
+   per-machine and per-clone; an uninstalled hook produces no error and no output, and every
+   symptom of its absence is an absence. Two things it does not do on its own:
+
+   - **It fires on POSIX clones only if the executable bit is stored in the index.** Git skips a
+     non-executable hook silently. `core.fileMode=false` on Windows means `chmod +x` never reaches
+     the index there, so the bit is set deliberately with `git update-index --chmod=+x` and the
+     check is `git ls-files -s githooks` reading `100755` — not `ls -l`, which on Windows answers
+     about a bit git is ignoring in both directions.
+   - **It is a local echo, not the wall.** `git push --no-verify` skips it, and this repo is public,
+     so the branch rules that hold against every client are GitHub's ruleset, which the provisioning
+     story sets up. The hook stops the habit; the ruleset stops the push.
 
 ## Brand
 
