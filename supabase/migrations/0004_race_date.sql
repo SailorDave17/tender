@@ -2,7 +2,10 @@
 --
 -- Numbered per the filing plan (0003 is #16's invite-code rotation, which may land after this
 -- file); a gap in the sequence is harmless to the harness, which sorts and applies whatever is
--- present, and to the owner's paste, since neither file depends on the other.
+-- present, and to the owner's paste, since neither file depends on the other. **0002 must be
+-- applied first**: is_admin() below is a `language sql` function, and Postgres validates a SQL
+-- function's body at CREATE time, so pasting this before 0002 fails with 42P01 on public.person
+-- (measured on the live project, 2026-08-22).
 --
 -- starts_at is a timestamptz and nothing else: the ladder clock (rungOpenedByClock) subtracts
 -- from a datetime, so a race day without a start time has no meaning to the engine. The admin
