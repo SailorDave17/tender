@@ -4,6 +4,24 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Two majors are blocked by upstream, not by anything in this repo. Without these
+    # rules, closing a PR only suppresses that exact version — the next patch of the
+    # same major (7.0.3, 10.8.2) opens a fresh PR that fails identically. Minors and
+    # patches, including security advisories, keep flowing for both.
+    ignore:
+      # typescript-eslint@8.67.0 (latest, 2026-08-22) peers `typescript >=4.8.4 <6.1.0`
+      # and refuses TS 7 by name: "typescript-eslint does not support TS 7.0", pointing
+      # at typescript-eslint#10940. Measured on PR #6: `npm run lint` fails, everything
+      # else passes. Lift when typescript-eslint supports TS 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # eslint-plugin-react@7.37.5 (latest, 2026-08-22) peers `eslint ^3 || … || ^9.7`
+      # — there is no ESLint 10-compatible release — and it reaches us through
+      # eslint-config-next@16.3.2. Measured on PR #5: `npm run lint` dies with
+      # "TypeError: contextOrFilename.getFilename is not a function". Lift when
+      # eslint-config-next ships a plugin tree that supports ESLint 10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
