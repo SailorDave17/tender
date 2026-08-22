@@ -6,7 +6,7 @@
  * assets the matcher already excludes — is open, because a person with no session has to be
  * able to reach the page that gives them one.
  */
-export const PROTECTED_PREFIXES = ["/board", "/admin", "/profile"] as const;
+export const PROTECTED_PREFIXES = ["/board", "/admin", "/profile", "/boats", "/post"] as const;
 export const SIGN_IN_PATH = "/join";
 
 export function isProtected(pathname: string): boolean {
