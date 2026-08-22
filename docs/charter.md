@@ -4,6 +4,8 @@
 - Status: ratified 2026-08-21
 - Owner: HSCCo
 - Forge-idea provenance: 2026-08-21 (`forged-idea.md` in this repo)
+- Forge checks recorded: 2026-08-22 (#52) — the four external checks answered in #8–#11; claim 1's
+  kill condition replaced, see *Forge-idea provenance*
 - Decision log: was charter-tender-decision-log.md in cairn auto-memory; deleted when this file landed (2026-08-21)
 
 Tags throughout: *measured* (fetched or run this session), *reasoned*, *reported* (the owner said
@@ -87,11 +89,11 @@ season. Known blind spot: matches it caused that closed by text.
 ### Integrations
 | Integration | Owner | Limit | Failure mode |
 |---|---|---|---|
-| `.ics` import of the race calendar (one-off) | admin | ClubSpot has no public API found (*measured* 2026-08-21); `.ics` is the realistic form | a bad file seeds wrong dates — admin reviews before publish |
+| `.ics` import of the race calendar (one-off) | admin | ClubSpot has no public API found (*measured* 2026-08-21); `.ics` is the realistic form. **ClubSpot is not a competing crew board here**: the club does not use one, or is not willing to (*reported* 2026-08-22, the club's ClubSpot administrator via the owner, #10) | a bad file seeds wrong dates — admin reviews before publish |
 | `.ics` export on match | app | none | attachment missing — match still stands |
 | Resend (email: magic links, rung notifications) | owner account | **100/day, 3,000/month** on Free (*measured* 2026-08-21) | cap hit → magic links fail; rule: email the current rung only |
 | Browser push services (VAPID web push) | Apple/Google/Mozilla | iOS requires Home Screen install (*measured*, iOS 16.4+) | silent non-delivery; email is the fallback |
-| Supabase Cron (pg_cron) for the ladder clock | project | plan availability **not stated** in docs (*measured* 2026-08-21) | verify at scaffold; fallback is lazy relaxation |
+| Supabase Cron (pg_cron) for the ladder clock | project | **works on Free** — enabled and fired every minute for nine minutes on the live project (*measured* 2026-08-22, #12; ADR 004 records the kill condition as not fired). The docs still do not state plan availability; the measurement is the source | the named fallback (lazy relaxation on board read + Vercel's daily sweep) stays unbuilt unless the project is ever moved |
 
 ## Data
 
@@ -183,12 +185,26 @@ Verdict **Hardened — owner-asserted** (no bet at forge; the bet was minted in 
 
 | # | Claim | Tag | Kill condition |
 |---|---|---|---|
-| 1 | Pairing fails most race days at HSC; the owner can name the boats | reported | last season's results show few boats missing for want of crew |
+| 1 | Pairing fails most race days at HSC; the owner can name the boats | reported — checked 2026-08-22 (#8): **not countable**, see below | **replaced 2026-08-22 (#52)**: the owner's dock tally over the first month of the 2027 season averages fewer than one boat per race day ashore or short-handed for want of crew |
 | 2 | Skippers will post a need — they did in the dead chat | reported | a live board gets no skipper posts in a month |
-| 3 | The unmatched supply is the owner's class graduates, reachable through the owner | reported | they wanted to sail, not to race |
+| 3 | The unmatched supply is the owner's class graduates, reachable through the owner | reported — checked 2026-08-22 (#9): **positive**, see below | they wanted to sail, not to race |
 | 4 | The channel died of reach, ownership and state — not matching | reported | a board with all three fixed still dies |
 | 5 | What must stay true: the owner is the coach with the roster | reasoned | owner stops coaching → channel dies |
 | 6 | Cost of being wrong: ~$0, the owner's time, club trust | reasoned | a second dead tool makes a third impossible |
+
+### Forge checks — answered 2026-08-22
+
+The handoff's four external criteria became stories #8–#11 and all four closed on 2026-08-22. The
+answers lived only in issue comments until #52 wrote them here. None of the four is *measured* in
+this document's sense — each is the owner reporting a conversation — so the tags above stay
+*reported*, now with a date and a source.
+
+| Check | Story | Answer | What changed here |
+|---|---|---|---|
+| Last season's count of boats ashore or short for want of crew | #8, closed 0/2 | **Cannot be taken.** The club keeps no such record — "the data is not saved, but I can tell you it happens often" (owner, 2026-08-22) | Claim 1's kill condition named a results sheet that does not exist, so it could never fire or fail to fire. Replaced by a **prospective** instrument: the owner, as coach at the dock, notes per 2027 race day whether a boat stayed ashore or sailed short for want of crew; kill fires if the first month averages under one boat per race day. Chosen over the live board's post count (owner decision, 2026-08-22) because a quiet board cannot separate *no need* (claim 1) from *skippers won't post* (claim 2), and the two claims need separate instruments. Claim 1 stays *reported* until that tally exists |
+| Five class graduates would crew a race boat on a Sunday | #9, closed 2/2 | **Positive** — "we had plenty of positive answers" (owner, 2026-08-22). Kill condition not fired | The per-person race / sail-only / no tally #9's criterion asked for was **not recorded**, so the count behind "plenty" is unknown and claim 3 does not become *measured*. 'Invite people by email with the invite code' (#31) is unblocked on this axis |
+| ClubSpot has no crew board at HSC | #10, closed 2/2 | "The club does not use one, or is not willing to" (the club's ClubSpot administrator via the owner, 2026-08-22). Epic does not pause | Integrations row for `.ics` import now carries it. The field check in `forged-idea.md` had found no ClubSpot crew board by search without proving it absent; this closes it for *this* club, which is the only one v1 serves |
+| The club accepts its burgee colours in the app | #11, closed 2/2 | **Consent** — "all good here" (HSC leadership via the owner, 2026-08-22) | The Hoover pair `#395FAC` / `#FCCF0B` (`brand/`) is the club row's theme. **No club-row seed exists in the repo yet** — `0001_club.sql` creates the table and inserts nothing — so #11's second criterion ("README's runbook seed … changed to the Hoover pair") had no file to change. The seed lands with #41 (*Theme the app from the club row*), whose seed criterion was written before this answer and must use the Hoover pair rather than the default green it names |
 
 Correction carried from discovery: the forge recorded the ladder as a rating that colours people;
 Phase 2 established it is the **engine's relaxation order**, the colours showing how far it
@@ -199,10 +215,20 @@ relaxed. `forged-idea.md` is corrected to match.
 | Question | Default in use | Risk | What settles it |
 |---|---|---|---|
 | Load shape | spiky on the race calendar | a sleeping host delays the notification job | season-one metrics |
-| pg_cron on Supabase Free | assume available | the ladder clock has no scheduler | enable it on the real project at scaffold; fallback = lazy relaxation on board read + daily Vercel sweep |
 | Brevo as an email fallback | not used | none until Resend's cap bites | read its pricing page when needed |
 
+### Resolved
+
+| Question | Was | Resolved | How |
+|---|---|---|---|
+| pg_cron on Supabase Free | assume available; fallback = lazy relaxation on board read + daily Vercel sweep | **available** (2026-08-22, #12) | enabled on the live project and fired every minute for nine minutes; ADR 004 records the kill condition as not fired and the fallback stays unbuilt |
+
 ## Handoff
+
+*Consumed by `groom-backlog` on 2026-08-22 (epic #7, stories #8 onward). Kept verbatim below as
+the record of what was handed off — so its four `external_criteria_candidates` still read as open
+questions. They became #8–#11 and are answered under **Forge checks** above; the pg_cron candidate
+is answered in **Resolved**.*
 
 ```yaml
 charter_handoff:
