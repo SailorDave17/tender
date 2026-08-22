@@ -22,6 +22,13 @@ updates:
       # eslint-config-next ships a plugin tree that supports ESLint 10.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # Not blocked upstream — a policy pin. @types/node describes the runtime, and this
+      # repo runs Node 24 (.nvmrc, `engines: >=24`, `"@types/node": "^24"`). Types for a
+      # newer major let tsc accept code that crashes on 24, which CI cannot catch until
+      # something actually calls such an API. Measured on PR #4 (closed): it passed CI.
+      # Lift when .nvmrc moves off Node 24, and move it in the same commit.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
