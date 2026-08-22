@@ -4,7 +4,8 @@ export default function Home() {
       <h1>Tender</h1>
       <p>The board that says who still needs a crew for Sunday.</p>
       <p>
-        Scaffold only — the first story builds the board. See <code>docs/charter.md</code>.
+        <a href="/join">Sign in with this season&apos;s invite code</a> — the board itself arrives
+        with the next stories.
       </p>
     </main>
   );

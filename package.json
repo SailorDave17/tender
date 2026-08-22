@@ -12,20 +12,21 @@
     "check:live": "node --env-file-if-exists=.env.local scripts/check-live.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "2.112.3",
     "next": "16.3.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "@supabase/supabase-js": "2.112.3"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.5",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
     "typescript": "^5",
-    "vitest": "4.1.11",
-    "@electric-sql/pglite": "0.5.5"
+    "vitest": "4.1.11"
   },
   "engines": {
     "node": ">=24"
