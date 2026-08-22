@@ -66,7 +66,7 @@ instrument for that, and it probes with `limit=0` so it can never write.
 
 ## Owner runbook — the steps only the owner can do
 
-1. **Create the Supabase project** (Free; region near Ohio). Paste `supabase/migrations/0001_club.sql`
+1. **Create the Supabase project** (Free; region near Ohio). Paste every `supabase/migrations/*.sql` in order
    in the SQL editor. Put the URL and anon key in `.env.local`, and in Vercel's environment.
    Enable the **Cron** integration and confirm a job can be scheduled on this plan — ADR 004's
    kill condition; its fallback is named there.

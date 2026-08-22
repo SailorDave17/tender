@@ -15,13 +15,16 @@ const MIGRATIONS = join(process.cwd(), "supabase", "migrations");
 
 export async function freshDb(): Promise<PGlite> {
   const db = new PGlite();
-  // The roles and the auth shim Supabase provides and pglite does not.
+  // The roles and the auth shim Supabase provides and pglite does not. auth.users is the one
+  // column person.id references; the real table has many more and none is read here.
   await db.exec(`
     create role anon nologin;
     create role authenticated nologin;
     create schema auth;
+    create table auth.users (id uuid primary key);
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    grant usage on schema auth to anon, authenticated;
   `);
   const files = (await readdir(MIGRATIONS)).filter((f) => f.endsWith(".sql")).sort();
   for (const f of files) {
@@ -38,7 +41,9 @@ export async function as(
   userId?: string,
 ) {
   await db.exec(`set role ${role};`);
-  if (userId) await db.exec(`select set_config('request.jwt.claim.sub', '${userId}', false);`);
+  // Always set the claim, to '' when there is no user: set_config is session-wide, so a call with
+  // no userId after a call with one would otherwise still run as that user.
+  await db.exec(`select set_config('request.jwt.claim.sub', '${userId ?? ""}', false);`);
   try {
     return await db.query(sql);
   } finally {
