@@ -22,3 +22,11 @@ Vercel Hobby + Supabase Free with the ladder clock as pg_cron. Won on house know
 
 ## Kill condition
 pg_cron unavailable on the Free project when enabled at scaffold. **Fallback, named**: relaxation evaluated lazily on every board read plus Vercel's daily cron as a sweep — no scheduler at all — and if that proves too coarse in season one, reopen toward Cloudflare Workers. A second kill: a Hobby fair-use challenge, which routes to Cloudflare rather than to Pro.
+
+### Kill condition NOT fired — measured 2026-08-22 (story #12)
+
+`create extension if not exists pg_cron` succeeded on the live Free project (`iszdmtinhgnjwtnyetdn`, org "Mad Cow"), and `cron.schedule('tender_cron_probe', '* * * * *', …)` returned jobid 1. A scratch table `public.cron_probe` then collected **9 rows, every consecutive pair exactly 60 s apart** — first fire 15:05:00.219642+00 after scheduling at ~15:04:42, then 15:06:00, 15:07:00 … 15:13:00, each interval 60 s with no drift and no missed tick. Job and table were dropped afterwards (`cron.unschedule` → `jobs_left = 0`; `drop table` → `to_regclass('public.cron_probe')` = NULL).
+
+So the clock decision stands: **the ladder clock is pg_cron**, and the named fallback stays unbuilt.
+
+**One measurement trap, recorded because it nearly inverted this decision.** The probe rows were first read over PostgREST with the publishable key, which returned `HTTP 200 []` — read as *the job never fired*, which would have fired the kill condition and shipped the fallback architecture. It was wrong: this project enables row-level security on a plain `create table` (`pg_class.relrowsecurity` = true for `cron_probe`, which no migration asked for), so `[]` was **RLS filtering an anon role with no policy**, not an empty table. Counting from the SQL editor as `postgres` showed 8 rows at the same moment. An anon read cannot distinguish *no rows* from *no permission to see rows*; count from a role that bypasses RLS before concluding a scheduler is dead.
