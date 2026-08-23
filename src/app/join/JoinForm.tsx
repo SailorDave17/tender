@@ -18,11 +18,18 @@ export function JoinForm({ initialError }: { initialError?: string }) {
   );
 
   async function post(path: string, payload: unknown): Promise<{ ok: boolean; body: Record<string, unknown> }> {
-    const res = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await fetch(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      // A dropped connection rejects the fetch before any status exists; without this the form
+      // stayed on "Sending…" with every button disabled and no message (review finding, #70).
+      return { ok: false, body: { message: "Could not reach the server. Check your connection and try again." } };
+    }
     const body = (await res.json().catch(() => ({ message: "Something went wrong." }))) as Record<
       string,
       unknown

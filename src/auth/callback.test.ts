@@ -18,6 +18,23 @@ describe("decideCallback — what the callback does with its query (#70 AC 7)", 
     ).toEqual({ kind: "back", reason: "cancelled" });
   });
 
+  it("an expired or used magic link is link-invalid, not a Google fault (GoTrue's PKCE shape)", () => {
+    expect(
+      decideCallback({ error: "access_denied", error_code: "otp_expired", error_description: "Email link is invalid or has expired" }),
+    ).toEqual({ kind: "back", reason: "link-invalid" });
+    expect(decideCallback({ error: "server_error", error_description: "Token has expired" })).toEqual({
+      kind: "back",
+      reason: "link-invalid",
+    });
+  });
+
+  it("a bare 'Access denied' description with a generic code is still a cancellation", () => {
+    expect(decideCallback({ error: "server_error", error_description: "Access denied" })).toEqual({
+      kind: "back",
+      reason: "cancelled",
+    });
+  });
+
   it("names any other provider failure as a provider error", () => {
     expect(decideCallback({ error: "server_error", error_description: "Unable to exchange external code" })).toEqual(
       { kind: "back", reason: "provider-error" },

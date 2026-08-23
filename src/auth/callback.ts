@@ -20,6 +20,11 @@ export function decideCallback(q: CallbackQuery): CallbackDecision {
   if (q.code) return { kind: "exchange", code: q.code };
   if (q.error || q.error_code || q.error_description) {
     const code = (q.error_code ?? q.error ?? "").toLowerCase();
+    // GoTrue reports an expired or already-used magic link as error=access_denied with
+    // error_code=otp_expired — the precise key for that already exists, so it goes first.
+    if (code === "otp_expired" || /expired|already been used/i.test(q.error_description ?? "")) {
+      return { kind: "back", reason: "link-invalid" };
+    }
     if (code === "access_denied" || /access.denied|cancel/i.test(q.error_description ?? "")) {
       return { kind: "back", reason: "cancelled" };
     }

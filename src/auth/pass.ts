@@ -27,8 +27,10 @@ function b64url(buf: Buffer): string {
   return buf.toString("base64url");
 }
 
-function mac(body: string, secret: string): Buffer {
-  return createHmac("sha256", secret).update(body).digest();
+type Hmac = typeof createHmac;
+
+function mac(body: string, secret: string, hmac: Hmac = createHmac): Buffer {
+  return hmac("sha256", secret).update(body).digest();
 }
 
 export function signPass(payload: PassPayload, secret: string): string {
@@ -43,12 +45,22 @@ export function verifyPass(
   secret: string,
   now: Date = new Date(),
 ): PassPayload | null {
+  return verifyPassWith(token, secret, now, createHmac);
+}
+
+/** verifyPass with the HMAC injectable, so a test can assert an empty secret never reaches it. */
+export function verifyPassWith(
+  token: string | null | undefined,
+  secret: string,
+  now: Date,
+  hmac: Hmac,
+): PassPayload | null {
   if (!token || !secret) return null;
   const dot = token.indexOf(".");
   if (dot < 1) return null;
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const expected = mac(body, secret);
+  const expected = mac(body, secret, hmac);
   let given: Buffer;
   try {
     given = Buffer.from(sig, "base64url");

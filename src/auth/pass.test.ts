@@ -44,10 +44,37 @@ describe("the gate pass — sign and verify (#70 AC 4)", () => {
     expect(verifyPass(signPass(payload, secret), "", issued)).toBeNull();
   });
 
-  it("verifies false when the payload is not the pass shape", async () => {
-    const body = Buffer.from(JSON.stringify({ display_name: "Bob" })).toString("base64url");
+  it("verifies false when the payload is not the pass shape — with a valid issued_at, so only the shape guard can refuse it", async () => {
     const { createHmac } = await import("node:crypto");
-    const sig = createHmac("sha256", secret).update(body).digest("base64url");
-    expect(verifyPass(`${body}.${sig}`, secret, issued)).toBeNull();
+    const signed = (p: unknown) => {
+      const body = Buffer.from(JSON.stringify(p)).toString("base64url");
+      return `${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`;
+    };
+    // Each fixture carries a parseable issued_at inside the TTL, so the NaN check cannot be what
+    // rejects it (the review measured the earlier fixture passing on NaN with the guard deleted).
+    expect(verifyPass(signed({ display_name: "Bob", issued_at: payload.issued_at }), secret, issued)).toBeNull();
+    expect(
+      verifyPass(signed({ display_name: 7, adult_attested_at: payload.adult_attested_at, issued_at: payload.issued_at }), secret, issued),
+    ).toBeNull();
+    expect(verifyPass(signed("a string"), secret, issued)).toBeNull();
+    // And the positive control beside them: the same signer with the full shape verifies.
+    expect(verifyPass(signed(payload), secret, issued)).toEqual(payload);
+  });
+
+  it("an empty secret never reaches the MAC — the guard, not a mismatch, is what refuses it", async () => {
+    // A null from verifyPass cannot say WHY; createHmac accepts a zero-length key and would merely
+    // mismatch. Inject the HMAC to assert the mechanism the comment above claims.
+    const { createHmac } = await import("node:crypto");
+    const { verifyPassWith } = await import("./pass");
+    const calls: string[] = [];
+    const spy: typeof createHmac = (alg, key, opts) => {
+      calls.push(String(key));
+      return createHmac(alg, key, opts);
+    };
+    const token = signPass(payload, secret);
+    expect(verifyPassWith(token, "", issued, spy)).toBeNull();
+    expect(calls).toEqual([]);
+    expect(verifyPassWith(token, secret, issued, spy)).toEqual(payload);
+    expect(calls).toEqual([secret]);
   });
 });
