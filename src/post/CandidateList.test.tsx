@@ -15,8 +15,8 @@ const people = new Map<string, Loaded>([
   ["cy", { id: "cy", display_name: "Cy", rating: 2, any_hull: true, hulls: [], email: "cy@hsc-crew.org", phone: "614-555-0199" }],
 ]);
 const rows = [
-  { id: "ann", rung: 1 as const, colour: RUNG_COLOUR[1], notified: true },
-  { id: "cy", rung: 2 as const, colour: RUNG_COLOUR[2], notified: false },
+  { id: "ann", rung: 1 as const, colour: RUNG_COLOUR[1], notified: true, answered: false },
+  { id: "cy", rung: 2 as const, colour: RUNG_COLOUR[2], notified: false, answered: false },
 ];
 
 describe("CandidateList — name, competence and hulls only (AC 5)", () => {
@@ -50,6 +50,37 @@ describe("CandidateList — name, competence and hulls only (AC 5)", () => {
     const empty = renderToStaticMarkup(<CandidateList rows={[]} people={people} />);
     expect(empty).toContain("Nobody has marked this day available yet");
     expect(empty).toContain('data-candidates="0"');
+  });
+
+  it("shows no 'answered' badge when nobody has", () => {
+    expect(html).not.toContain('data-badge="answered"');
+    expect(html).not.toContain(">answered<");
+  });
+});
+
+describe("CandidateList — the 'answered' badge (story #20 AC 4)", () => {
+  const answered = [
+    { id: "cy", rung: 2 as const, colour: RUNG_COLOUR[2], notified: true, answered: true },
+    { id: "ann", rung: 1 as const, colour: RUNG_COLOUR[1], notified: true, answered: false },
+  ];
+  const html = renderToStaticMarkup(<CandidateList rows={answered} people={people} />);
+
+  it("badges exactly the answerer, in the order the rows came, with their rung colour and rating", () => {
+    expect(html.match(/data-badge="answered"/g)).toHaveLength(1);
+    expect(html).toContain('data-candidate="cy" data-notified="true" data-answered="true"');
+    expect(html).toContain('data-candidate="ann" data-notified="true" data-answered="false"');
+    expect(html.indexOf('data-candidate="cy"')).toBeLessThan(html.indexOf('data-candidate="ann"'));
+    // The answerer's row carries rung 2 / amber and 'Can hike and trim', not the badge alone.
+    const cyRow = html.slice(html.indexOf('data-candidate="cy"'), html.indexOf('data-candidate="ann"'));
+    expect(cyRow).toContain("Rung 2");
+    expect(cyRow).toContain(RUNG_COLOUR[2].hex);
+    expect(cyRow).toContain("Can hike and trim");
+    expect(cyRow).toContain(">answered<");
+  });
+
+  it("still carries no email and no phone", () => {
+    expect(html).not.toContain("hsc-crew.org");
+    expect(html).not.toContain("555");
   });
 });
 

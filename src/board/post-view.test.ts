@@ -97,6 +97,50 @@ describe("candidateRows — every available crew, best rung first, reached or no
     const rows = candidateRows(post, [di], hoursBefore(72));
     expect(rows[0].colour).toEqual(RUNG_COLOUR[3]);
   });
+
+  it("with nobody answered, every row says so", () => {
+    expect(candidateRows(post, [ann, cy], hoursBefore(72)).every((r) => r.answered === false)).toBe(true);
+  });
+});
+
+describe("candidateRows — answerers first, above the non-answering pool (story #20 AC 4)", () => {
+  it("lists answerers first, each by rung, then the rest by rung, each with their own rung", () => {
+    const rows = candidateRows(post, [di, cy, ann, bo], hoursBefore(72), new Set(["cy", "di"]));
+    expect(rows.map((r) => [r.id, r.rung, r.answered])).toEqual([
+      ["cy", 2, true],
+      ["di", 3, true],
+      ["ann", 1, false],
+      ["bo", 1, false],
+    ]);
+    expect(rows[0].colour).toEqual(RUNG_COLOUR[2]); // the answerer keeps their rungOf colour
+  });
+
+  it("an answerer is never 'not yet notified', whatever their rung against the open one", () => {
+    const rows = candidateRows(post, [di, cy, ann], hoursBefore(72), new Set(["di"]));
+    expect(rows.map((r) => [r.id, r.notified])).toEqual([
+      ["di", true], // rung 3, below the open rung 1 — but they answered
+      ["ann", true],
+      ["cy", false],
+    ]);
+  });
+
+  it("an answerer who is no longer available is still listed; a non-answerer who is not available is not", () => {
+    const gone = { ...cy, available: false };
+    const neverWas = { ...di, available: false };
+    const rows = candidateRows(post, [ann, gone, neverWas], hoursBefore(72), new Set(["cy"]));
+    expect(rows.map((r) => r.id)).toEqual(["cy", "ann"]);
+  });
+
+  it("does not count an unavailable answerer toward the open rung (the ladder's pool is the available)", () => {
+    // Only di (rung 3) is available; cy answered earlier and unmarked the day. The open rung is
+    // 3 by emptiness, so ann-less di is notified; cy's answer does not pull the rung back to 2.
+    const gone = { ...cy, available: false };
+    const rows = candidateRows(post, [gone, di], hoursBefore(72), new Set(["cy"]));
+    expect(rows.map((r) => [r.id, r.notified])).toEqual([
+      ["cy", true],
+      ["di", true],
+    ]);
+  });
 });
 
 describe("poolForDate — the date's available crew as the engine sees them", () => {
