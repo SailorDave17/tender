@@ -48,8 +48,10 @@ season. Known blind spot: matches it caused that closed by text.
   the ladder's three rungs below, which are a different scale.
 - **Admin** — the owner, a minimal role: adds race dates (or imports them), invites people, sets
   the club theme, rotates the invite code, reads the failure metric.
-- **Identity**: email magic link. Email is required (it is the login); phone is optional and is
-  exchanged only on a closed match.
+- **Identity**: email magic link or Google (#70, 2026-08-23 — returning members sign in with
+  email alone or Google; new members sign up with the invite code and finish by email link or
+  Google). Email is required (it is the login); phone is optional and is exchanged only on a
+  closed match.
 - **Signup**: gated by an invite code the owner hands out (class handout, invite email); rotated
   in one admin action.
 - **Visibility**: posts and profiles visible to every signed-in user; contact details only on

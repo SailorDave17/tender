@@ -16,8 +16,11 @@
 -- No is_skipper flag: a skipper is whoever owns a boat row (0006).
 --
 -- Inserts are not granted to any client role. A person row is created by the invite gate, a
--- server route running as service_role with signups OFF (epic #7 decision E, story #15), so the
--- invite code never reaches a browser. service_role bypasses RLS and needs no policy.
+-- server route running as service_role (epic #7 decision E, story #15), so the invite code never
+-- reaches a browser. service_role bypasses RLS and needs no policy. *Allow new users to sign up*
+-- has been ON since #70 (2026-08-23) so that Google sign-up can mint the auth user; an auth user
+-- arriving at /auth/callback without a gate pass is deleted there, so this route and the callback
+-- are still the only person writers. (This comment said "with signups OFF" until #70.)
 
 create table public.person (
   id                uuid primary key references auth.users (id) on delete cascade,

@@ -119,3 +119,68 @@ describe("the comparison is constant-time — a property only the source can sho
     expect(body).not.toMatch(/\.equals\(|===\s*b\b/);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+
+import { googleSignup, type GoogleSignupDeps } from "./join";
+
+function googleFakes(overrides: Partial<GoogleSignupDeps> = {}) {
+  const calls = { inviteCode: 0, setPass: 0, startOAuth: 0 };
+  const passes: Parameters<GoogleSignupDeps["setPass"]>[0][] = [];
+  const deps: GoogleSignupDeps = {
+    inviteCode: async () => {
+      calls.inviteCode++;
+      return "HSC-2027";
+    },
+    setPass: async (p) => {
+      calls.setPass++;
+      passes.push(p);
+    },
+    startOAuth: async () => {
+      calls.startOAuth++;
+      return { url: "https://accounts.google.invalid/o/oauth2/auth?state=x" };
+    },
+    now: () => new Date("2026-08-23T10:00:00Z"),
+    ...overrides,
+  };
+  return { deps, calls, passes };
+}
+
+const googleGood = { displayName: " Bob ", code: "HSC-2027", attested: true };
+
+describe("googleSignup — the gate, then a pass and a redirect (#70 AC 4)", () => {
+  it("checks the code, sets the pass from the clock, starts OAuth, answers the URL", async () => {
+    const { deps, calls, passes } = googleFakes();
+    const r = await googleSignup(googleGood, deps);
+    expect(r).toEqual({ status: 200, body: { url: "https://accounts.google.invalid/o/oauth2/auth?state=x" } });
+    expect(calls).toEqual({ inviteCode: 1, setPass: 1, startOAuth: 1 });
+    expect(passes).toEqual([
+      { display_name: "Bob", adult_attested_at: "2026-08-23T10:00:00.000Z", issued_at: "2026-08-23T10:00:00.000Z" },
+    ]);
+  });
+
+  it("wrong code: 403, no pass set, no redirect started", async () => {
+    const { deps, calls } = googleFakes();
+    const r = await googleSignup({ ...googleGood, code: "HSC-2026" }, deps);
+    expect(r.status).toBe(403);
+    expect(calls).toEqual({ inviteCode: 1, setPass: 0, startOAuth: 0 });
+  });
+
+  it("attestation unticked: 400, and the code is not even read", async () => {
+    const { deps, calls } = googleFakes();
+    const r = await googleSignup({ ...googleGood, attested: false }, deps);
+    expect(r.status).toBe(400);
+    expect(calls).toEqual({ inviteCode: 0, setPass: 0, startOAuth: 0 });
+  });
+
+  it("empty name: 400 before the code is read", async () => {
+    const { deps, calls } = googleFakes();
+    expect((await googleSignup({ ...googleGood, displayName: "  " }, deps)).status).toBe(400);
+    expect(calls).toEqual({ inviteCode: 0, setPass: 0, startOAuth: 0 });
+  });
+
+  it("500 when OAuth cannot start", async () => {
+    const { deps } = googleFakes({ startOAuth: async () => ({ error: "provider not enabled" }) });
+    expect((await googleSignup(googleGood, deps)).status).toBe(500);
+  });
+});
