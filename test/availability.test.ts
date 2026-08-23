@@ -44,9 +44,10 @@ afterAll(async () => {
 });
 
 describe("person (0005) — rating, any_hull, hulls at the table", () => {
-  it("refuses a rating outside 1..3", async () => {
+  // 1..4 since 0011 (#69): 4 is a helm, so 5 is the boundary that must still be refused.
+  it("refuses a rating outside 1..4", async () => {
     await expect(
-      db.exec(`update public.person set rating = 4 where id = '${CY}'`),
+      db.exec(`update public.person set rating = 5 where id = '${CY}'`),
     ).rejects.toThrow(/check constraint/);
     await expect(
       db.exec(`update public.person set rating = 0 where id = '${CY}'`),

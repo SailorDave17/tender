@@ -281,4 +281,25 @@ describe("rungMessage — what the crew reads", () => {
     expect(m.text).toContain("Minimum competence: can hike and trim");
     expect(m.text).toContain(`https://tender.madcowsailing.com/post/${POST}`);
   });
+
+  /**
+   * #69. This line held a three-level label map of its own — a copy of the scale that neither the
+   * issue's list of ordinal sites nor any type check reached, because `{1:…,2:…,3:…}[4]` is
+   * `undefined` rather than an error. A post at the new top level would have gone out reading
+   * "Minimum competence: undefined." to every crew on the rung, with the send reported successful.
+   */
+  it("names every level of the scale, the two new ones included", () => {
+    const { store } = setUp([]);
+    const post = store.posts.get(POST)!;
+    const minimumLine = (minimum: 1 | 2 | 3 | 4) =>
+      rungMessage({ ...post, minimum }, "crew@example.org", "https://x.test")
+        .text.split("\n")
+        .find((l) => l.startsWith("Minimum competence:"));
+
+    expect(minimumLine(1)).toContain("Minimum competence: never raced.");
+    expect(minimumLine(2)).toContain("Minimum competence: can hike and trim.");
+    expect(minimumLine(3)).toContain("Minimum competence: can fly a spinnaker.");
+    expect(minimumLine(4)).toContain("Minimum competence: can helm.");
+    for (const m of [1, 2, 3, 4] as const) expect(minimumLine(m)).not.toContain("undefined");
+  });
 });

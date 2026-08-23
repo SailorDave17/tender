@@ -10,12 +10,12 @@ import type { MatchRow } from "@/post/match-view";
  */
 
 export type RaceDateRow = { id: string; starts_at: string; title: string };
-export type BoatRow = { id: string; owner_id: string; name: string; class: string; default_minimum: 1 | 2 | 3 };
+export type BoatRow = { id: string; owner_id: string; name: string; class: string; default_minimum: 1 | 2 | 3 | 4 };
 export type PostRow = {
   id: string;
   boat_id: string;
   race_date_id: string;
-  minimum: 1 | 2 | 3;
+  minimum: 1 | 2 | 3 | 4;
   note: string;
   closed_at: string | null;
   /** 0010: the widest rung opened and notified; the view shows max(this, computed). */

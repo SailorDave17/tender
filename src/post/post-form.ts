@@ -21,7 +21,7 @@ export type ParsedBoat =
 
 function competence(raw: string): Competence | null {
   const n = Number(raw);
-  return n === 1 || n === 2 || n === 3 ? n : null;
+  return n === 1 || n === 2 || n === 3 || n === 4 ? n : null;
 }
 
 export function parseBoatForm(input: BoatInput, knownClasses: readonly string[]): ParsedBoat {

@@ -34,6 +34,8 @@
 -- person: the profile columns.
 -- ---------------------------------------------------------------------------------------------
 
+-- rating's scale was widened to four levels by 0011 (spinnaker at 3, helm moved to 4). The check
+-- below is the scale as it stood here; read 0011 for the current one.
 alter table public.person
   add column rating   smallint check (rating in (1, 2, 3)),
   add column any_hull boolean not null default true,

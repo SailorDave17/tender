@@ -105,16 +105,27 @@ instrument for that, and it probes with `limit=0` so it can never write.
    |---|---|
    | Site URL | `https://tender.madcowsailing.com` |
    | Redirect URLs | `https://tender.madcowsailing.com/**` and `http://localhost:3000/**` |
-   | Allow new users to sign up | **OFF** — Tender is invite-only; people arrive through the invite code |
+   | Allow new users to sign up | **ON** (since #70, 2026-08-23 — it read OFF until then, and was never actually in force: the toggle did not persist, #12/#50). Tender is still invite-only, but the refusal moved out of the dashboard: a Google sign-up has to be allowed to create the auth user, so `/auth/callback` deletes any new auth user that arrives without a valid gate pass (`src/auth/person.ts`). Switching this OFF breaks *Continue with Google* for new members |
 
-   Check it without the dashboard: `GET /auth/v1/settings` reports signups disabled, and a
-   deliberately failing `GET /auth/v1/verify?token=x` redirects to `tender.madcowsailing.com`
-   rather than to localhost.
+   Check it without the dashboard: `GET /auth/v1/settings` reports `disable_signup: false` and
+   `external.google: true`, and a deliberately failing `GET /auth/v1/verify?token=x` redirects to
+   `tender.madcowsailing.com` rather than to localhost.
+
+   **Google provider** (#70). In Google Cloud, an OAuth client of type *Web application* with
+   `https://<project-ref>.supabase.co/auth/v1/callback` as its authorised redirect URI; its client
+   id and secret go under **Authentication → Providers → Google** in Supabase. A member whose
+   account the email gate created and who later signs in with a Google account carrying the same
+   verified address is linked to the existing user by Supabase (automatic identity linking) — #70's
+   AC 6 is where that is measured. And a fifth server-only name beside the four above:
+   **`GATE_PASS_SECRET`**, any long random string (`openssl rand -base64 32`), in `.env.local` and in
+   Vercel's environment — it signs the ten-minute gate pass that carries a new member's name and
+   attestation from the sign-up form through Google and back to `/auth/callback`. Without it the
+   Google sign-up route throws and the callback treats every pass as invalid.
 2. **Custom SMTP**: Supabase's built-in mailer sends 2 emails an hour to team members only
    (measured 2026-08-21). Point Auth → SMTP at Resend, sending from `tender.madcowsailing.com`;
    add Resend's DNS records in the Cloudflare zone. **And a Resend API key as `RESEND_API_KEY`**
    in `.env.local` and in Vercel's environment (server-only, a fourth name beside step 1's
-   three): since #23 the app sends the rung notifications itself, by Resend's REST API from
+   three — and `GATE_PASS_SECRET` under the Google provider above is the fifth): since #23 the app sends the rung notifications itself, by Resend's REST API from
    `tender@tender.madcowsailing.com`, and without the key the notification step fails before
    any send — the post still stands, the failure goes to the function log, nobody is emailed
    (#65 is where a missing name becomes a startup error). Both kinds of mail share Resend Free's 100/day;

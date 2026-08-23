@@ -1,5 +1,6 @@
 import { rungOf, suggest, type Crew, type Post, type Rung } from "@/engine/ladder";
 import type { Message, Transport } from "@/email/send";
+import { ratingLabel } from "@/profile/profile";
 
 /**
  * notifyRung(postId): propose the crew on the post's open rung and email each of them once
@@ -47,7 +48,7 @@ export type RungPost = {
   raceDateId: string;
   boatClass: string;
   boatName: string;
-  minimum: 1 | 2 | 3;
+  minimum: 1 | 2 | 3 | 4;
   /** The race date's start, ISO. */
   startsAt: string;
   /** The race date's title, for the subject line. */
@@ -130,7 +131,10 @@ export function rungMessage(post: RungPost, to: string, siteUrl: string): Messag
     hour: "numeric",
     minute: "2-digit",
   });
-  const minimum = { 1: "never raced", 2: "can hike and trim", 3: "can helm" }[post.minimum];
+  // From RATINGS rather than a map of its own: this line carried a hard-coded three-level copy
+  // of the scale, which 0011's fourth level would have rendered as "undefined" in a real email
+  // with nothing failing (story #69). The same lowercasing idiom is on /boats and /post/[id].
+  const minimum = ratingLabel(post.minimum).toLowerCase();
   return {
     to,
     subject: `Crew needed: ${post.boatName} (${post.boatClass}), ${when}`,

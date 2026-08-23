@@ -19,7 +19,9 @@
  * (docs/adr/006-testing-strategy.md).
  */
 
-export type Competence = 1 | 2 | 3; // 1 never raced, 2 can hike and trim, 3 can helm
+// 1 never raced, 2 can hike and trim, 3 can fly a spinnaker, 4 can helm (0011, story #69).
+export type Competence = 1 | 2 | 3 | 4;
+// The LADDER's scale — strict, amber, red. Unrelated to Competence, and deliberately still three.
 export type Rung = 1 | 2 | 3;
 
 export interface Crew {
