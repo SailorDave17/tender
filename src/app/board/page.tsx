@@ -151,7 +151,7 @@ export default async function BoardPage({
       )}
       {me?.is_admin && (
         <p>
-          <a href="/admin/dates">Edit race dates</a>
+          <a href="/admin">Admin</a> · <a href="/admin/dates">Edit race dates</a>
         </p>
       )}
 

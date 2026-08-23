@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
+import { EXPECTED_FUNCTIONS, EXPECTED_TABLES } from "../scripts/check-live-expected.mjs";
 import { freshDb } from "./pglite";
 
 /**
@@ -9,10 +10,11 @@ import { freshDb } from "./pglite";
  *
  * 1. The migrations record nothing from which a person's years can be inferred (story #14 AC 1).
  *    Read as files rather than through git so the check is the same under CI and locally.
- * 2. `scripts/check-live.mjs`'s EXPECTED_TABLES is the set of tables the migrations create — a
- *    copy of a fact the migrations already hold, which is the class that drifts (cairn:
- *    a-computable-claim-does-not-belong-in-prose-2026-08-07). The script cannot be imported (it
- *    probes and exits at module load), so the literal is read out of its source.
+ * 2. `scripts/check-live-expected.mjs`'s EXPECTED_TABLES is the set of tables the migrations
+ *    create, and its EXPECTED_FUNCTIONS is the set of functions the client calls by RPC with the
+ *    argument names it sends — copies of facts the migrations and src/ already hold, which is the
+ *    class that drifts (cairn: a-computable-claim-does-not-belong-in-prose-2026-08-07). They live
+ *    in their own module because the runner probes and exits at import.
  */
 
 const MIGRATIONS = join(process.cwd(), "supabase", "migrations");
@@ -41,18 +43,88 @@ describe("check:live expects exactly the tables the migrations create", () => {
     await db.close();
   });
 
-  it("EXPECTED_TABLES in scripts/check-live.mjs equals public's tables in the harness", async () => {
-    const src = await readFile(join(process.cwd(), "scripts", "check-live.mjs"), "utf8");
-    const m = /const EXPECTED_TABLES = \[([^\]]*)\]/.exec(src);
-    expect(m, "EXPECTED_TABLES literal not found in scripts/check-live.mjs").not.toBeNull();
-    const expected = [...m![1].matchAll(/["']([^"']+)["']/g)].map((x) => x[1]).sort();
-
+  it("EXPECTED_TABLES equals public's tables in the harness", async () => {
     const r = await db.query<{ tablename: string }>(
       `select tablename from pg_tables where schemaname = 'public' order by tablename`,
     );
     const created = r.rows.map((x) => x.tablename);
     expect(created.length).toBeGreaterThan(0);
-    expect(expected).toEqual(created);
+    expect([...EXPECTED_TABLES].sort()).toEqual(created);
+  });
+
+  // Every .rpc("name", { args }) in a source text, with the argument NAMES it passes — the keys
+  // of the object literal, whether written `post_id: id` or shorthand `{ post_ids }`. The probe
+  // must carry exactly the client's set: PostgREST resolves an overload by the set of argument
+  // names, so a function present under other names answers PGRST202 — the same as one that is
+  // missing (cairn: postgrest-probing-a-live-project-2026-08-16).
+  function parseRpcCalls(text: string): Map<string, string[]> {
+    const calls = new Map<string, string[]>();
+    for (const m of text.matchAll(/\.rpc\(\s*["']([a-z_]+)["']\s*(?:,\s*\{([^}]*)\})?/g)) {
+      const names = (m[2] ?? "")
+        .split(",")
+        .map((part) => part.split(":")[0].trim())
+        .filter(Boolean)
+        .sort();
+      calls.set(m[1], names);
+    }
+    return calls;
+  }
+
+  async function rpcCallsInSrc(): Promise<Map<string, string[]>> {
+    const files: string[] = [];
+    async function walk(dir: string) {
+      for (const e of await readdir(dir, { withFileTypes: true })) {
+        const f = join(dir, e.name);
+        if (e.isDirectory()) await walk(f);
+        else if (/\.(ts|tsx|mjs)$/.test(e.name) && !/\.test\./.test(e.name)) files.push(f);
+      }
+    }
+    await walk(join(process.cwd(), "src"));
+    const calls = new Map<string, string[]>();
+    for (const f of files) for (const [name, args] of parseRpcCalls(await readFile(f, "utf8"))) calls.set(name, args);
+    return calls;
+  }
+
+  it("the rpc-call scanner finds a call with arguments, a bare call, and a shorthand property", () => {
+    // Proven on a fixture first, because src/ could hold zero rpc calls and an empty scan is
+    // not a pass (cairn: a-mutation-certifies-the-corpus-not-the-guard-2026-08-20). The values
+    // are deliberately not bare identifiers that could be mistaken for keys.
+    const fixture = [
+      `await client.rpc("accept_answer", { post_id: id, person_id: personId });`,
+      `const r = await client.rpc("current_invite_code");`,
+      `await client.rpc("answer_counts", { post_ids })`,
+      `client.rpc("f", { a: rows.map((r) => r.id), b })`,
+    ].join("\n");
+    expect([...parseRpcCalls(fixture)]).toEqual([
+      ["accept_answer", ["person_id", "post_id"]],
+      ["current_invite_code", []],
+      ["answer_counts", ["post_ids"]],
+      ["f", ["a", "b"]],
+    ]);
+  });
+
+  it("EXPECTED_FUNCTIONS is exactly the set of rpc calls in src/, with the argument names they send", async () => {
+    const calls = await rpcCallsInSrc();
+    expect(calls.size).toBeGreaterThan(0);
+    const expected = new Map(EXPECTED_FUNCTIONS.map((f) => [f.name, Object.keys(f.args).sort()]));
+    expect([...expected].sort()).toEqual([...calls].sort());
+  });
+
+  it("every EXPECTED_FUNCTIONS entry exists in the harness with exactly those INPUT argument names", async () => {
+    // The identity arguments, not proargnames: a `returns table (…)` function lists its OUT
+    // columns in proargnames too, and PostgREST resolves on the inputs alone.
+    const r = await db.query<{ proname: string; args: string }>(
+      `select p.proname, pg_get_function_identity_arguments(p.oid) as args
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' order by p.proname`,
+    );
+    const inHarness = new Map(
+      r.rows.map((x) => [x.proname, x.args.split(",").map((a) => a.trim().split(/\s+/)[0]).filter(Boolean).sort()]),
+    );
+    expect(inHarness.get("answer_counts")).toEqual(["post_ids"]); // the parse, on the one with OUT columns
+    for (const f of EXPECTED_FUNCTIONS) {
+      expect(inHarness.get(f.name), `${f.name} is not a public function`).toEqual(Object.keys(f.args).sort());
+    }
   });
 });
 
@@ -121,6 +193,11 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       `select n.nspname || '.' || p.proname as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'public' and p.prosecdef order by fn`,
     );
-    expect(definers.rows.map((r) => r.fn)).toEqual(["public.accept_answer", "public.answer_counts"]);
+    expect(definers.rows.map((r) => r.fn)).toEqual([
+      "public.accept_answer",
+      "public.answer_counts",
+      "public.current_invite_code",
+      "public.rotate_invite_code",
+    ]);
   });
 });
