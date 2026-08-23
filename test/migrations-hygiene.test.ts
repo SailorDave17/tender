@@ -195,6 +195,8 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
     );
     expect(definers.rows.map((r) => r.fn)).toEqual([
       "public.accept_answer",
+      "public.admin_from_club", // 0009 — trigger functions, not in any read path
+      "public.admin_from_contact",
       "public.answer_counts",
       "public.current_invite_code",
       "public.rotate_invite_code",
