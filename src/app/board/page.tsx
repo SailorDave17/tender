@@ -24,7 +24,8 @@ export const dynamic = "force-dynamic";
  * (AC 5); a date already started is shown but its toggle disabled. Both rules are applied
  * again in the Server Action, and the first in the database.
  *
- * Under each date, every open post for it with its rung (story #19 AC 3). THE RUNG IS
+ * Under each date, every open post for it with its rung (story #19 AC 3) and how many have
+ * answered it (story #20 — the count is all a non-skipper may know, 0007). THE RUNG IS
  * COMPUTED ON THIS READ — suggest() over the crew available for the date, through
  * post-view.ts — which is ADR 004's lazy-relaxation fallback shipped first; the persisted,
  * monotone rung arrives with the notification ledger (#23/#25). Until then two reads of the
@@ -83,6 +84,7 @@ export default async function BoardPage({
             return (
               <li
                 key={d.id}
+                id={d.id}
                 data-race-date={d.id}
                 data-past={past}
                 data-available={s.mine}
@@ -111,13 +113,15 @@ export default async function BoardPage({
                       const boat = data.boats.get(p.boat_id);
                       if (!boat) return null;
                       const v = viewPost({ starts_at: d.starts_at, boatClass: boat.class, minimum: p.minimum }, pool, now);
+                      const answered = data.answerCounts.get(p.id) ?? 0;
                       return (
-                        <li key={p.id} data-post={p.id} data-rung={v.rung} data-candidates={v.candidateCount}>
+                        <li key={p.id} data-post={p.id} data-rung={v.rung} data-candidates={v.candidateCount} data-answered={answered}>
                           <RungBadge rung={v.rung} colour={v.colour} />{" "}
                           <Link href={`/post/${p.id}`}>
                             <strong>{boat.name}</strong> ({boat.class}) needs crew
                           </Link>{" "}
                           — {v.candidateCount} {v.candidateCount === 1 ? "candidate" : "candidates"}
+                          {answered > 0 && `, ${answered} answered`}
                         </li>
                       );
                     })}
@@ -134,7 +138,6 @@ export default async function BoardPage({
         </p>
       )}
 
-      <p>Answering a post arrives with the next story.</p>
       <form action="/auth/signout" method="post">
         <button type="submit">Sign out</button>
       </form>

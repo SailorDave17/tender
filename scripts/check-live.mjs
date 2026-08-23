@@ -15,7 +15,7 @@
  */
 import { makeProbe, runCheck } from "./check-live-core.mjs";
 
-const EXPECTED_TABLES = ["availability", "boat", "boat_class", "club", "person", "person_contact", "post", "race_date"];
+const EXPECTED_TABLES = ["answer", "availability", "boat", "boat_class", "club", "person", "person_contact", "post", "race_date"];
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

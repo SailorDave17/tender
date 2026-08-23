@@ -76,19 +76,32 @@ export type CandidateRow = {
   colour: (typeof RUNG_COLOUR)[Rung];
   /** False when the crew's rung is below the post's open rung — the ladder has not reached them. */
   notified: boolean;
+  /** The crew has an un-withdrawn answer on this post (story #20 AC 4). */
+  answered: boolean;
 };
 
+const NOBODY: ReadonlySet<string> = new Set();
+
 /**
- * Every available crew for the post's date, best rung first, each marked with whether the open
- * rung has reached them (story #19 AC 5, owner decision B). Stable within a rung: the order the
- * pool came in.
+ * Who the skipper sees for their post: everyone who answered, first, then every other available
+ * crew for the date, best rung first within each group (story #19 AC 5, owner decision B; story
+ * #20 AC 4). Stable within a rung: the order the pool came in.
+ *
+ * An answerer is listed whether or not they are still available — they said they can, and the
+ * skipper should see it — so the pool handed in may carry answerers with `available: false`
+ * (the page builds it that way). An answerer is never 'not yet notified': they answered.
  */
-export function candidateRows(post: PostInput, pool: readonly Crew[], now: Date): CandidateRow[] {
+export function candidateRows(
+  post: PostInput,
+  pool: readonly Crew[],
+  now: Date,
+  answered: ReadonlySet<string> = NOBODY,
+): CandidateRow[] {
   const p = toPost(post);
   const open = suggest(p, pool, now).rung;
   return pool
-    .filter((c) => c.available)
-    .map((c) => ({ id: c.id, rung: rungOf(p, c) }))
-    .sort((a, b) => a.rung - b.rung)
-    .map((r) => ({ ...r, colour: RUNG_COLOUR[r.rung], notified: r.rung <= open }));
+    .filter((c) => c.available || answered.has(c.id))
+    .map((c) => ({ id: c.id, rung: rungOf(p, c), answered: answered.has(c.id) }))
+    .sort((a, b) => Number(b.answered) - Number(a.answered) || a.rung - b.rung)
+    .map((r) => ({ ...r, colour: RUNG_COLOUR[r.rung], notified: r.answered || r.rung <= open }));
 }
