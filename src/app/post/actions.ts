@@ -17,6 +17,12 @@ import { supabaseServer } from "@/lib/supabase/server";
  * rendered is decided again here from the database's view (answer-rules.ts) before the write,
  * and 0007's policies decide a third time — an answer from someone not available for the date,
  * or on a closed post, is 42501 whatever the form said.
+ *
+ * And the skipper's third: accept one answer (story #21). Nothing is decided here at all —
+ * accept_answer() (0008) is a definer function that takes the skipper from auth.uid(), checks
+ * the post is theirs and the answer is live, writes the match and closes the post in one
+ * transaction, and raises otherwise. A second acceptance on the same post is 23505 (one match
+ * per post, the first stands) and is reported as such.
  */
 
 function field(formData: FormData, name: string): string {
@@ -124,6 +130,21 @@ export async function answerPost(formData: FormData): Promise<void> {
     // Zero rows is a refusal (no such answer, or not theirs), not a success.
     if (error || !count) redirect(back("refused"));
   }
+
+  revalidatePath("/board");
+  revalidatePath(`/post/${id}`);
+  redirect(`/post/${id}`);
+}
+
+export async function acceptAnswer(formData: FormData): Promise<void> {
+  const id = field(formData, "post_id");
+  const personId = field(formData, "person_id");
+  if (!UUID.test(id)) redirect("/board?error=refused");
+  if (!UUID.test(personId)) redirect(`/post/${id}?error=refused`);
+
+  const client = await supabaseServer();
+  const { error } = await client.rpc("accept_answer", { post_id: id, person_id: personId });
+  if (error) redirect(`/post/${id}?error=${error.code === "23505" ? "matched" : "refused"}`);
 
   revalidatePath("/board");
   revalidatePath(`/post/${id}`);

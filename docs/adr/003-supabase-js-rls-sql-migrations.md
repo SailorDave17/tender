@@ -19,3 +19,31 @@ Every policy gets a failing-then-passing test in the pglite harness, with that h
 
 ## Kill condition
 An RLS policy that cannot express the contact-on-match rule without a `security definer` escape the house notes warn against — reopen toward an API layer with app-enforced authorization, with the structural loss recorded.
+
+### Kill condition NOT fired — measured 2026-08-22 (story #21)
+
+The contact-on-match rule is expressed as one select policy on `person_contact` with no
+`security definer` anywhere in its read path (`supabase/migrations/0008_match.sql`):
+
+```sql
+using (
+  person_contact.person_id = auth.uid()
+  or exists (
+    select 1 from public.match m
+     where (m.skipper_id = auth.uid() and m.crew_id = person_contact.person_id)
+        or (m.crew_id = auth.uid() and m.skipper_id = person_contact.person_id)
+  )
+)
+```
+
+`git grep -n 'security definer' -- supabase/migrations` hits `0007` (`answer_counts`) and `0008`
+(`accept_answer`) — both **writes or counts**, neither in the contact read path — and nothing in
+any `create policy … on public.person_contact` statement. `test/migrations-hygiene.test.ts` holds
+both readings: the policy statements carry no `security definer`, and every function the live
+policy set calls (`auth.uid()` alone) is security invoker, with `accept_answer`'s `prosecdef = true`
+as the positive control that the catalog read can see a definer when there is one. The five
+cases the rule has to get right — matched skipper, matched crew, a bystander, an answerer who was
+not accepted, and a person matched on a different post — are `test/match.test.ts`.
+
+So the architecture stands: the visibility rule is a property of the data, and the one definer
+in the story (`accept_answer`) is the **write** that forms the match, not an escape for the read.

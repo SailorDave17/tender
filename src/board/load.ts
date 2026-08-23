@@ -1,5 +1,6 @@
 import type { PersonRow } from "@/engine/toCrew";
 import type { supabaseServer } from "@/lib/supabase/server";
+import type { MatchRow } from "@/post/match-view";
 
 /**
  * The reads the board and a post's page share, all through the cookie-bound client so RLS
@@ -32,18 +33,21 @@ export type BoardData = {
   answers: AnswerRow[];
   /** Un-withdrawn answers per post, for every post read — answer_counts() (0007), so a crew sees how many without seeing who. */
   answerCounts: Map<string, number>;
+  /** By post id. Every signed-in person reads a match on a post they can read (0008); a matched post is closed and crewed. */
+  matches: Map<string, MatchRow>;
 };
 
 type Client = Awaited<ReturnType<typeof supabaseServer>>;
 
 export async function loadBoardData(client: Client): Promise<BoardData> {
-  const [dates, boats, posts, people, availability, answers] = await Promise.all([
+  const [dates, boats, posts, people, availability, answers, matches] = await Promise.all([
     client.from("race_date").select("id, starts_at, title").eq("published", true).order("starts_at"),
     client.from("boat").select("id, owner_id, name, class, default_minimum"),
     client.from("post").select("id, boat_id, race_date_id, minimum, note, closed_at").order("created_at"),
     client.from("person").select("id, display_name, rating, any_hull, hulls"),
     client.from("availability").select("person_id, race_date_id"),
     client.from("answer").select("post_id, person_id").is("withdrawn_at", null),
+    client.from("match").select("id, post_id, skipper_id, crew_id, accepted_at"),
   ]);
   const postRows = (posts.data ?? []) as PostRow[];
   // A second round trip, because the function takes the ids the viewer has already read under
@@ -61,5 +65,6 @@ export async function loadBoardData(client: Client): Promise<BoardData> {
     answerCounts: new Map(
       ((counts.data ?? []) as { post_id: string; answered: number }[]).map((c) => [c.post_id, c.answered]),
     ),
+    matches: new Map(((matches.data ?? []) as MatchRow[]).map((m) => [m.post_id, m])),
   };
 }

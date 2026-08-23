@@ -92,3 +92,25 @@ describe("RungBadge — never colour alone", () => {
     expect(html).toContain('data-rung="3"');
   });
 });
+
+describe("CandidateList — the Accept slot renders for answered rows only (story #21)", () => {
+  const mixed = [
+    { id: "cy", rung: 2 as const, colour: RUNG_COLOUR[2], notified: true, answered: true },
+    { id: "ann", rung: 1 as const, colour: RUNG_COLOUR[1], notified: true, answered: false },
+  ];
+  const accept = (id: string) => <button data-accept={id}>Accept</button>;
+
+  it("offers Accept beside the answerer and not beside the crew who has not answered", () => {
+    const html = renderToStaticMarkup(<CandidateList rows={mixed} people={people} accept={accept} />);
+    expect(html.match(/data-accept="/g)).toHaveLength(1);
+    expect(html).toContain('data-accept="cy"');
+    expect(html).not.toContain('data-accept="ann"');
+    const cyRow = html.slice(html.indexOf('data-candidate="cy"'), html.indexOf('data-candidate="ann"'));
+    expect(cyRow).toContain(">Accept<");
+  });
+
+  it("renders no Accept at all when no slot is given", () => {
+    const html = renderToStaticMarkup(<CandidateList rows={mixed} people={people} />);
+    expect(html).not.toContain("Accept");
+  });
+});

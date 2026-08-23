@@ -25,7 +25,9 @@ export const dynamic = "force-dynamic";
  * again in the Server Action, and the first in the database.
  *
  * Under each date, every open post for it with its rung (story #19 AC 3) and how many have
- * answered it (story #20 — the count is all a non-skipper may know, 0007). THE RUNG IS
+ * answered it (story #20 — the count is all a non-skipper may know, 0007), and every matched
+ * post as 'Crewed' with both names and no rung — a crewed boat is news, a closed need is not
+ * (story #21 AC 5; a post closed by hand with no match stays off the board). THE RUNG IS
  * COMPUTED ON THIS READ — suggest() over the crew available for the date, through
  * post-view.ts — which is ADR 004's lazy-relaxation fallback shipped first; the persisted,
  * monotone rung arrives with the notification ledger (#23/#25). Until then two reads of the
@@ -51,7 +53,8 @@ export default async function BoardPage({
   const now = new Date();
   const unrated = !me || me.rating == null;
   const byDate = summarise(availability, user?.id ?? "");
-  const openPosts = data.posts.filter((p) => p.closed_at === null);
+  // Open posts, and matched ones (closed by the acceptance, shown as crewed).
+  const boardPosts = data.posts.filter((p) => p.closed_at === null || data.matches.has(p.id));
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
@@ -79,7 +82,7 @@ export default async function BoardPage({
             const f = formatStartsAt(d.starts_at);
             const s = byDate.get(d.id) ?? { count: 0, mine: false };
             const past = isPast(d.starts_at, now);
-            const posts = openPosts.filter((p) => p.race_date_id === d.id);
+            const posts = boardPosts.filter((p) => p.race_date_id === d.id);
             const pool = poolForDate([...data.people.values()], availability, d.id);
             return (
               <li
@@ -112,6 +115,20 @@ export default async function BoardPage({
                     {posts.map((p) => {
                       const boat = data.boats.get(p.boat_id);
                       if (!boat) return null;
+                      const m = data.matches.get(p.id);
+                      if (m) {
+                        const skipper = data.people.get(m.skipper_id)?.display_name ?? "the skipper";
+                        const crew = data.people.get(m.crew_id)?.display_name ?? "the crew";
+                        return (
+                          <li key={p.id} data-post={p.id} data-matched="true">
+                            <strong>Crewed</strong> —{" "}
+                            <Link href={`/post/${p.id}`}>
+                              {boat.name} ({boat.class})
+                            </Link>
+                            : {skipper} with {crew}
+                          </li>
+                        );
+                      }
                       const v = viewPost({ starts_at: d.starts_at, boatClass: boat.class, minimum: p.minimum }, pool, now);
                       const answered = data.answerCounts.get(p.id) ?? 0;
                       return (

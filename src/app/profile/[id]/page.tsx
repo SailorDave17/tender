@@ -9,9 +9,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * /profile/[id] — how anyone's profile reads to another signed-in person (story #18 AC 2): name,
  * competence and hull willingness, never a phone. The contact row is read through RLS as the
- * viewer, which returns nothing for anyone but the owner (0002), and ProfileCard withholds the
- * phone for any viewer but the owner whatever it is handed — two layers, each tested.
- * A person opening their own id here sees their own phone, as on /profile.
+ * viewer, which returns nothing for anyone but the owner and a matched counterparty (0008),
+ * and ProfileCard withholds the phone for any viewer but the owner whatever it is handed — two
+ * layers, each tested. A matched counterparty's contact is shown on the post page (story #21),
+ * not here. A person opening their own id here sees their own phone, as on /profile.
  */
 export default async function PersonProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
