@@ -5,12 +5,13 @@ import { ratingLabel } from "./profile";
  * one thing that matters about it is tested from its rendered HTML: another person's view
  * carries no phone (story #18 AC 2, "assert absence from the HTML, not hidden").
  *
- * Two layers keep the phone private and each is tested on its own. The database never hands a
- * page another person's contact row (0002's select policy is self-only; test/person.test.ts),
- * so `phone` here is null for every viewer but the owner. This component then renders a phone
- * only for the owner whatever it is handed, so a later page that reads contact through a wider
- * policy (#21's matched skipper) cannot leak it here by accident. ProfileCard.test.tsx hands it
- * a phone with a stranger as viewer and asserts the digits are not in the output.
+ * Two layers keep the phone private and each is tested on its own. The database hands a page
+ * another person's contact row only to a matched counterparty (0008's select policy — self or
+ * counterparty; test/person.test.ts, test/match.test.ts), so `phone` here is null for every
+ * viewer but the owner and their match. This component then renders a phone only for the owner
+ * whatever it is handed, so the counterparty's phone is shown where the match is — the post
+ * page, MatchPanel — and never here. ProfileCard.test.tsx hands it a phone with a stranger as
+ * viewer and asserts the digits are not in the output.
  */
 
 export type ProfileView = {

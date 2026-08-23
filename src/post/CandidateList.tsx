@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { CandidateRow } from "@/board/post-view";
 import { hullsText } from "@/profile/ProfileCard";
 import { ratingLabel } from "@/profile/profile";
@@ -9,7 +10,11 @@ import { ratingLabel } from "@/profile/profile";
  * notified'. Those who answered come first, badged 'answered' (story #20 AC 4); the ordering
  * is candidateRows' and this only prints it. Name, competence and hull willingness only — the
  * test beside this file hands it rows that carry an email and a phone and asserts neither
- * reaches the HTML. Contact is revealed by a match (#21), never by a list.
+ * reaches the HTML. Contact is revealed by a match (0008), never by a list.
+ *
+ * `accept`, when given, renders beside each ANSWERED row and nowhere else (story #21): the page
+ * passes the Accept form, the test passes a plain button and asserts it appears exactly where
+ * a badge does. The skipper chooses from those who answered; nobody else is offered.
  */
 
 export type CandidatePerson = {
@@ -42,9 +47,12 @@ export function RungBadge({ rung, colour }: { rung: 1 | 2 | 3; colour: { name: s
 export function CandidateList({
   rows,
   people,
+  accept,
 }: {
   rows: readonly CandidateRow[];
   people: ReadonlyMap<string, CandidatePerson>;
+  /** Rendered after the 'answered' badge of each answered row — the Accept control. */
+  accept?: (personId: string) => ReactNode;
 }) {
   if (rows.length === 0) return <p data-candidates="0">Nobody has marked this day available yet.</p>;
   return (
@@ -69,6 +77,7 @@ export function CandidateList({
                 answered
               </strong>
             )}
+            {r.answered && accept?.(r.id)}
             {!r.notified && <em>not yet notified</em>}
           </li>
         );
