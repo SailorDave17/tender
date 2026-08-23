@@ -14,7 +14,7 @@ const raceAt = new Date("2026-09-06T17:45:00Z");
 const farOut = new Date(raceAt.getTime() - 7 * 24 * 60 * 60 * 1000);
 const post: Post = { raceAt, boatClass: "Thistle", minimum: 2 };
 
-const crew = (id: string, rating: 1 | 2 | 3, hulls: string[], available = true): Crew => ({
+const crew = (id: string, rating: 1 | 2 | 3 | 4, hulls: string[], available = true): Crew => ({
   id,
   rating,
   hulls,
@@ -37,6 +37,35 @@ describe("rungOf", () => {
   });
   it("puts under-rated crew on rung 3 whatever their hull", () => {
     expect(rungOf(post, onClassUnderRated)).toBe(3);
+  });
+
+  /**
+   * Story #69 AC 5 — the three cases that could not exist on a 1..3 scale, because they need a
+   * competence STRICTLY BETWEEN hike-and-trim and helm.
+   *
+   * These prove the scale WIDENED rather than SHIFTED. `rungOf` compares with `<` and needs no
+   * change for a fourth level, so nothing here fails against the engine as written — what they
+   * catch is the scale being renumbered wrongly (spinnaker and helm collapsed onto one value, or
+   * the whole scale slid so that 2 no longer means hike-and-trim).
+   */
+  const spinnakerHand = crew("fi", 3, ["Thistle"]);
+  const helmPost: Post = { raceAt, boatClass: "Thistle", minimum: 4 };
+  const spinnakerPost: Post = { raceAt, boatClass: "Thistle", minimum: 3 };
+
+  it("a spinnaker hand is below a post that wants a helm — rung 3, red", () => {
+    expect(rungOf(helmPost, spinnakerHand)).toBe(3);
+  });
+
+  it("a spinnaker hand meets a post that wants a spinnaker on a hull they sail — rung 1", () => {
+    expect(rungOf(spinnakerPost, spinnakerHand)).toBe(1);
+  });
+
+  it("a spinnaker hand clears a post that only wants hike-and-trim — rung 1", () => {
+    expect(rungOf(post, spinnakerHand)).toBe(1); // post.minimum is 2
+  });
+
+  it("and a helm still clears the spinnaker post — 4 outranks 3, the ordinal did not inverse", () => {
+    expect(rungOf(spinnakerPost, crew("ed", 4, ["Thistle"]))).toBe(1);
   });
 });
 

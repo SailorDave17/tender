@@ -39,9 +39,16 @@ describe("toCrew — any_hull carries into the engine's 'empty means any'", () =
     expect(toCrew({ id: "bo", rating: 2, any_hull: true, hulls: [] }, false)!.available).toBe(false);
   });
 
-  it("a person with no rating, or one outside 1..3, is not a Crew", () => {
+  it("a person with no rating, or one outside 1..4, is not a Crew", () => {
     expect(toCrew({ id: "cy", rating: null, any_hull: true, hulls: [] }, true)).toBeNull();
-    expect(toCrew({ id: "cy", rating: 4, any_hull: true, hulls: [] }, true)).toBeNull();
+    expect(toCrew({ id: "cy", rating: 5, any_hull: true, hulls: [] }, true)).toBeNull();
     expect(toCrew({ id: "cy", rating: 0, any_hull: true, hulls: [] }, true)).toBeNull();
+  });
+
+  // #69: 3 (spinnaker) and 4 (helm) are both real ratings now. A guard narrowed back to 1..3
+  // drops every helm out of the pool silently — the person simply stops being suggested.
+  it("a spinnaker hand and a helm are both Crew", () => {
+    expect(toCrew({ id: "di", rating: 3, any_hull: true, hulls: [] }, true)).toMatchObject({ rating: 3 });
+    expect(toCrew({ id: "ed", rating: 4, any_hull: true, hulls: [] }, true)).toMatchObject({ rating: 4 });
   });
 });

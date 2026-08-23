@@ -58,14 +58,15 @@ describe("boat (0006) — shape and grants", () => {
     ]);
   });
 
-  it("refuses a class not in the fleet list and a minimum outside 1..3 at the table", async () => {
+  // 1..4 since 0011 (#69): 4 is a helm, so 5 is the boundary that must still be refused.
+  it("refuses a class not in the fleet list and a minimum outside 1..4 at the table", async () => {
     await expect(
       db.exec(`insert into public.boat (owner_id, name, class, default_minimum)
                  values ('${SKIPPER}', 'Rogue', 'Laser', 2)`),
     ).rejects.toThrow(/foreign key/);
     await expect(
       db.exec(`insert into public.boat (owner_id, name, class, default_minimum)
-                 values ('${SKIPPER}', 'Rogue', 'Thistle', 4)`),
+                 values ('${SKIPPER}', 'Rogue', 'Thistle', 5)`),
     ).rejects.toThrow(/check constraint/);
   });
 

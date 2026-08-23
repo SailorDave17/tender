@@ -32,6 +32,7 @@ create table public.boat (
   owner_id        uuid not null references public.person (id) on delete cascade,
   name            text not null check (length(name) between 1 and 80),
   class           text not null references public.boat_class (name),
+  -- Widened to four levels by 0011 (spinnaker at 3, helm moved to 4); read 0011 for the current scale.
   default_minimum smallint not null check (default_minimum in (1, 2, 3)),
   created_at      timestamptz not null default now()
 );
@@ -68,6 +69,7 @@ create table public.post (
   id           uuid primary key default gen_random_uuid(),
   boat_id      uuid not null references public.boat (id) on delete cascade,
   race_date_id uuid not null references public.race_date (id) on delete cascade,
+  -- Widened to four levels by 0011, as boat.default_minimum above.
   minimum      smallint not null check (minimum in (1, 2, 3)),
   note         text not null default '' check (length(note) <= 280),
   created_at   timestamptz not null default now(),

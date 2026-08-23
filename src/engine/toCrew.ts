@@ -26,7 +26,7 @@ export interface PersonRow {
 }
 
 export function toCrew(row: PersonRow, available: boolean): Crew | null {
-  if (row.rating !== 1 && row.rating !== 2 && row.rating !== 3) return null;
+  if (row.rating !== 1 && row.rating !== 2 && row.rating !== 3 && row.rating !== 4) return null;
   return {
     id: row.id,
     rating: row.rating as Competence,
