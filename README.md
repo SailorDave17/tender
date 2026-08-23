@@ -112,7 +112,13 @@ instrument for that, and it probes with `limit=0` so it can never write.
    rather than to localhost.
 2. **Custom SMTP**: Supabase's built-in mailer sends 2 emails an hour to team members only
    (measured 2026-08-21). Point Auth → SMTP at Resend, sending from `tender.madcowsailing.com`;
-   add Resend's DNS records in the Cloudflare zone.
+   add Resend's DNS records in the Cloudflare zone. **And a Resend API key as `RESEND_API_KEY`**
+   in `.env.local` and in Vercel's environment (server-only, a fourth name beside step 1's
+   three): since #23 the app sends the rung notifications itself, by Resend's REST API from
+   `tender@tender.madcowsailing.com`, and without the key the notification step fails before
+   any send — the post still stands, the failure goes to the function log, nobody is emailed
+   (#65 is where a missing name becomes a startup error). Both kinds of mail share Resend Free's 100/day;
+   the app stops at 95 of its own sends and leaves the rest for magic links.
 3. **Vercel**: import the repo, set the production branch to `release`, add the environment
    variables, turn on Deployment Protection → Standard Protection (previews carry the production
    Supabase host), add the domain `tender.madcowsailing.com` (CNAME per Vercel's per-project

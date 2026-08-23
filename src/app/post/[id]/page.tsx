@@ -57,7 +57,7 @@ export default async function PostPage({
   const { error } = await searchParams;
 
   const now = new Date();
-  const input = { starts_at: date.starts_at, boatClass: boat.class, minimum: post.minimum };
+  const input = { starts_at: date.starts_at, boatClass: boat.class, minimum: post.minimum, current_rung: post.current_rung };
   const pool = poolForDate([...data.people.values()], data.availability, date.id);
   const view = viewPost(input, pool, now);
   const own = boat.owner_id === user.id;

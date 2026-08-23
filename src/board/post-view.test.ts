@@ -10,7 +10,7 @@ import { RUNG_COLOUR, candidateRows, poolForDate, viewPost } from "./post-view";
 
 const startsAt = new Date("2027-04-11T17:00:00Z");
 const hoursBefore = (h: number) => new Date(startsAt.getTime() - h * 60 * 60 * 1000);
-const post = { starts_at: startsAt.toISOString(), boatClass: "Thistle", minimum: 2 as const };
+const post = { starts_at: startsAt.toISOString(), boatClass: "Thistle", minimum: 2 as const, current_rung: 1 as const };
 
 const crew = (id: string, rating: 1 | 2 | 3, hulls: string[]): Crew => ({ id, rating, hulls, available: true });
 const ann = crew("ann", 3, ["Thistle"]); // rung 1
@@ -62,6 +62,33 @@ describe("viewPost — the open rung with a fixed clock (AC 4)", () => {
   it("every rung has a distinct colour and the number is what the page prints", () => {
     const names = new Set(Object.values(RUNG_COLOUR).map((c) => c.name));
     expect(names.size).toBe(3);
+  });
+});
+
+describe("viewPost / candidateRows — the stored rung wins over a narrower computed one (story #23 AC 4)", () => {
+  it("a post stored at rung 2 shows 2 when suggest() would say 1, and the rung-1 crew is still counted", () => {
+    // A rung-1 crew marked the day after rung 2 was notified: suggest() alone reads 1 here
+    // (ann is rung 1, far out), and the board must not un-tell rung 2.
+    const stored2 = { ...post, current_rung: 2 as const };
+    expect(viewPost(post, [ann, cy], hoursBefore(72)).rung).toBe(1); // the control: same pool, stored 1
+    const v = viewPost(stored2, [ann, cy], hoursBefore(72));
+    expect(v.rung).toBe(2);
+    expect(v.colour.name).toBe("amber");
+    expect(v.candidateCount).toBe(2); // ann (1) and cy (2) are both on or above the open rung
+    expect(v.clockRung).toBe(1); // and it was not the clock
+  });
+
+  it("a wider computed rung still wins over a narrower stored one — the clock half is not persisted yet", () => {
+    const stored2 = { ...post, current_rung: 2 as const };
+    expect(viewPost(stored2, [ann, cy, di], hoursBefore(20)).rung).toBe(3);
+    expect(viewPost(stored2, [], hoursBefore(72)).rung).toBe(3); // emptiness on read, as before
+  });
+
+  it("candidateRows marks rung-2 crew as notified on a post stored at 2 even when rung 1 is populated", () => {
+    const stored2 = { ...post, current_rung: 2 as const };
+    const byId = (rows: ReturnType<typeof candidateRows>) => Object.fromEntries(rows.map((r) => [r.id, r.notified]));
+    expect(byId(candidateRows(post, [ann, cy, di], hoursBefore(72)))).toEqual({ ann: true, cy: false, di: false });
+    expect(byId(candidateRows(stored2, [ann, cy, di], hoursBefore(72)))).toEqual({ ann: true, cy: true, di: false });
   });
 });
 
