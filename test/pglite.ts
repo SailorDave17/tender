@@ -3,7 +3,7 @@
  * way to run SQL as a Supabase role.
  *
  * Known blindness, stated rather than discovered (cairn: a-stubbed-default-cannot-report-the-
- * platform-moved-2026-08-13): this harness creates the `anon` and `authenticated` roles itself
+ * platform-moved-2026-08-13): this harness creates the `anon`, `authenticated` and `service_role` roles itself
  * and grants nothing Supabase would not, but it cannot see a grant the live project has and the
  * migrations lack. `npm run check:live` is the instrument for the live project.
  */
@@ -20,6 +20,7 @@ export async function freshDb(): Promise<PGlite> {
   await db.exec(`
     create role anon nologin;
     create role authenticated nologin;
+    create role service_role nologin bypassrls;
     create schema auth;
     create table auth.users (id uuid primary key);
     create function auth.uid() returns uuid language sql stable as
@@ -33,10 +34,13 @@ export async function freshDb(): Promise<PGlite> {
   return db;
 }
 
-/** Run `sql` as a Supabase role, optionally as a signed-in user. */
+/**
+ * Run `sql` as a Supabase role, optionally as a signed-in user. service_role (since 0010) is
+ * created `bypassrls`, as Supabase's is, so a case against it measures grants alone.
+ */
 export async function as(
   db: PGlite,
-  role: "anon" | "authenticated",
+  role: "anon" | "authenticated" | "service_role",
   sql: string,
   userId?: string,
 ) {

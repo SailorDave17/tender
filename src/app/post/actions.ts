@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { answerState } from "@/post/answer-rules";
 import { UUID, parsePostForm } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
+import { notifyRungLive } from "@/notify/live";
 
 /**
  * A skipper's two writes on a post: post a need, close it. Both through the cookie-bound
@@ -23,6 +24,10 @@ import { supabaseServer } from "@/lib/supabase/server";
  * the post is theirs and the answer is live, writes the match and closes the post in one
  * transaction, and raises otherwise. A second acceptance on the same post is 23505 (one match
  * per post, the first stands) and is reported as such.
+ *
+ * And the one side effect that is not a row the caller owns: once a post is inserted, the
+ * open rung's crew are proposed and emailed (story #23, src/notify/rung.ts). That runs after
+ * the insert succeeded and as the service role, and a failure in it never undoes the post.
  */
 
 function field(formData: FormData, name: string): string {
@@ -45,14 +50,20 @@ export async function createPost(formData: FormData): Promise<void> {
   if (!parsed.ok) redirect(back(parsed.reason));
 
   const client = await supabaseServer();
-  const { error } = await client.from("post").insert({
-    boat_id: parsed.boatId,
-    race_date_id: parsed.raceDateId,
-    minimum: parsed.minimum,
-    note: parsed.note,
-  });
+  const { data: created, error } = await client
+    .from("post")
+    .insert({
+      boat_id: parsed.boatId,
+      race_date_id: parsed.raceDateId,
+      minimum: parsed.minimum,
+      note: parsed.note,
+    })
+    .select("id")
+    .single();
   // 23505 is the unique (boat_id, race_date_id) pair: that boat already has a post for that day.
-  if (error) redirect(back(error.code === "23505" ? "duplicate" : "refused"));
+  if (error || !created) redirect(back(error?.code === "23505" ? "duplicate" : "refused"));
+
+  await notifyRungLive(created.id);
 
   revalidatePath("/board");
   redirect("/board");

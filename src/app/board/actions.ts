@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { availabilityRefusal } from "@/availability/rules";
 import { supabaseServer } from "@/lib/supabase/server";
+import { notifyRungLive } from "@/notify/live";
 
 /**
  * Mark or unmark the signed-in person for a race day (story #18 AC 4). One Server Action for
@@ -15,6 +16,11 @@ import { supabaseServer } from "@/lib/supabase/server";
  * started. The database repeats the first (0005's insert policy) and the ownership rule
  * (person_id = auth.uid()), so a crafted POST for someone else's id is refused by Postgres
  * whatever this code believes.
+ *
+ * Marking a day is the second of notifyRung()'s two call sites (story #23 AC 3): every open
+ * post on that date is re-evaluated, so a crew who sits on a post's open rung is proposed and
+ * emailed by the toggle, once. Unmarking notifies nobody — the ladder widens on emptiness
+ * only when something asks it to, and the clock half is #25's.
  */
 
 const BOARD = "/board";
@@ -50,6 +56,10 @@ export async function setAvailability(formData: FormData): Promise<void> {
       .insert({ person_id: user.id, race_date_id: raceDateId });
     // 23505 is the row already being there — the person tapped twice; that is the state they asked for.
     if (error && error.code !== "23505") redirect(`${BOARD}?error=refused`);
+    // The open posts on this day, as the caller may read them (published dates — which the
+    // availability insert already required). Each is re-evaluated with this person in the pool.
+    const { data: open } = await client.from("post").select("id").eq("race_date_id", raceDateId).is("closed_at", null);
+    for (const p of open ?? []) await notifyRungLive(p.id);
   } else {
     const { error } = await client
       .from("availability")

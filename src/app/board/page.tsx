@@ -129,7 +129,7 @@ export default async function BoardPage({
                           </li>
                         );
                       }
-                      const v = viewPost({ starts_at: d.starts_at, boatClass: boat.class, minimum: p.minimum }, pool, now);
+                      const v = viewPost({ starts_at: d.starts_at, boatClass: boat.class, minimum: p.minimum, current_rung: p.current_rung }, pool, now);
                       const answered = data.answerCounts.get(p.id) ?? 0;
                       return (
                         <li key={p.id} data-post={p.id} data-rung={v.rung} data-candidates={v.candidateCount} data-answered={answered}>

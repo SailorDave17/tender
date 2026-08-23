@@ -6,13 +6,13 @@ import { toCrew, type PersonRow } from "@/engine/toCrew";
  * over an injected `now`, so the clock cases in story #19 AC 4 are unit-tested with a fixed
  * clock and the pages only call this.
  *
- * THE RUNG IS COMPUTED ON EVERY READ, NOT STORED. This is ADR 004's lazy-relaxation fallback
- * shipped first: suggest() steps the rung down on emptiness or on the clock whichever comes
- * first, and doing that on read needs no scheduler at all. The persisted, monotone rung —
- * which cannot step back up when a rung-1 crew marks themselves available at the last minute,
- * and which the notification stories need so a rung is notified exactly once — arrives with
- * the notification ledger (#23/#25), where it is first needed. Until then a board read is the
- * clock, and a rung read here can move in either direction between two reads.
+ * THE RUNG SHOWN IS max(STORED, COMPUTED). Until #23 the rung was computed on every read —
+ * ADR 004's lazy-relaxation fallback shipped first — and could move in either direction
+ * between two reads. Since 0010 a post carries current_rung, written by notifyRung() when a
+ * post opens or a crew marks the day, and refused any decrease by a trigger: a rung that was
+ * emailed stays open. A read still runs suggest(), because the clock half (48 h / 24 h) is not
+ * persisted until #25/#26 schedule it — so the board can show a rung WIDER than the stored one
+ * when the clock has passed, and never a narrower one (story #23 AC 4).
  */
 
 /** The three rungs as the board colours them. The number is always in text beside the colour. */
@@ -28,6 +28,8 @@ export type PostInput = {
   /** The boat's class. */
   boatClass: string;
   minimum: 1 | 2 | 3;
+  /** post.current_rung (0010): the widest rung ever opened and notified. */
+  current_rung: Rung;
 };
 
 export type PostView = {
@@ -59,13 +61,19 @@ export function poolForDate(
   return pool;
 }
 
+/** The rung a post is open to now: the stored rung, or wider if suggest() widened it on this read. */
+export function openRungOf(post: PostInput, pool: readonly Crew[], now: Date): Rung {
+  const computed = suggest(toPost(post), pool, now).rung;
+  return post.current_rung > computed ? post.current_rung : computed;
+}
+
 export function viewPost(post: PostInput, pool: readonly Crew[], now: Date): PostView {
   const p = toPost(post);
-  const s = suggest(p, pool, now);
+  const rung = openRungOf(post, pool, now);
   return {
-    rung: s.rung,
-    colour: RUNG_COLOUR[s.rung],
-    candidateCount: s.candidates.length,
+    rung,
+    colour: RUNG_COLOUR[rung],
+    candidateCount: pool.filter((c) => c.available && rungOf(p, c) <= rung).length,
     clockRung: rungOpenedByClock(p, now),
   };
 }
@@ -98,7 +106,7 @@ export function candidateRows(
   answered: ReadonlySet<string> = NOBODY,
 ): CandidateRow[] {
   const p = toPost(post);
-  const open = suggest(p, pool, now).rung;
+  const open = openRungOf(post, pool, now);
   return pool
     .filter((c) => c.available || answered.has(c.id))
     .map((c) => ({ id: c.id, rung: rungOf(p, c), answered: answered.has(c.id) }))
