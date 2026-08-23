@@ -15,5 +15,18 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      # `npm test` runs test/check-live-exit.test.ts, which is what stops issue #49's flake
+      # being inherited silently by whoever wires `check:live` in here later.
+      #
+      # The flake: an immediate `process.exit()` after a `fetch` tears the process down while
+      # undici is still settling the socket, and on Windows/Node 24 libuv aborts closing a handle
+      # that is already closing — so a correct verdict is replaced by the crash code. The runner
+      # now sets `process.exitCode`; the guard holds that shape across scripts/.
+      #
+      # Read that guard before adding a `check:live` step, because a step here could NOT have
+      # caught this. *Measured 2026-08-23*: the abort needs a socket to a REMOTE host and fires
+      # only when exactly ONE request preceded the exit (1 -> 30/30, 2 -> 0/30). Against
+      # localhost it did not reproduce in any arm with the defect present. A runner has no live
+      # credentials, so a green step here would have been evidence about nothing.
       - run: npm test -- --reporter=verbose
       - run: npm run build
