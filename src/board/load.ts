@@ -18,6 +18,8 @@ export type PostRow = {
   minimum: 1 | 2 | 3;
   note: string;
   closed_at: string | null;
+  /** 0010: the widest rung opened and notified; the view shows max(this, computed). */
+  current_rung: 1 | 2 | 3;
 };
 export type PersonView = PersonRow & { display_name: string };
 export type AvailabilityRow = { person_id: string; race_date_id: string };
@@ -43,7 +45,7 @@ export async function loadBoardData(client: Client): Promise<BoardData> {
   const [dates, boats, posts, people, availability, answers, matches] = await Promise.all([
     client.from("race_date").select("id, starts_at, title").eq("published", true).order("starts_at"),
     client.from("boat").select("id, owner_id, name, class, default_minimum"),
-    client.from("post").select("id, boat_id, race_date_id, minimum, note, closed_at").order("created_at"),
+    client.from("post").select("id, boat_id, race_date_id, minimum, note, closed_at, current_rung").order("created_at"),
     client.from("person").select("id, display_name, rating, any_hull, hulls"),
     client.from("availability").select("person_id, race_date_id"),
     client.from("answer").select("post_id, person_id").is("withdrawn_at", null),

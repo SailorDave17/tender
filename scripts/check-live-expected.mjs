@@ -14,10 +14,12 @@ export const EXPECTED_TABLES = [
   "boat_class",
   "club",
   "match",
+  "notification_log",
   "person",
   "person_contact",
   "post",
   "race_date",
+  "suggestion",
 ];
 
 /** A placeholder that is a valid uuid and matches nobody's row. */
