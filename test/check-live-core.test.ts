@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   ABSENT,
+  CONTROL_FUNCTION,
   CONTROL_TABLE,
   PRESENT,
   UNPROVEN,
   classify,
+  classifyFunction,
+  functionProbeUrl,
+  makeFunctionProbe,
   makeProbe,
   probeUrl,
   runCheck,
@@ -277,5 +281,227 @@ describe("runCheck — reporting", () => {
     expect(code).toBe(2);
     expect(asked).toEqual([]);
     expect(lines.join("\n")).toMatch(/vacuous/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The function family (story #16 AC 3). A function is probed by calling it over GET, which
+// PostgREST serves in a read-only transaction; the answers differ from a table's, so the
+// classifier is its own and has its own fixtures — again one per party that can answer.
+// ---------------------------------------------------------------------------------------------
+
+/** PostgREST's schema cache: no function with that name and that set of argument names. */
+const PGRST_NO_FUNCTION = JSON.stringify({
+  code: "PGRST202",
+  details: "Searched for the function public.rotate_invite_code without parameters, but no matches were found in the schema cache.",
+  hint: null,
+  message: "Could not find the function public.rotate_invite_code without parameters in the schema cache",
+});
+/** PostgREST's schema cache: more than one overload matched. Never reached Postgres either. */
+const PGRST_AMBIGUOUS = JSON.stringify({
+  code: "PGRST203",
+  details: null,
+  hint: "Try renaming the parameters or the function itself in the database so function overloading can be resolved",
+  message: "Could not choose the best candidate function between: public.f(a => text), public.f(a => uuid)",
+});
+/** Postgres: the function ran and tried to write inside the read-only transaction. */
+const PG_READ_ONLY = JSON.stringify({
+  code: "25006",
+  details: null,
+  hint: null,
+  message: "cannot execute UPDATE in a read-only transaction",
+});
+/** Postgres: execute is not granted to this role — or the body raised 42501 itself. */
+const PG_FN_REFUSED = JSON.stringify({
+  code: "42501",
+  details: null,
+  hint: null,
+  message: "permission denied for function rotate_invite_code",
+});
+/** Postgres: the body ran and raised its own error. */
+const PG_RAISED = JSON.stringify({ code: "P0001", details: null, hint: null, message: "no household matches that code" });
+
+describe("classifyFunction — who answered", () => {
+  it("reads PGRST202 as ABSENT", () => {
+    const v = classifyFunction({ status: 404, body: PGRST_NO_FUNCTION });
+    expect(v.verdict).toBe(ABSENT);
+    expect(v.code).toBe("PGRST202");
+  });
+
+  it("reads PGRST203 as ABSENT — an ambiguous overload is unreachable by the client", () => {
+    expect(classifyFunction({ status: 300, body: PGRST_AMBIGUOUS }).verdict).toBe(ABSENT);
+  });
+
+  it("classifies 25006 as PRESENT: the function ran and the read-only transaction stopped its write", () => {
+    const v = classifyFunction({ status: 405, body: PG_READ_ONLY });
+    expect(v.verdict).toBe(PRESENT);
+    expect(v.reason).toBe("write-refused");
+    expect(v.code).toBe("25006");
+  });
+
+  it("classifies 42501 as PRESENT — Postgres answered, so the function exists", () => {
+    const v = classifyFunction({ status: 401, body: PG_FN_REFUSED });
+    expect(v.verdict).toBe(PRESENT);
+    expect(v.reason).toBe("refused");
+  });
+
+  it("classifies any other SQLSTATE as PRESENT — the body ran far enough to raise it", () => {
+    const v = classifyFunction({ status: 400, body: PG_RAISED });
+    expect(v.verdict).toBe(PRESENT);
+    expect(v.reason).toBe("raised");
+    expect(v.code).toBe("P0001");
+  });
+
+  it("classifies a 2xx as PRESENT — a function Postgres let run read-only cannot have written", () => {
+    const v = classifyFunction({ status: 200, body: "[]" });
+    expect(v.verdict).toBe(PRESENT);
+    expect(v.reason).toBe("ran");
+  });
+
+  it("reads a rejected key as UNPROVEN, never as present", () => {
+    const v = classifyFunction({ status: 401, body: GATEWAY_BAD_KEY });
+    expect(v.verdict).toBe(UNPROVEN);
+    expect(v.reason).toBe("key-rejected");
+  });
+
+  it("does not read a PGRST code it does not know as a SQLSTATE", () => {
+    // PGRST100 is a parse error from PostgREST — not Postgres answering. Nothing is established.
+    const v = classifyFunction({ status: 400, body: JSON.stringify({ code: "PGRST100", message: "parse error" }) });
+    expect(v.verdict).toBe(UNPROVEN);
+    expect(v.reason).toBe("unrecognised");
+  });
+
+  it("reads a transport failure as UNPROVEN", () => {
+    expect(classifyFunction({ status: 0, body: "transport failure: fetch failed" }).verdict).toBe(UNPROVEN);
+  });
+});
+
+describe("functionProbeUrl", () => {
+  it("is a bare /rpc/<fn> for a parameter-free function", () => {
+    expect(functionProbeUrl("https://x.supabase.co", "rotate_invite_code", {})).toBe(
+      "https://x.supabase.co/rest/v1/rpc/rotate_invite_code",
+    );
+  });
+  it("carries the argument names the client sends, as a query string", () => {
+    expect(functionProbeUrl("https://x.supabase.co/", "accept_answer", { post_id: "a", person_id: "b" })).toBe(
+      "https://x.supabase.co/rest/v1/rpc/accept_answer?post_id=a&person_id=b",
+    );
+  });
+});
+
+describe("makeFunctionProbe", () => {
+  it("sends a GET — never a POST — carrying the key, to the rpc path", async () => {
+    let seen: [string, RequestInit] | null = null;
+    const probe = makeFunctionProbe({
+      fetchImpl: async (u: string, init: RequestInit) => {
+        seen = [u, init];
+        return { status: 405, text: async () => PG_READ_ONLY };
+      },
+      baseUrl: "https://x.supabase.co",
+      key: "anon-key",
+    });
+    const answer = await probe("rotate_invite_code", {});
+    expect(answer).toEqual({ status: 405, body: PG_READ_ONLY });
+    const [u, init] = seen!;
+    expect(u).toBe("https://x.supabase.co/rest/v1/rpc/rotate_invite_code");
+    expect(init.method).toBe("GET"); // the whole safety argument: a POST would run the write
+    expect(init.headers).toEqual({ apikey: "anon-key", Authorization: "Bearer anon-key" });
+  });
+
+  it("turns a request that never arrives into UNPROVEN, not a crash", async () => {
+    const probe = makeFunctionProbe({
+      fetchImpl: async () => {
+        throw new TypeError("fetch failed");
+      },
+      baseUrl: "https://x.supabase.co",
+      key: "anon-key",
+    });
+    expect(classifyFunction(await probe("rotate_invite_code", {})).verdict).toBe(UNPROVEN);
+  });
+});
+
+/** A function probe stubbed from a name -> answer table. Records what it was asked, in order. */
+function stubFunctionProbe(answers: Record<string, { status: number; body: string }>) {
+  const asked: string[] = [];
+  const probeFunction = async (name: string, args: Record<string, string>) => {
+    asked.push(`${name}(${Object.keys(args).join(",")})`);
+    const answer = answers[name];
+    if (!answer) throw new Error(`test stub has no answer for ${name}`);
+    return answer;
+  };
+  return { probeFunction, asked };
+}
+
+const TABLES_OK = { [CONTROL_TABLE]: { status: 404, body: PGRST_MISSING }, club: { status: 401, body: PG_REFUSED } };
+const ROTATE = { name: "rotate_invite_code", args: {} };
+const ACCEPT = { name: "accept_answer", args: { post_id: "0", person_id: "0" } };
+
+describe("runCheck — the function family", () => {
+  it("probes the function control first, then each function with its argument names, and passes", async () => {
+    const { probe } = stubProbe(TABLES_OK);
+    const { probeFunction, asked } = stubFunctionProbe({
+      [CONTROL_FUNCTION]: { status: 404, body: PGRST_NO_FUNCTION },
+      rotate_invite_code: { status: 405, body: PG_READ_ONLY },
+      accept_answer: { status: 401, body: PG_FN_REFUSED },
+    });
+    const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction, functions: [ROTATE, ACCEPT] });
+    expect(asked).toEqual([`${CONTROL_FUNCTION}()`, "rotate_invite_code()", "accept_answer(post_id,person_id)"]);
+    expect(code).toBe(0);
+    expect(lines.join("\n")).toMatch(/ok {4}__tender_absent_fn\(\): ABSENT/);
+    expect(lines.join("\n")).toMatch(/ok {4}rotate_invite_code\(\): PRESENT \(ran and was stopped/);
+    expect(lines.join("\n")).toMatch(/2\/2 functions present/);
+  });
+
+  it("fails the run when a function is absent, and says which", async () => {
+    const { probe } = stubProbe(TABLES_OK);
+    const { probeFunction } = stubFunctionProbe({
+      [CONTROL_FUNCTION]: { status: 404, body: PGRST_NO_FUNCTION },
+      rotate_invite_code: { status: 404, body: PGRST_NO_FUNCTION },
+      accept_answer: { status: 401, body: PG_FN_REFUSED },
+    });
+    const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction, functions: [ROTATE, ACCEPT] });
+    expect(code).toBe(1);
+    expect(lines.join("\n")).toMatch(/FAIL {2}rotate_invite_code\(\): ABSENT/);
+    expect(lines.join("\n")).toMatch(/1\/2 functions present/);
+  });
+
+  it("refuses the function half and probes no function when the function control does not read ABSENT", async () => {
+    // The table control is fine and the tables pass; the function family's own instrument is
+    // broken — an endpoint answering every rpc affirmatively. Nothing about functions is reported.
+    const { probe } = stubProbe(TABLES_OK);
+    const { probeFunction, asked } = stubFunctionProbe({
+      [CONTROL_FUNCTION]: { status: 200, body: "[]" },
+      rotate_invite_code: { status: 405, body: PG_READ_ONLY },
+    });
+    const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction, functions: [ROTATE] });
+    expect(code).toBe(2);
+    expect(asked).toEqual([`${CONTROL_FUNCTION}()`]);
+    expect(lines.join("\n")).toMatch(/negative control __tender_absent_fn\(\) read PRESENT/);
+    expect(lines.some((l) => l.includes("rotate_invite_code"))).toBe(false);
+  });
+
+  it("does not probe functions at all when none were asked for, and the table run is unchanged", async () => {
+    const { probe } = stubProbe(TABLES_OK);
+    const { probeFunction, asked } = stubFunctionProbe({});
+    const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction });
+    expect(code).toBe(0);
+    expect(asked).toEqual([]);
+    expect(lines.some((l) => l.includes("functions"))).toBe(false);
+  });
+
+  it("refuses an empty function list as vacuous, like an empty table list", async () => {
+    const { probe, asked } = stubProbe(TABLES_OK);
+    const { probeFunction } = stubFunctionProbe({});
+    const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction, functions: [] });
+    expect(code).toBe(2);
+    expect(asked).toEqual([]);
+    expect(lines.join("\n")).toMatch(/vacuous/);
+  });
+
+  it("refuses when functions are expected but no probe was supplied", async () => {
+    const { probe } = stubProbe(TABLES_OK);
+    const { code, lines } = await runCheck({ probe, tables: ["club"], functions: [ROTATE] });
+    expect(code).toBe(2);
+    expect(lines.join("\n")).toMatch(/no function probe/);
   });
 });
