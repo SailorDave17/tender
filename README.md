@@ -66,10 +66,33 @@ instrument for that, and it probes with `limit=0` so it can never write.
 
 ## Owner runbook — the steps only the owner can do
 
-1. **Create the Supabase project** (Free; region near Ohio). Paste every `supabase/migrations/*.sql` in order
-   in the SQL editor. Put the URL, the anon key **and the service-role key** (`SUPABASE_SERVICE_ROLE_KEY`,
+1. **Create the Supabase project** (Free; region near Ohio). Paste every `supabase/migrations/*.sql`
+   in the SQL editor — numeric order, except **0003 after 0004** (its functions call `is_admin()`,
+   which 0004 creates). Then paste the **club row**, which no migration seeds and without which
+   `/api/join` answers a bare 500 and nobody can sign in (measured 2026-08-23 on the live project,
+   whose `club` table was empty):
+
+   ```sql
+   insert into public.club (name, brand_disc, brand_mark, invite_code, admin_email)
+     values ('Hoover Sailing Club', '#395FAC', '#FCCF0B', 'CHANGEME', 'you@example.org');
+   ```
+
+   `admin_email` is yours: the person who signs in with that address becomes the admin
+   (0009's trigger sets `person.is_admin` on their first sign-in, and on an existing person the
+   moment the column is set), so `/admin` loads with no SQL run against `person`. The colours are
+   the Hoover pair (`brand/`); the code is a placeholder you rotate from `/admin` once signed in.
+   On a project whose club row already exists, set the address on it instead:
+
+   ```sql
+   update public.club set admin_email = 'you@example.org' returning admin_email;
+   select display_name, is_admin from public.person where is_admin;  -- your row, once signed in
+   ```
+
+   Put the URL, the anon key **and the service-role key** (`SUPABASE_SERVICE_ROLE_KEY`,
    server-only: the invite gate reads `club.invite_code` and creates auth users with it) in
-   `.env.local`, and in Vercel's environment.
+   `.env.local`, and in Vercel's environment — **all three**: on 2026-08-23 Vercel carried only
+   the two public names, and `/api/join` threw a bare 500 ("Something went wrong.") before it
+   could read the club row.
    Enable the **Cron** integration and confirm a job can be scheduled on this plan — ADR 004's
    kill condition; its fallback is named there.
 
