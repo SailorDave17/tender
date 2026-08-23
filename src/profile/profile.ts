@@ -11,10 +11,16 @@
 
 import type { Competence } from "@/engine/ladder";
 
+/**
+ * The competence scale, in ordinal order — the engine compares these with `<`, so the order of
+ * this array IS the scale. Every radio group (/profile, /post/new, /boats) is built from it, so
+ * a level added here appears in all three, in this position, with no page change.
+ */
 export const RATINGS: ReadonlyArray<{ value: Competence; label: string }> = [
   { value: 1, label: "Never raced" },
   { value: 2, label: "Can hike and trim" },
-  { value: 3, label: "Can helm" },
+  { value: 3, label: "Can fly a spinnaker" },
+  { value: 4, label: "Can helm" },
 ];
 
 export function ratingLabel(rating: number | null | undefined): string {
@@ -61,7 +67,7 @@ export function normalizePhone(raw: string): string | null | "invalid" {
 
 export function parseProfileForm(input: ProfileInput, knownClasses: readonly string[]): ParsedProfile {
   const rating = Number(input.rating);
-  if (rating !== 1 && rating !== 2 && rating !== 3) return { ok: false, reason: "blank-rating" };
+  if (rating !== 1 && rating !== 2 && rating !== 3 && rating !== 4) return { ok: false, reason: "blank-rating" };
 
   const anyHull = input.hulls !== "some";
   const hulls = anyHull ? [] : [...new Set(input.classes.map((c) => c.trim()).filter(Boolean))];

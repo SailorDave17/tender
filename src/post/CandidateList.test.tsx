@@ -11,7 +11,8 @@ import { CandidateList, RungBadge, type CandidatePerson } from "./CandidateList"
 
 type Loaded = CandidatePerson & { email: string; phone: string };
 const people = new Map<string, Loaded>([
-  ["ann", { id: "ann", display_name: "Ann", rating: 3, any_hull: false, hulls: ["Thistle"], email: "ann@hsc-crew.org", phone: "614-555-0100" }],
+  // rating 4 is a helm since 0011 (#69); this was 3 when 3 was the top of the scale.
+  ["ann", { id: "ann", display_name: "Ann", rating: 4, any_hull: false, hulls: ["Thistle"], email: "ann@hsc-crew.org", phone: "614-555-0100" }],
   ["cy", { id: "cy", display_name: "Cy", rating: 2, any_hull: true, hulls: [], email: "cy@hsc-crew.org", phone: "614-555-0199" }],
 ]);
 const rows = [

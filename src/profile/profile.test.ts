@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { explainProfileRefusal, normalizePhone, parseProfileForm, ratingLabel } from "./profile";
+import { RATINGS, explainProfileRefusal, normalizePhone, parseProfileForm, ratingLabel } from "./profile";
 
 const FLEET = ["Flying Scot", "Highlander", "Interlake", "MC Scow", "Thistle", "Windmill"];
 const base = { rating: "2", hulls: "any", classes: [], phone: "" };
@@ -28,10 +28,20 @@ describe("parseProfileForm — what a valid profile is (AC 2)", () => {
     expect(r).toEqual({ ok: true, rating: 2, anyHull: true, hulls: [], phone: null });
   });
 
-  it("refuses no rating, or one outside 1..3", () => {
+  it("refuses no rating, or one outside 1..4", () => {
     expect(parseProfileForm({ ...base, rating: "" }, FLEET)).toEqual({ ok: false, reason: "blank-rating" });
-    expect(parseProfileForm({ ...base, rating: "4" }, FLEET)).toEqual({ ok: false, reason: "blank-rating" });
+    expect(parseProfileForm({ ...base, rating: "0" }, FLEET)).toEqual({ ok: false, reason: "blank-rating" });
+    expect(parseProfileForm({ ...base, rating: "5" }, FLEET)).toEqual({ ok: false, reason: "blank-rating" });
     expect(parseProfileForm({ ...base, rating: "helm" }, FLEET)).toEqual({ ok: false, reason: "blank-rating" });
+  });
+
+  // #69: the scale widened rather than shifted, so BOTH new-scale ends must be accepted here —
+  // a check narrowed back to 1..3 refuses 4, and one shifted to 2..5 refuses 1.
+  it("accepts every level of the four-level scale, spinnaker and helm included", () => {
+    for (const rating of ["1", "2", "3", "4"]) {
+      const r = parseProfileForm({ ...base, rating }, FLEET);
+      expect(r).toMatchObject({ ok: true, rating: Number(rating) });
+    }
   });
 
   it("refuses 'some' with nothing ticked — the state 0005's check constraint refuses too", () => {
@@ -75,11 +85,24 @@ describe("normalizePhone", () => {
 });
 
 describe("labels", () => {
-  it("ratingLabel names the three competences and 'Not set' for none", () => {
+  it("ratingLabel names the four competences and 'Not set' for none", () => {
     expect(ratingLabel(1)).toBe("Never raced");
     expect(ratingLabel(2)).toBe("Can hike and trim");
-    expect(ratingLabel(3)).toBe("Can helm");
+    expect(ratingLabel(3)).toBe("Can fly a spinnaker");
+    expect(ratingLabel(4)).toBe("Can helm");
     expect(ratingLabel(null)).toBe("Not set");
+  });
+
+  // RATINGS' ORDER is the scale — the engine compares these with `<` and all three radio groups
+  // render in array order, so a reordering is a silent product change that no type can catch.
+  it("RATINGS is the four levels in ordinal order, values 1..4 with no gap", () => {
+    expect(RATINGS.map((r) => r.value)).toEqual([1, 2, 3, 4]);
+    expect(RATINGS.map((r) => r.label)).toEqual([
+      "Never raced",
+      "Can hike and trim",
+      "Can fly a spinnaker",
+      "Can helm",
+    ]);
   });
   it("every refusal has its own message", () => {
     const reasons = ["blank-rating", "no-hull-chosen", "unknown-class", "phone-invalid", "refused"];

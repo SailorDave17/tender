@@ -13,7 +13,38 @@ import { join } from "node:path";
 
 const MIGRATIONS = join(process.cwd(), "supabase", "migrations");
 
-export async function freshDb(): Promise<PGlite> {
+async function migrationFiles(): Promise<string[]> {
+  return (await readdir(MIGRATIONS)).filter((f) => f.endsWith(".sql")).sort();
+}
+
+/** The one file whose name starts with `prefix` — throws when that is not exactly one. */
+async function fileFor(prefix: string): Promise<string> {
+  const hits = (await migrationFiles()).filter((f) => f.startsWith(prefix));
+  if (hits.length !== 1) {
+    throw new Error(`migration prefix "${prefix}" matches ${hits.length} files: [${hits.join(", ")}]`);
+  }
+  return hits[0];
+}
+
+/** Apply one migration by number prefix, to a db built with `through:`. */
+export async function applyMigration(db: PGlite, prefix: string): Promise<void> {
+  await db.exec(await readFile(join(MIGRATIONS, await fileFor(prefix)), "utf8"));
+}
+
+export type FreshDbOptions = {
+  /**
+   * Stop after the migration whose name starts with this prefix, so a fixture can exist BEFORE a
+   * later migration runs — the only way to test a backfill or a renumber, since the default form
+   * applies every file before any test can insert a row (the trap #64's AC 2 walked into).
+   *
+   * An unmatched prefix THROWS rather than falling back to "apply everything": the fallback is
+   * indistinguishable from the option working, and the test would then assert a post-migration
+   * state while believing it was pre-migration.
+   */
+  through?: string;
+};
+
+export async function freshDb(options: FreshDbOptions = {}): Promise<PGlite> {
   const db = new PGlite();
   // The roles and the auth shim Supabase provides and pglite does not. auth.users is the one
   // column person.id references; the real table has many more and none is read here.
@@ -27,9 +58,10 @@ export async function freshDb(): Promise<PGlite> {
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated;
   `);
-  const files = (await readdir(MIGRATIONS)).filter((f) => f.endsWith(".sql")).sort();
-  for (const f of files) {
+  const stopAfter = options.through === undefined ? null : await fileFor(options.through);
+  for (const f of await migrationFiles()) {
     await db.exec(await readFile(join(MIGRATIONS, f), "utf8"));
+    if (f === stopAfter) break;
   }
   return db;
 }

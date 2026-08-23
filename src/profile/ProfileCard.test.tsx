@@ -10,7 +10,8 @@ import { ProfileCard, hullsText } from "./ProfileCard";
  * they should.
  */
 
-const ann = { id: "ann", display_name: "Ann", rating: 3, any_hull: false, hulls: ["Thistle"] };
+// rating 4 is a helm since 0011 (#69) — this fixture was 3 when 3 was the top of the scale.
+const ann = { id: "ann", display_name: "Ann", rating: 4, any_hull: false, hulls: ["Thistle"] };
 const PHONE = "614-555-0100";
 
 describe("ProfileCard — phone is rendered for the owner only (AC 2)", () => {
@@ -23,6 +24,17 @@ describe("ProfileCard — phone is rendered for the owner only (AC 2)", () => {
     expect(html).toContain("Ann");
     expect(html).toContain("Can helm");
     expect(html).toContain("Thistle");
+  });
+
+  // #69: the fourth level has to reach a skipper's eye, not only the database — a spinnaker hand
+  // whose card reads "Can helm" or "Not set" is the whole story failing silently.
+  it("names a spinnaker hand as one, distinctly from a helm", () => {
+    const html = renderToStaticMarkup(
+      <ProfileCard person={{ ...ann, rating: 3 }} phone={PHONE} viewerId="bo" />,
+    );
+    expect(html).toContain("Can fly a spinnaker");
+    expect(html).not.toContain("Can helm");
+    expect(html).not.toContain("Not set");
   });
 
   it("the owner's view shows the phone (positive control)", () => {

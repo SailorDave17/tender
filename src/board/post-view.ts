@@ -27,7 +27,7 @@ export type PostInput = {
   starts_at: string | Date;
   /** The boat's class. */
   boatClass: string;
-  minimum: 1 | 2 | 3;
+  minimum: 1 | 2 | 3 | 4;
   /** post.current_rung (0010): the widest rung ever opened and notified. */
   current_rung: Rung;
 };

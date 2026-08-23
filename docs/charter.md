@@ -41,7 +41,11 @@ season. Known blind spot: matches it caused that closed by text.
 - **Skipper** — owns a boat, posts a need against a race date with a crew minimum, sees who
   answered, accepts one.
 - **Crew** — graduate, member or not. Keeps a self-rating (competence) and hull willingness, marks
-  availability per date, answers posts, confirms the morning of.
+  availability per date, answers posts, confirms the morning of. The competence scale has **four**
+  levels, ordered — never raced, can hike and trim, can fly a spinnaker, can helm (owner decision
+  2026-08-23, story #69; a spinnaker hand sits between a trimmer and a helm rather than with
+  either). It is what a skipper sets a post's minimum on, and what the engine compares. It is not
+  the ladder's three rungs below, which are a different scale.
 - **Admin** — the owner, a minimal role: adds race dates (or imports them), invites people, sets
   the club theme, rotates the invite code, reads the failure metric.
 - **Identity**: email magic link. Email is required (it is the login); phone is optional and is
