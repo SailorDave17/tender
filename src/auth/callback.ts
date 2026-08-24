@@ -20,6 +20,13 @@ export function decideCallback(q: CallbackQuery): CallbackDecision {
   if (q.code) return { kind: "exchange", code: q.code };
   if (q.error || q.error_code || q.error_description) {
     const code = (q.error_code ?? q.error ?? "").toLowerCase();
+    // #74: a link attempt whose Google account is already on an auth user fails at GoTrue's own
+    // provider callback, so it arrives here as a query parameter rather than from linkIdentity.
+    // Most specific first: without this it would fall through to a generic provider error and
+    // the member would be told to try again, which cannot work.
+    if (code === "identity_already_exists") {
+      return { kind: "back", reason: "already-linked" };
+    }
     // GoTrue reports an expired or already-used magic link as error=access_denied with
     // error_code=otp_expired — the precise key for that already exists, so it goes first.
     if (code === "otp_expired" || /expired|already been used/i.test(q.error_description ?? "")) {
@@ -38,12 +45,20 @@ export function explainReason(reason: string): string {
   switch (reason) {
     case "link-invalid":
       return "That link has expired or was already used. Ask for a new one.";
+    // #74: this sentence used to say only "sign up with this season's invite code first", which
+    // was wrong advice for the commonest way to reach it — a member whose Google address differs
+    // from the one they joined with. Supabase links a Google identity to an existing user only
+    // when the verified email matches, so they arrive here as a stranger, and following that
+    // advice gave the same human a SECOND person row. Sign in first, then link, is the route
+    // that keeps one person one account.
     case "not-invited":
-      return "That account has no invitation. Sign up with this season's invite code first.";
+      return "That account is not linked to a member here. If you are already a member, sign in with the email you joined with, then link Google from your profile. If you are new, sign up with this season's invite code.";
     case "missing-code":
       return "That link was incomplete. Ask for a new one.";
     case "cancelled":
       return "Google sign-in was cancelled. Nothing has changed — try again when you are ready.";
+    case "already-linked":
+      return "That Google account is already attached to an account here. Sign in with the email you joined with, or use a different Google account.";
     case "provider-error":
       return "Google or the sign-in service returned an error. Try again in a minute, or use an email link.";
     default:

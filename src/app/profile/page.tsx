@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { explainLinkReason, hasGoogleIdentity } from "@/auth/link";
 import { ProfileCard } from "@/profile/ProfileCard";
 import { RATINGS, explainProfileRefusal } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function ProfilePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; linked?: string }>;
 }) {
   const client = await supabaseServer();
   const {
@@ -33,7 +34,12 @@ export default async function ProfilePage({
     client.from("boat_class").select("name").order("name"),
   ]);
   if (!me) redirect("/join?error=not-invited");
-  const { error, saved } = await searchParams;
+  const { error, saved, linked } = await searchParams;
+  // `user.identities` comes back on the same getUser() call the page already made, so knowing
+  // whether Google is linked costs nothing. It is optional in the client's own User type, so an
+  // absent list reads as "not linked" — the safe direction: the member still sees the control,
+  // and GoTrue refuses a second link with `identity_already_exists`, which the page explains.
+  const googleLinked = hasGoogleIdentity(user.identities);
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
@@ -87,8 +93,34 @@ export default async function ProfilePage({
 
         <button type="submit">Save profile</button>
       </form>
-      {error && <p role="alert">{explainProfileRefusal(error)}</p>}
+
+      {/*
+        #74: a member whose Google address differs from the one they joined with is a stranger to
+        Supabase, which links a Google identity to an existing user only on a matching verified
+        email. Linking from here attaches it to the account they already have, so one human keeps
+        one auth.uid() — which is what every RLS policy in the schema is keyed on.
+      */}
+      <section style={{ marginTop: "2rem" }}>
+        <h2 style={{ fontSize: "1rem" }}>Google sign-in</h2>
+        {googleLinked ? (
+          <p data-google-linked>
+            Your Google account is linked. <em>Continue with Google</em> signs you in as you, even
+            if its address is not the one you joined with.
+          </p>
+        ) : (
+          <p>
+            <a href="/auth/link/google" data-google-link>
+              Link a Google account
+            </a>{" "}
+            — then you can sign in with Google, at any address. Without this, signing in with a
+            Google account at a different address is not recognised as you.
+          </p>
+        )}
+      </section>
+
+      {error && <p role="alert">{explainLinkReason(error) ?? explainProfileRefusal(error)}</p>}
       {saved && !error && <p role="status">Saved.</p>}
+      {linked && !error && <p role="status">Google account linked.</p>}
     </main>
   );
 }
