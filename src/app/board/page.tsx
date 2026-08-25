@@ -3,6 +3,8 @@ import { explainAvailabilityRefusal, isPast, summarise } from "@/availability/ru
 import { loadBoardData } from "@/board/load";
 import { poolForDate, viewPost } from "@/board/post-view";
 import { formatStartsAt } from "@/dates/race-date";
+import { InstallBanner } from "@/install/InstallBanner";
+import { RegisterServiceWorker } from "@/install/RegisterServiceWorker";
 import { RungBadge } from "@/post/CandidateList";
 import { explainPostRefusal } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -58,7 +60,9 @@ export default async function BoardPage({
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+      <RegisterServiceWorker />
       <h1>Tender</h1>
+      <InstallBanner />
       <p>
         Signed in as {me?.display_name ?? user?.email ?? "someone"}. <Link href="/profile">Your profile</Link>
       </p>
