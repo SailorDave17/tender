@@ -1,6 +1,6 @@
 import { explainLanding } from "@/auth/landing";
 
-// *Measured 2026-08-25*: this line is INERT today — awaiting `searchParams` already opts the page
+// *Measured 2026-08-24*: this line is INERT today — awaiting `searchParams` already opts the page
 // into dynamic rendering, and `next build` marks `/` as `ƒ` with the line deleted. It is kept as a
 // defence rather than as a load-bearing setting: if a later change moves the message-reading into a
 // child component, the page could go back to being prerendered and the message would silently stop

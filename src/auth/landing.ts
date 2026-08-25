@@ -10,7 +10,7 @@ import { explainReason } from "./callback";
  * own `redirect_to`, with the reason in the query string. Site URL is `/`, so the member lands on
  * the home page — which, until this module, read no `searchParams` at all.
  *
- * *Measured 2026-08-25*, unauthenticated and read-only, against the live project: the landing page
+ * *Measured 2026-08-24*, unauthenticated and read-only, against the live project: the landing page
  * was **byte-identical (6440 bytes) with and without those parameters**. The failure was not merely
  * unexplained, it was invisible — they pressed *Continue with Google*, went to Google, came back,
  * and were looking at the ordinary home page.
@@ -29,7 +29,7 @@ import { explainReason } from "./callback";
  * and the shape cairn records as `prove-a-guard-test-can-fail`'s sixteenth outcome.
  *
  * From `supabase/auth` `internal/api/external.go`'s `loadExternalState`, all three verified live on
- * 2026-08-25 where a probe could produce them:
+ * 2026-08-24 where a probe could produce them:
  *
  *   `bad_oauth_state`          "OAuth state parameter is invalid"      *measured*
  *   `bad_oauth_state`          "OAuth state not found or expired"      *measured*

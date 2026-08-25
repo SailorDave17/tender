@@ -7,7 +7,7 @@ import { decideLanding, explainLanding } from "./landing";
  * of GoTrue's shapes is a unit test with no request, no cookies and no Supabase (AC 4).
  *
  * The three codes below were taken from `supabase/auth` `internal/api/external.go` and, where a
- * probe could produce them, verified against the live project on 2026-08-25.
+ * probe could produce them, verified against the live project on 2026-08-24.
  */
 describe("decideLanding — the reason GoTrue left on the landing page (AC 4)", () => {
   it("says nothing at all for an ordinary visit — the negative control", () => {
@@ -42,7 +42,7 @@ describe("decideLanding — the reason GoTrue left on the landing page (AC 4)", 
 
   it("reads a callback whose state parameter is missing as an incomplete link", () => {
     // Not one of the three the issue named — found by probing the same endpoint with no `state` at
-    // all (measured 2026-08-25). It needs no new sentence: `missing-code` already says it.
+    // all (measured 2026-08-24). It needs no new sentence: `missing-code` already says it.
     expect(
       decideLanding({
         error: "invalid_request",
