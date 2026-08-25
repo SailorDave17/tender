@@ -1,6 +1,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import { resendTransport } from "@/email/send";
+import { webPushTransport, type PushTransport } from "@/push/send";
 import { dispatchPending, notifyRung, type NotifyResult, type RungPost } from "./rung";
 import { supabaseRungStore } from "./store";
 
@@ -21,11 +22,33 @@ async function siteUrl(): Promise<string> {
   return h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? "tender.madcowsailing.com"}`;
 }
 
+/**
+ * The push transport, or nothing when this deployment has no VAPID keys (story #29).
+ *
+ * `webPushTransport()` throws on a missing key, and that throw must not reach the caller: both
+ * call sites below swallow to a console warning, so a project with no push keys would lose its
+ * EMAIL too — the channel that works — over the absence of the one that does not. So the absence
+ * is caught here and turned into "no push", which is exactly ADR 007's stated fallback.
+ *
+ * The warning is deliberate and one line. Silence here is the `documented-is-not-installed`
+ * shape: push would simply never happen, on a deployment where every artefact says it should,
+ * with no error anywhere. Turning a missing name into a startup failure is #65's job.
+ */
+function livePushTransport(): PushTransport | undefined {
+  try {
+    return webPushTransport();
+  } catch (e) {
+    console.warn("web push is not configured, sending email only:", e instanceof Error ? e.message : e);
+    return undefined;
+  }
+}
+
 export async function notifyRungLive(postId: string): Promise<NotifyResult | null> {
   try {
     return await notifyRung(postId, {
       store: supabaseRungStore(),
       transport: resendTransport(),
+      push: livePushTransport(),
       now: new Date(),
       siteUrl: await siteUrl(),
     });
@@ -46,6 +69,7 @@ export async function dispatchPendingLive(post: RungPost): Promise<void> {
     await dispatchPending(post, {
       store: supabaseRungStore(),
       transport: resendTransport(),
+      push: livePushTransport(),
       now: new Date(),
       siteUrl: await siteUrl(),
     });

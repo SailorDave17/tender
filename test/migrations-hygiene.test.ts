@@ -199,6 +199,10 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       "public.admin_from_contact",
       "public.answer_counts",
       "public.current_invite_code",
+      // 0013 (#29) — reads push_subscription, which is self-only to every client role, and
+      // returns a COUNT per person so an admin learns who has notifications on without any
+      // caller ever receiving an endpoint. Admin-gated by raising 42501, like the two above.
+      "public.push_install_status",
       "public.rotate_invite_code",
     ]);
   });

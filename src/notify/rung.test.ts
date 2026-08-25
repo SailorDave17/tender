@@ -30,7 +30,7 @@ const DATE = "22222222-2222-4222-8222-222222222222";
 const crew = (id: string, rating: 1 | 2 | 3, hulls: string[] = []): Crew => ({ id, rating, hulls, available: true });
 const email = (id: string) => `${id}@example.org`;
 
-type Row = { postId: string; personId: string; rung: Rung; notifiedAt: Date | null };
+type Row = { postId: string; personId: string; rung: Rung; notifiedAt: Date | null; pushedAt: Date | null };
 
 class MemoryStore implements RungStore {
   posts = new Map<string, RungPost>();
@@ -58,7 +58,7 @@ class MemoryStore implements RungStore {
   async addSuggestions(rows: { postId: string; personId: string; rung: Rung }[]) {
     for (const r of rows) {
       if (this.suggestions.some((s) => s.postId === r.postId && s.personId === r.personId)) continue;
-      this.suggestions.push({ ...r, notifiedAt: null });
+      this.suggestions.push({ ...r, notifiedAt: null, pushedAt: null });
     }
   }
   async pending(postId: string) {
@@ -75,6 +75,29 @@ class MemoryStore implements RungStore {
   async markNotified(postId: string, personId: string, at: Date) {
     const s = this.suggestions.find((x) => x.postId === postId && x.personId === personId)!;
     s.notifiedAt = at;
+  }
+
+  // --- the push half (story #29). Present so this store still satisfies RungStore; the push
+  // BEHAVIOUR is exercised in push-dispatch.test.ts, which seeds `subscriptions`. With none
+  // seeded, `pendingPush` is empty and every case below runs exactly as it did before #29.
+  subscriptions = new Map<string, { id: string; endpoint: string; p256dh: string; auth: string }[]>();
+
+  async pendingPush(postId: string) {
+    return this.suggestions
+      .filter((s) => s.postId === postId && s.pushedAt === null)
+      .map((s) => ({ personId: s.personId, rung: s.rung, targets: this.subscriptions.get(s.personId) ?? [] }))
+      .filter((p) => p.targets.length > 0);
+  }
+  async markPushed(postId: string, personId: string, at: Date) {
+    const s = this.suggestions.find((x) => x.postId === postId && x.personId === personId)!;
+    s.pushedAt = at;
+  }
+  async deleteSubscription(id: string) {
+    for (const [person, list] of this.subscriptions) {
+      const kept = list.filter((t) => t.id !== id);
+      if (kept.length) this.subscriptions.set(person, kept);
+      else this.subscriptions.delete(person);
+    }
   }
 }
 
@@ -128,7 +151,7 @@ describe("notifyRung — the open rung's crew are emailed, exactly, once (AC 2)"
   it("emails the 3 of 10 on the open rung, writes 3 log rows and 3 suggestion rows, and a second run sends zero", async () => {
     const { store, transport, deps } = setUp(tenCrew());
     const first = await notifyRung(POST, deps);
-    expect(first).toEqual({ rung: 1, suggested: 3, sent: 3, skippedCap: 0, failed: 0 });
+    expect(first).toEqual({ rung: 1, suggested: 3, sent: 3, skippedCap: 0, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent.map((m) => m.to).sort()).toEqual(["r1a", "r1b", "r1c"].map(email));
     expect(store.logs).toHaveLength(3);
     expect(store.logs.every((l) => l.kind === KIND_RUNG_EMAIL && l.channel === "email" && l.providerId !== null && l.error === null)).toBe(true);
@@ -140,7 +163,7 @@ describe("notifyRung — the open rung's crew are emailed, exactly, once (AC 2)"
     expect(store.raised).toEqual([]); // the stored rung 1 was already the open rung
 
     const second = await notifyRung(POST, deps);
-    expect(second).toEqual({ rung: 1, suggested: 3, sent: 0, skippedCap: 0, failed: 0 });
+    expect(second).toEqual({ rung: 1, suggested: 3, sent: 0, skippedCap: 0, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent).toHaveLength(3);
     expect(store.logs).toHaveLength(3);
     expect(store.suggestions).toHaveLength(3);
@@ -150,7 +173,7 @@ describe("notifyRung — the open rung's crew are emailed, exactly, once (AC 2)"
     const pool = tenCrew().filter((c) => !c.id.startsWith("r1"));
     const { store, transport, deps } = setUp(pool);
     const r = await notifyRung(POST, deps);
-    expect(r).toEqual({ rung: 2, suggested: 4, sent: 4, skippedCap: 0, failed: 0 });
+    expect(r).toEqual({ rung: 2, suggested: 4, sent: 4, skippedCap: 0, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent.map((m) => m.to).sort()).toEqual(["r2a", "r2b", "r2c", "r2d"].map(email));
     expect(store.raised).toEqual([{ postId: POST, rung: 2 }]); // the widening is persisted
     expect(store.posts.get(POST)!.currentRung).toBe(2);
@@ -177,7 +200,7 @@ describe("notifyRung — a crew marking the day after the post opened (AC 3)", (
     store.pools.get(DATE)!.push(late);
     store.emails.set("late", email("late"));
     const r = await notifyRung(POST, deps);
-    expect(r).toEqual({ rung: 1, suggested: 4, sent: 1, skippedCap: 0, failed: 0 });
+    expect(r).toEqual({ rung: 1, suggested: 4, sent: 1, skippedCap: 0, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent).toHaveLength(4);
     expect(transport.sent[3].to).toBe(email("late"));
     expect(store.suggestions.filter((s) => s.personId === "late")).toHaveLength(1);
@@ -222,7 +245,7 @@ describe("notifyRung — the daily cap (AC 5)", () => {
     const { store, transport, deps } = setUp(tenCrew());
     store.sentToday = EMAIL_SKIP_AT;
     const r = await notifyRung(POST, deps);
-    expect(r).toEqual({ rung: 1, suggested: 3, sent: 0, skippedCap: 3, failed: 0 });
+    expect(r).toEqual({ rung: 1, suggested: 3, sent: 0, skippedCap: 3, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent).toEqual([]);
     expect(store.logs.map((l) => l.kind)).toEqual([KIND_RUNG_EMAIL_SKIPPED_CAP, KIND_RUNG_EMAIL_SKIPPED_CAP, KIND_RUNG_EMAIL_SKIPPED_CAP]);
     expect(store.logs.every((l) => l.toEmail !== null && l.providerId === null && l.error === null)).toBe(true);
@@ -233,7 +256,7 @@ describe("notifyRung — the daily cap (AC 5)", () => {
     const { store, transport, deps } = setUp(tenCrew());
     store.sentToday = EMAIL_SKIP_AT - 1;
     const r = await notifyRung(POST, deps);
-    expect(r).toEqual({ rung: 1, suggested: 3, sent: 1, skippedCap: 2, failed: 0 });
+    expect(r).toEqual({ rung: 1, suggested: 3, sent: 1, skippedCap: 2, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent).toHaveLength(1);
   });
 
@@ -248,7 +271,7 @@ describe("notifyRung — one refused send does not stop the others (AC 6)", () =
     const { store, transport, deps } = setUp(tenCrew());
     transport.refuse.add(email("r1b"));
     const r = await notifyRung(POST, deps);
-    expect(r).toEqual({ rung: 1, suggested: 3, sent: 2, skippedCap: 0, failed: 1 });
+    expect(r).toEqual({ rung: 1, suggested: 3, sent: 2, skippedCap: 0, failed: 1, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent.map((m) => m.to).sort()).toEqual(["r1a", "r1c"].map(email));
     const failed = store.logs.find((l) => l.personId === "r1b")!;
     expect(failed).toMatchObject({ kind: KIND_RUNG_EMAIL, providerId: null, error: "provider said no" });
@@ -257,14 +280,14 @@ describe("notifyRung — one refused send does not stop the others (AC 6)", () =
 
     transport.refuse.clear();
     const again = await notifyRung(POST, deps);
-    expect(again).toEqual({ rung: 1, suggested: 3, sent: 1, skippedCap: 0, failed: 0 });
+    expect(again).toEqual({ rung: 1, suggested: 3, sent: 1, skippedCap: 0, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent.map((m) => m.to)).toEqual(["r1a", "r1c", "r1b"].map(email));
   });
 
   it("a suggested crew with no contact row is logged as no-address and not counted as an attempt", async () => {
     const { store, transport, deps } = setUp(tenCrew(), { noEmailFor: ["r1a"] });
     const r = await notifyRung(POST, deps);
-    expect(r).toEqual({ rung: 1, suggested: 3, sent: 2, skippedCap: 0, failed: 1 });
+    expect(r).toEqual({ rung: 1, suggested: 3, sent: 2, skippedCap: 0, failed: 1, pushed: 0, pushFailed: 0, pruned: 0 });
     expect(transport.sent).toHaveLength(2);
     expect(store.logs.find((l) => l.personId === "r1a")).toMatchObject({ kind: KIND_RUNG_EMAIL_NO_ADDRESS, toEmail: null });
     expect(await store.emailsSentToday()).toBe(2);
