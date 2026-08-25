@@ -37,6 +37,49 @@ describe("the magic-link senders never create a user", () => {
 });
 
 /**
+ * #85. `find-user.test.ts` proves the paging decision, and proves that a `listUsers({ page,
+ * perPage })` really asks GoTrue for that page — but it builds its own pager to do it, so a
+ * route whose pager dropped the `page` argument would leave both green (cairn:
+ * prove-a-guard-test-can-fail, twelfth outcome — the test builds the call rather than calling
+ * what production calls). The route itself cannot be exercised here: the service-role key is
+ * name-only in .env.local and Docker is down, so there is no GoTrue to answer it. The source is
+ * what is left, and it is the same subject the two tests above already take.
+ */
+describe("the invite gate's lookup really pages, and writes in exactly one place (#85)", () => {
+  const JOIN = "../app/api/join/route.ts";
+
+  it("the pager forwards page and perPage to listUsers", async () => {
+    const src = await readFile(new URL(JOIN, import.meta.url), "utf8");
+    // A pager that ignored `page` would re-read page 1 until findAuthUser gave up, so every
+    // address past the first page would answer "error" and no link would ever be sent.
+    expect(src).toMatch(/findAuthUser\(\s*email\s*,\s*async \(page, perPage\) =>/);
+    expect(src).toMatch(/listUsers\(\{\s*page\s*,\s*perPage\s*\}\)/);
+  });
+
+  it("updateUserById appears once, inside attestExisting — the write has one caller", async () => {
+    const src = await readFile(new URL(JOIN, import.meta.url), "utf8");
+    expect(src.match(/updateUserById/g)).toHaveLength(1);
+    const start = src.indexOf("attestExisting:");
+    expect(start, "the route wires attestExisting").toBeGreaterThan(-1);
+    const block = src.slice(start, src.indexOf("sendMagicLink:", start));
+    expect(block).toMatch(/updateUserById/);
+  });
+
+  it("the route decides nothing about whether to stamp — join() does (AC 4)", async () => {
+    const src = await readFile(new URL(JOIN, import.meta.url), "utf8");
+    // Scoped to the DEPS, not the whole file: the input literal above them reads the form's
+    // `attested` checkbox, which is parsing and not deciding, and a scan wide enough to include
+    // it refuses a correct route (cairn: a-guard-that-reads-source-must-survive-its-own-docs —
+    // match the scan to the subject). The subject here is the wiring.
+    const deps = src.slice(src.indexOf("inviteCode: async"), src.lastIndexOf("},\n  );"));
+    expect(deps, "the deps block was located").toMatch(/attestExisting/);
+    // The moment an attestation test appears among the effects, the decision has two homes and
+    // the pure function is no longer the one that answers.
+    expect(deps).not.toMatch(/adult_attested_at|attestationOf|\battested\b/);
+  });
+});
+
+/**
  * #74. The link route and the sign-in route both end in "redirect the browser to Google", so a
  * wrong wiring produces a working-looking flow that mints a second auth user for the same human
  * — the exact defect the story exists to remove. No unit test reads a route, and the two starters

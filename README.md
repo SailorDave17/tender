@@ -108,12 +108,40 @@ instrument for that, and it probes with `limit=0` so it can never write.
    |---|---|
    | Site URL | `https://tender.madcowsailing.com` |
    | Redirect URLs | `https://tender.madcowsailing.com/**` and `http://localhost:3000/**` |
-   | Allow new users to sign up | **ON** (since #70, 2026-08-23 — it read OFF until then, and was never actually in force: the toggle did not persist, #12/#50). Tender is still invite-only, but the refusal moved out of the dashboard: a Google sign-up has to be allowed to create the auth user, so `/auth/callback` deletes any new auth user that arrives without a valid gate pass (`src/auth/person.ts`). Switching this OFF breaks *Continue with Google* for new members |
+   | Allow new users to sign up | **ON** (since #70, 2026-08-23 — it read OFF until then, and was never actually in force: the toggle did not persist, #12/#50). Tender is still invite-only, but the refusal moved out of the dashboard: a Google sign-up has to be allowed to create the auth user, so `/auth/callback` deletes any new auth user that arrives without a valid gate pass (`src/auth/person.ts`). Switching this OFF breaks *Continue with Google* for new members. Its cost is **stray auth users**, which since #85 the invite gate handles — see below |
    | Allow manual linking | **ON** — *set and read back 2026-08-24 on #74; it had been OFF, the vendor default, since the project was created.* Without it *Link a Google account* on `/profile` cannot work, and a member whose Google address differs from the one they joined with has no way to be recognised. Detail, and how to check it, under **Google provider** below |
 
    Check it without the dashboard: `GET /auth/v1/settings` reports `disable_signup: false` and
    `external.google: true`, and a deliberately failing `GET /auth/v1/verify?token=x` redirects to
    `tender.madcowsailing.com` rather than to localhost.
+
+   **Stray auth users need nothing from you** (#85). *Allow new users to sign up* being ON means
+   the public anon key can mint an auth user against any address from any browser — no
+   attestation, no name, no `person` row. On 2026-08-25 four of the project's five auth users
+   were exactly that, one of them belonging to a person about to be invited. Such a user used to
+   **block that address's first sign-up**: the gate saw the address was taken, dropped the name
+   and attestation it had just collected, sent the link anyway, and `/auth/callback` deleted the
+   user and answered *"that account is not linked to a member here"* — to somebody who had just
+   typed the right invite code. It then self-healed, because the delete cleared the address, so
+   the second attempt worked and there was nothing left to reproduce.
+
+   Since #85 the gate stamps its own attestation onto an unattested existing user before sending,
+   so the first attempt works. An already-attested user is left untouched, and a wrong code or an
+   unticked box still reaches neither the lookup nor the write. Nothing to do here, and **no
+   auth user needs deleting by hand any more**.
+
+   To clear the historical ones anyway — they are inert, this is tidiness rather than repair:
+
+   ```sql
+   -- auth users with no person row, no attestation, and older than a day. The age is what keeps
+   -- a sign-up or a Google flow that is in progress right now out of the way: both are exactly
+   -- this shape for the minute or two between the auth user appearing and the link being opened.
+   delete from auth.users u
+    where not exists (select 1 from public.person p where p.id = u.id)
+      and (u.raw_user_meta_data ->> 'adult_attested_at') is null
+      and u.created_at < now() - interval '1 day'
+   returning u.email, u.created_at;
+   ```
 
    **That endpoint does not report every setting, and the one it is silent about is the one this
    list exists for.** It returns exactly eight top-level keys — `external`, `disable_signup`,
