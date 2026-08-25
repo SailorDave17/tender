@@ -96,31 +96,98 @@ instrument for that, and it probes with `limit=0` so it can never write.
    Enable the **Cron** integration and confirm a job can be scheduled on this plan — ADR 004's
    kill condition; its fallback is named there.
 
-   Then set three fields under **Authentication → URL Configuration / Sign In**. They are listed
-   because a field nobody sets stays at the vendor's default permanently, and a default leaves no
-   wrong value to notice — Supabase ships **Site URL** as `http://localhost:3000`, which points
-   every confirmation email it ever sends at the recipient's own machine:
+   Then set the fields in the table below, under **Authentication → URL Configuration / Sign In**.
+   They are listed because a field nobody sets stays at the vendor's default permanently, and a
+   default leaves no wrong value to notice — Supabase ships **Site URL** as
+   `http://localhost:3000`, which points every confirmation email it ever sends at the recipient's
+   own machine. The last two share the *User Signups* block and its single **Save changes**
+   button, and that block has already failed to persist a flip here (#12), so **reload and read
+   each one back after saving**:
 
    | Field | Value |
    |---|---|
    | Site URL | `https://tender.madcowsailing.com` |
    | Redirect URLs | `https://tender.madcowsailing.com/**` and `http://localhost:3000/**` |
-   | Allow new users to sign up | **ON** (since #70, 2026-08-23 — it read OFF until then, and was never actually in force: the toggle did not persist, #12/#50). Tender is still invite-only, but the refusal moved out of the dashboard: a Google sign-up has to be allowed to create the auth user, so `/auth/callback` deletes any new auth user that arrives without a valid gate pass (`src/auth/person.ts`). Switching this OFF breaks *Continue with Google* for new members |
+   | Allow new users to sign up | **ON** (since #70, 2026-08-23 — it read OFF until then, and was never actually in force: the toggle did not persist, #12/#50). Tender is still invite-only, but the refusal moved out of the dashboard: a Google sign-up has to be allowed to create the auth user, so `/auth/callback` deletes any new auth user that arrives without a valid gate pass (`src/auth/person.ts`). Switching this OFF breaks *Continue with Google* for new members. Its cost is **stray auth users**, which since #85 the invite gate handles — see below |
+   | Allow manual linking | **ON** — *set and read back 2026-08-24 on #74; it had been OFF, the vendor default, since the project was created.* Without it *Link a Google account* on `/profile` cannot work, and a member whose Google address differs from the one they joined with has no way to be recognised. Detail, and how to check it, under **Google provider** below |
 
    Check it without the dashboard: `GET /auth/v1/settings` reports `disable_signup: false` and
    `external.google: true`, and a deliberately failing `GET /auth/v1/verify?token=x` redirects to
    `tender.madcowsailing.com` rather than to localhost.
+
+   **Stray auth users need nothing from you** (#85). *Allow new users to sign up* being ON means
+   the public anon key can mint an auth user against any address from any browser — no
+   attestation, no name, no `person` row. On 2026-08-25 four of the project's five auth users
+   were exactly that, one of them belonging to a person about to be invited. Such a user used to
+   **block that address's first sign-up**: the gate saw the address was taken, dropped the name
+   and attestation it had just collected, sent the link anyway, and `/auth/callback` deleted the
+   user and answered *"that account is not linked to a member here"* — to somebody who had just
+   typed the right invite code. It then self-healed, because the delete cleared the address, so
+   the second attempt worked and there was nothing left to reproduce.
+
+   Since #85 the gate stamps its own attestation onto an unattested existing user before sending,
+   so the first attempt works. An already-attested user is left untouched, and a wrong code or an
+   unticked box still reaches neither the lookup nor the write. Nothing to do here, and **no
+   auth user needs deleting by hand any more**.
+
+   To clear the historical ones anyway — they are inert, this is tidiness rather than repair:
+
+   ```sql
+   -- auth users with no person row, no attestation, and older than a day. The age is what keeps
+   -- a sign-up or a Google flow that is in progress right now out of the way: both are exactly
+   -- this shape for the minute or two between the auth user appearing and the link being opened.
+   delete from auth.users u
+    where not exists (select 1 from public.person p where p.id = u.id)
+      and (u.raw_user_meta_data ->> 'adult_attested_at') is null
+      and u.created_at < now() - interval '1 day'
+   returning u.email, u.created_at;
+   ```
+
+   **That endpoint does not report every setting, and the one it is silent about is the one this
+   list exists for.** It returns exactly eight top-level keys — `external`, `disable_signup`,
+   `mailer_autoconfirm`, `phone_autoconfirm`, `sms_provider`, `saml_enabled`,
+   `saml_private_key_next_configured`, `passkeys_enabled` — which is `supabase/auth`'s whole
+   `Settings` struct, field for field. **Manual linking is not among them.** *Measured 2026-08-24
+   in both directions*: the key set is byte-identical with the setting off and with it on, so a
+   silent response is not evidence that it is off — which is the reading that would otherwise look
+   safe. Its check is below, and it is not an endpoint.
+
+   The one machine-readable route is the **Management API**, not the project's own: `GET
+   https://api.supabase.com/v1/projects/{ref}/config/auth` carries
+   `security_manual_linking_enabled`. It needs a personal access token (`sbp_…`), which this app
+   does not hold and should not — so it is a thing the owner can run, not a probe for
+   `check:live`.
 
    **Google provider** (#70). In Google Cloud, an OAuth client of type *Web application* with
    `https://<project-ref>.supabase.co/auth/v1/callback` as its authorised redirect URI; its client
    id and secret go under **Authentication → Providers → Google** in Supabase. A member whose
    account the email gate created and who later signs in with a Google account carrying the same
    verified address is linked to the existing user by Supabase (automatic identity linking) — #70's
-   AC 6 is where that is measured. And a fifth server-only name beside the four above:
+   AC 6 is where that is measured. **A different address is not linked**, which is what *Allow
+   manual linking* below is for. And a fifth server-only name beside the four above:
    **`GATE_PASS_SECRET`**, any long random string (`openssl rand -base64 32`), in `.env.local` and in
    Vercel's environment — it signs the ten-minute gate pass that carries a new member's name and
    attestation from the sign-up form through Google and back to `/auth/callback`. Without it the
    Google sign-up route throws and the callback treats every pass as invalid.
+
+   **Allow manual linking** (#74) — the table's fourth row, at **Authentication → Sign In /
+   Providers → User Signups**, sitting directly under *Allow new users to sign up* and described
+   there as *"Enable manual linking APIs for your project"*.
+
+   Automatic linking only ever fires on a *matching verified email*, so a member who joined as
+   `alice@club.org` and presses *Continue with Google* as `alice@gmail.com` is a stranger to
+   Supabase: a fresh auth user, deleted at the callback. With this ON they can attach that Google
+   account to the one they already have, from `/profile`, and keep one `auth.uid()` — which every
+   RLS policy in the schema is keyed on. With it OFF,
+   `GET /auth/v1/user/identities/authorize` answers **404 `manual_linking_disabled`**
+   (`supabase/auth`'s `requireManualLinkingEnabled`) and the app says linking is not switched on
+   for this club.
+
+   **How to check it afterwards, given `/auth/v1/settings` cannot.** Sign in and press *Link a
+   Google account* on `/profile`: it either sends you to Google (**on**) or returns to the profile
+   saying *"Linking a Google account is not switched on for this club yet"* (**off**). That is a
+   one-tap readout of a setting no endpoint reports, and it is deliberately a different sentence
+   from every other refusal so the two can never be confused.
 2. **Custom SMTP**: Supabase's built-in mailer sends 2 emails an hour to team members only
    (measured 2026-08-21). Point Auth → SMTP at Resend, sending from `tender.madcowsailing.com`;
    add Resend's DNS records in the Cloudflare zone. **And a Resend API key as `RESEND_API_KEY`**

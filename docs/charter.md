@@ -51,7 +51,10 @@ season. Known blind spot: matches it caused that closed by text.
 - **Identity**: email magic link or Google (#70, 2026-08-23 — returning members sign in with
   email alone or Google; new members sign up with the invite code and finish by email link or
   Google). Email is required (it is the login); phone is optional and is exchanged only on a
-  closed match.
+  closed match. **One person is one account, and may carry more than one way into it** (#74,
+  2026-08-24): a member whose Google address differs from the one they joined with links it from
+  their profile, so both sign-ins resolve to the same `auth.uid()` — the thing every access rule
+  in Data is written against. Merging two accounts after the fact is deliberately not offered.
 - **Signup**: gated by an invite code the owner hands out (class handout, invite email); rotated
   in one admin action.
 - **Visibility**: posts and profiles visible to every signed-in user; contact details only on

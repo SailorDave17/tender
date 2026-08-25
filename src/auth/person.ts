@@ -15,6 +15,24 @@ import type { PassPayload } from "./pass";
  * refuses an uninvited account. This stays the only writer of `person`.
  */
 
+/**
+ * Does this auth user's metadata carry a usable attestation?
+ *
+ * Two callers must answer this identically. `ensurePerson` below deletes an auth user that has
+ * no attestation and no gate pass; the invite gate (src/auth/join.ts) writes an attestation onto
+ * an *existing* user precisely when that would otherwise happen (#85). A difference between the
+ * two predicates is either a member deleted after being told a link was on its way, or a write
+ * that never needed to happen — so there is one function and both sides call it.
+ *
+ * It returns the attestation rather than a boolean because `ensurePerson` needs the value while
+ * the gate needs only its presence; a boolean here would put the parsing back in two places.
+ */
+export function attestationOf(meta: Record<string, unknown> | null | undefined): string | null {
+  const raw = meta?.adult_attested_at;
+  if (typeof raw !== "string" || !raw || Number.isNaN(Date.parse(raw))) return null;
+  return raw;
+}
+
 export type AuthUser = {
   id: string;
   email?: string | null;
@@ -54,7 +72,7 @@ export async function ensurePerson(
 
   const meta = user.user_metadata ?? {};
   let displayName = typeof meta.display_name === "string" ? meta.display_name.trim() : "";
-  let attested = typeof meta.adult_attested_at === "string" ? meta.adult_attested_at : "";
+  let attested = attestationOf(meta) ?? "";
   const email = (user.email ?? "").trim().toLowerCase();
   let usedPass = false;
 
@@ -62,7 +80,7 @@ export async function ensurePerson(
   // gate hands over a pass instead; with one, the attestation it carries becomes the user's.
   // With neither, refuse to mint a person row AND delete the auth user — adults-only is
   // structural (0002), this is the only writer, and with signups ON nothing upstream refused it.
-  if (!attested || Number.isNaN(Date.parse(attested))) {
+  if (!attested) {
     if (!pass) {
       const d = await store.deleteUser(user.id);
       return {
