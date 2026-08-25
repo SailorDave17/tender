@@ -40,11 +40,26 @@ export function decideCallback(q: CallbackQuery): CallbackDecision {
   return { kind: "back", reason: "missing-code" };
 }
 
-/** The sentence /join shows for each reason key — one place, so the page and the tests agree. */
+/**
+ * The sentence a page shows for each reason key — one place, so the pages and the tests agree.
+ *
+ * /join reads it for a callback that came back with a reason; since #83 the landing page reads it
+ * too, for the failures GoTrue sends to Site URL instead of to `/auth/callback` (src/auth/landing.ts
+ * maps those). That is why the last two cases exist here rather than in a second vocabulary: they
+ * are the same kind of sentence, said to the same person, about the same round trip.
+ */
 export function explainReason(reason: string): string {
   switch (reason) {
     case "link-invalid":
       return "That link has expired or was already used. Ask for a new one.";
+    // #83: `link-invalid` above says "expired or was already used" because a magic link gives no
+    // way to tell them apart. An OAuth state does — GoTrue answers with a different error code for
+    // each — so these two say which, and neither puts it on the member: the five-minute window
+    // starts when they press the control, and pressing back is not a mistake.
+    case "state-expired":
+      return "That sign-in took too long to finish, so it expired. Nothing is wrong with your account — start again and you will be signed in.";
+    case "state-used":
+      return "That sign-in link had already been used. Nothing is wrong with your account — start again to get a fresh one.";
     // #74: this sentence used to say only "sign up with this season's invite code first", which
     // was wrong advice for the commonest way to reach it — a member whose Google address differs
     // from the one they joined with. Supabase links a Google identity to an existing user only
