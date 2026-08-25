@@ -1,5 +1,8 @@
 import { rungOf, suggest, type Crew, type Post, type Rung } from "@/engine/ladder";
+import { rungPush } from "@/push/payload";
+import type { PushTarget, PushTransport } from "@/push/send";
 import type { Message, Transport } from "@/email/send";
+import { whenLabel } from "@/dates/race-date";
 import { ratingLabel } from "@/profile/profile";
 
 /**
@@ -43,6 +46,11 @@ export const KIND_RUNG_EMAIL_SKIPPED_CAP = "rung_email_skipped_cap";
 /** A suggestion with no contact row to send to — logged, never retried by this call, not an attempt for the cap. */
 export const KIND_RUNG_EMAIL_NO_ADDRESS = "rung_email_no_address";
 
+/** One attempted push, per device. Accepted or refused; `error` says which (story #29). */
+export const KIND_RUNG_PUSH = "rung_push";
+/** A subscription the push service has retired (404/410). The row is deleted; this is its epitaph. */
+export const KIND_RUNG_PUSH_GONE = "rung_push_gone";
+
 export type RungPost = {
   id: string;
   raceDateId: string;
@@ -66,12 +74,21 @@ export type Pending = {
 
 export type LogEntry = {
   kind: string;
-  channel: "email";
+  /** 0010's check constraint allows exactly these two. */
+  channel: "email" | "push";
   personId: string;
   toEmail: string | null;
   postId: string;
   providerId: string | null;
   error: string | null;
+};
+
+/** A person still to be pushed about this post, with the devices to push to (story #29). */
+export type PendingPush = {
+  personId: string;
+  rung: Rung;
+  /** Every subscription the person has. A person with none is not in the list at all. */
+  targets: (PushTarget & { id: string })[];
 };
 
 export interface RungStore {
@@ -88,20 +105,24 @@ export interface RungStore {
   emailsSentToday(now: Date): Promise<number>;
   log(entry: LogEntry): Promise<void>;
   markNotified(postId: string, personId: string, at: Date): Promise<void>;
+  /** Suggestions on the post with pushed_at NULL whose person has at least one subscription. */
+  pendingPush(postId: string): Promise<PendingPush[]>;
+  markPushed(postId: string, personId: string, at: Date): Promise<void>;
+  /** Remove a subscription the push service has retired. By row id, so a re-subscribe is unaffected. */
+  deleteSubscription(id: string): Promise<void>;
 }
 
-export type NotifyResult = {
+export type NotifyResult = DispatchResult & {
   /** The rung the post is open to after this call. */
   rung: Rung;
   suggested: number;
-  sent: number;
-  skippedCap: number;
-  failed: number;
 };
 
 export type NotifyDeps = {
   store: RungStore;
   transport: Transport;
+  /** Web push, when configured — passed straight through to dispatch (story #29). */
+  push?: PushTransport;
   now: Date;
   /** The site's origin, for the link in the email — `https://tender.madcowsailing.com`. */
   siteUrl: string;
@@ -113,17 +134,38 @@ export type NotifyDeps = {
  * cap, the retry rule or the no-address case: the tick owns which posts widened, this owns what
  * a send means. `RungStore` still satisfies it, so notifyRung()'s own callers are unchanged.
  */
-export type DispatchStore = Pick<RungStore, "pending" | "emailsSentToday" | "log" | "markNotified">;
+export type DispatchStore = Pick<
+  RungStore,
+  "pending" | "emailsSentToday" | "log" | "markNotified" | "pendingPush" | "markPushed" | "deleteSubscription"
+>;
 
 export type DispatchDeps = {
   store: DispatchStore;
   transport: Transport;
+  /**
+   * Web push, when the deployment has VAPID keys (story #29). OPTIONAL, and the absence is a
+   * degradation rather than a failure: a deployment with no keys still emails, which is what the
+   * bet's fallback says to do. It is optional here rather than required-and-throwing because
+   * `notifyRungLive` swallows what this throws — a required transport would take the EMAIL down
+   * with it on a project where only the push keys are missing. Making the absence loud at startup
+   * is #65's job, and that is where it belongs.
+   */
+  push?: PushTransport;
   now: Date;
   /** The site's origin, for the link in the email — `https://tender.madcowsailing.com`. */
   siteUrl: string;
 };
 
-export type DispatchResult = { sent: number; skippedCap: number; failed: number };
+export type DispatchResult = {
+  sent: number;
+  skippedCap: number;
+  failed: number;
+  /** Devices pushed successfully. Per device, not per person — a crew with two phones counts twice. */
+  pushed: number;
+  pushFailed: number;
+  /** Subscriptions the push service retired, now deleted. */
+  pruned: number;
+};
 
 /**
  * The day the cap counts within: UTC. Resend's documentation states the daily limit without a
@@ -141,14 +183,9 @@ export function openRung(stored: Rung, computed: Rung): Rung {
 
 /** What a crew reads. Exported so the copy is tested, not so anything else sends it. */
 export function rungMessage(post: RungPost, to: string, siteUrl: string): Message {
-  const when = new Date(post.startsAt).toLocaleString("en-US", {
-    timeZone: "America/New_York",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  // whenLabel() rather than a `timeZone` literal here: story #29's push names the same race in
+  // the same words, and the club's wall clock has one home (src/dates/race-date.ts, CLUB_TZ).
+  const when = whenLabel(post.startsAt);
   // From RATINGS rather than a map of its own: this line carried a hard-coded three-level copy
   // of the scale, which 0011's fourth level would have rendered as "undefined" in a real email
   // with nothing failing (story #69). The same lowercasing idiom is on /boats and /post/[id].
@@ -168,23 +205,57 @@ export function rungMessage(post: RungPost, to: string, siteUrl: string): Messag
 }
 
 /**
- * Step 4 alone: email everyone on the post with `notified_at` still NULL, under the day's cap.
+ * Step 4 alone: tell everyone on the post who has not been told, on both channels.
  *
  * Every rule about SENDING lives here and nowhere else — the cap and its headroom, the
  * attempt-counts-whether-or-not-the-provider-accepts rule, the log line per outcome, and which
- * failures leave `notified_at` NULL so the next call retries that person alone. notifyRung()
+ * failures leave a ledger column NULL so the next call retries that person alone. notifyRung()
  * calls it after running the ladder; the tick route calls it after runTick() has widened a post,
  * which is what "dispatch is reused from the email story, not rebuilt" means (#25).
  *
- * It sends to whoever is pending, not to whoever the caller thinks is new. That is what makes
- * "run the tick again a minute later and nothing is emailed" true for a second, independent
- * reason: the first pass set `notified_at`.
+ * TWO CHANNELS, TWO LEDGER COLUMNS, ONE LOOP EACH (story #29). Push runs first and email second,
+ * because push is instant and costs nothing while email is rationed: at the daily cap the email
+ * is deferred to tomorrow, and an installed crew should still have had their phone buzz tonight.
+ * The two are otherwise independent — a dead push subscription does not stop the email (AC 3),
+ * and a refused email does not re-push anyone tomorrow, because `pushed_at` is already set.
+ *
+ * Each sends to whoever is pending on that channel, not to whoever the caller thinks is new.
+ * That is what makes "run the tick again a minute later and nothing is sent" true for a second,
+ * independent reason: the first pass set the columns.
  */
 export async function dispatchPending(post: RungPost, deps: DispatchDeps): Promise<DispatchResult> {
-  const { store, transport, now, siteUrl } = deps;
+  const { store, transport, push, now, siteUrl } = deps;
+  const result: DispatchResult = { sent: 0, skippedCap: 0, failed: 0, pushed: 0, pushFailed: 0, pruned: 0 };
+
+  if (push) {
+    for (const p of await store.pendingPush(post.id)) {
+      let delivered = false;
+      for (const target of p.targets) {
+        const outcome = await push.send(target, rungPush(post, p.rung));
+        if (outcome.ok) {
+          delivered = true;
+          result.pushed += 1;
+          await store.log({ kind: KIND_RUNG_PUSH, channel: "push", personId: p.personId, toEmail: null, postId: post.id, providerId: target.endpoint, error: null });
+        } else if (outcome.gone) {
+          // Permanent: the browser discarded this subscription. Delete the row rather than
+          // trying it again every tick forever, and say so in the log — the count of these is
+          // how an install rate falls without anyone uninstalling anything visibly.
+          result.pruned += 1;
+          await store.log({ kind: KIND_RUNG_PUSH_GONE, channel: "push", personId: p.personId, toEmail: null, postId: post.id, providerId: target.endpoint, error: outcome.error });
+          await store.deleteSubscription(target.id);
+        } else {
+          result.pushFailed += 1;
+          await store.log({ kind: KIND_RUNG_PUSH, channel: "push", personId: p.personId, toEmail: null, postId: post.id, providerId: target.endpoint, error: outcome.error });
+        }
+      }
+      // Only when a device actually took it. A person whose every subscription is dead stays
+      // pending, so the moment they install again they are told about a post still open to them.
+      if (delivered) await store.markPushed(post.id, p.personId, now);
+    }
+  }
+
   const pending = await store.pending(post.id);
   let sentToday = await store.emailsSentToday(now);
-  const result: DispatchResult = { sent: 0, skippedCap: 0, failed: 0 };
   for (const p of pending) {
     if (p.email === null) {
       result.failed += 1;
@@ -212,7 +283,7 @@ export async function dispatchPending(post: RungPost, deps: DispatchDeps): Promi
 }
 
 export async function notifyRung(postId: string, deps: NotifyDeps): Promise<NotifyResult | null> {
-  const { store, transport, now, siteUrl } = deps;
+  const { store, transport, push, now, siteUrl } = deps;
   const post = await store.post(postId);
   if (!post || post.closedAt !== null) return null;
 
@@ -234,6 +305,6 @@ export async function notifyRung(postId: string, deps: NotifyDeps): Promise<Noti
 
   // 4. Send to whoever has not been told, under the cap — dispatchPending() above, which the
   // ladder tick calls with the same post and the same rules.
-  const dispatched = await dispatchPending(post, { store, transport, now, siteUrl });
+  const dispatched = await dispatchPending(post, { store, transport, push, now, siteUrl });
   return { rung, suggested: candidates.length, ...dispatched };
 }

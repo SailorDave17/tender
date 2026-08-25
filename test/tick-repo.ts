@@ -3,7 +3,7 @@ import { poolForDate } from "@/board/post-view";
 import type { Crew } from "@/engine/ladder";
 import type { PersonRow } from "@/engine/toCrew";
 import type { NewSuggestion, Suggested, TickPost, TickRepo } from "@/engine/tick";
-import { emailDayStart, type DispatchStore, type LogEntry, type Pending } from "@/notify/rung";
+import { emailDayStart, type DispatchStore, type LogEntry, type Pending, type PendingPush } from "@/notify/rung";
 
 /**
  * The TickRepo over pglite — AC 1's first adapter, and the one the behaviour fixtures run
@@ -160,6 +160,39 @@ export function pgliteDispatchStore(db: PGlite): DispatchStore {
         personId,
         at.toISOString(),
       ]);
+    },
+
+    async pendingPush(postId: string): Promise<PendingPush[]> {
+      // One query rather than the live store's two, because plain SQL can join what PostgREST
+      // has no foreign key to walk. The SHAPE returned is the contract both adapters meet.
+      const rows = await svc<{ person_id: string; rung: 1 | 2 | 3; id: string; endpoint: string; p256dh: string; auth: string }>(
+        db,
+        `select s.person_id, s.rung, ps.id, ps.endpoint, ps.p256dh, ps.auth
+           from public.suggestion s
+           join public.push_subscription ps on ps.person_id = s.person_id
+          where s.post_id = $1 and s.pushed_at is null
+          order by s.rung, s.created_at, ps.created_at`,
+        [postId],
+      );
+      const byPerson = new Map<string, PendingPush>();
+      for (const r of rows) {
+        const found = byPerson.get(r.person_id) ?? { personId: r.person_id, rung: r.rung, targets: [] };
+        found.targets.push({ id: r.id, endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth });
+        byPerson.set(r.person_id, found);
+      }
+      return [...byPerson.values()];
+    },
+
+    async markPushed(postId: string, personId: string, at: Date): Promise<void> {
+      await svc(db, `update public.suggestion set pushed_at = $3 where post_id = $1 and person_id = $2`, [
+        postId,
+        personId,
+        at.toISOString(),
+      ]);
+    },
+
+    async deleteSubscription(id: string): Promise<void> {
+      await svc(db, `delete from public.push_subscription where id = $1`, [id]);
     },
   };
 }

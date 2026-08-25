@@ -29,3 +29,68 @@ self.addEventListener("install", () => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
+
+/*
+ * Push (story #29).
+ *
+ * ALWAYS SHOW SOMETHING. A push that resolves without calling showNotification is a "silent
+ * push", which no browser permits: Chrome posts its own "This site has been updated in the
+ * background" notification instead, and Safari counts it against a budget and revokes the
+ * subscription outright after a few. So every branch below ends in a notification, including the
+ * ones where the payload is missing or unreadable — a vague notification is recoverable, a
+ * revoked subscription is not, and the crew would have no idea it had happened.
+ *
+ * The payload is JSON built by src/push/payload.ts and is at most 4 KB (RFC 8291).
+ */
+
+const FALLBACK = { title: "Crew needed", body: "A skipper needs crew. Open Tender to see.", url: "/board" };
+
+function readPayload(event) {
+  if (!event.data) return FALLBACK;
+  try {
+    const parsed = event.data.json();
+    if (!parsed || typeof parsed.title !== "string") return FALLBACK;
+    return {
+      title: parsed.title,
+      body: typeof parsed.body === "string" ? parsed.body : FALLBACK.body,
+      url: typeof parsed.url === "string" ? parsed.url : FALLBACK.url,
+      tag: typeof parsed.tag === "string" ? parsed.tag : undefined,
+    };
+  } catch {
+    return FALLBACK;
+  }
+}
+
+self.addEventListener("push", (event) => {
+  const payload = readPayload(event);
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      // The mark, so the notification is recognisably Tender's on a crowded lock screen.
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: payload.tag,
+      // The URL travels in `data` rather than in the tag: the tag is a collapse key the browser
+      // may overwrite, and losing the destination would leave a notification that opens nowhere.
+      data: { url: payload.url },
+    }),
+  );
+});
+
+/*
+ * A tap opens the post. If Tender is already open somewhere, that window is reused and moved —
+ * opening a second one leaves a crew with two copies of the app and a back button that does not
+ * go where they expect.
+ */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/board";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      for (const client of windows) {
+        if ("focus" in client) return client.navigate ? client.navigate(url).then((c) => c && c.focus()) : client.focus();
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
+});

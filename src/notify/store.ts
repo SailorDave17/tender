@@ -2,7 +2,7 @@ import "server-only";
 import { poolForDate } from "@/board/post-view";
 import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { KIND_RUNG_EMAIL, emailDayStart, type LogEntry, type Pending, type RungPost, type RungStore } from "./rung";
+import { KIND_RUNG_EMAIL, emailDayStart, type LogEntry, type Pending, type PendingPush, type RungPost, type RungStore } from "./rung";
 
 /**
  * The RungStore over the live database, as the service role — the only role that may write
@@ -122,6 +122,53 @@ export function supabaseRungStore(): RungStore {
         .eq("post_id", postId)
         .eq("person_id", personId);
       if (error) fail("mark notified", error);
+    },
+
+    async pendingPush(postId): Promise<PendingPush[]> {
+      const { data, error } = await admin
+        .from("suggestion")
+        .select("person_id, rung")
+        .eq("post_id", postId)
+        .is("pushed_at", null)
+        .order("rung")
+        .order("created_at");
+      if (error) fail("read pending push", error);
+      if (!data?.length) return [];
+      // Two round trips rather than an embed, for the same reason `pending` takes two: the
+      // relation is person → subscription, not suggestion → subscription, so PostgREST has no
+      // foreign key to walk from here (cairn: postgrest-filtering-on-an-embedded-resource).
+      const ids = data.map((s) => s.person_id);
+      const subs = await admin
+        .from("push_subscription")
+        .select("id, person_id, endpoint, p256dh, auth")
+        .in("person_id", ids);
+      if (subs.error) fail("read subscriptions", subs.error);
+      const byPerson = new Map<string, PendingPush["targets"]>();
+      for (const s of subs.data) {
+        const list = byPerson.get(s.person_id) ?? [];
+        list.push({ id: s.id, endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth });
+        byPerson.set(s.person_id, list);
+      }
+      // A person with no subscription is not pending a push at all — they are dropped here
+      // rather than returned with an empty list, so the dispatch loop never marks somebody
+      // pushed who has no device.
+      return data
+        .map((s) => ({ personId: s.person_id, rung: s.rung, targets: byPerson.get(s.person_id) ?? [] }))
+        .filter((p) => p.targets.length > 0);
+    },
+
+    async markPushed(postId, personId, at) {
+      const { error } = await admin
+        .from("suggestion")
+        .update({ pushed_at: at.toISOString() })
+        .eq("post_id", postId)
+        .eq("person_id", personId);
+      if (error) fail("mark pushed", error);
+    },
+
+    async deleteSubscription(id) {
+      const { error } = await admin.from("push_subscription").delete().eq("id", id);
+      if (error) fail("delete subscription", error);
     },
   };
 }
