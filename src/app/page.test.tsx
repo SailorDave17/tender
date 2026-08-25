@@ -7,7 +7,7 @@ import Home from "./page";
  * #83 AC 1 and AC 2. The landing page is a Server Component doing no I/O, so it can be awaited and
  * rendered here — which is the only instrument that can answer this story's question, because the
  * defect was never in a function's return value. It was that `/` read no `searchParams` at all, and
- * *measured 2026-08-25* against the live project the page came back **byte-identical (6440 bytes)
+ * *measured 2026-08-24* against the live project the page came back **byte-identical (6440 bytes)
  * with and without GoTrue's error parameters**. A test on the decision alone would have stayed green
  * through that.
  */
