@@ -108,6 +108,24 @@ export type NotifyDeps = {
 };
 
 /**
+ * The half of the store dispatch needs — the queue, the cap, the log and the mark. Split out
+ * with `dispatchPending()` below so the ladder tick (#25) can send without a second copy of the
+ * cap, the retry rule or the no-address case: the tick owns which posts widened, this owns what
+ * a send means. `RungStore` still satisfies it, so notifyRung()'s own callers are unchanged.
+ */
+export type DispatchStore = Pick<RungStore, "pending" | "emailsSentToday" | "log" | "markNotified">;
+
+export type DispatchDeps = {
+  store: DispatchStore;
+  transport: Transport;
+  now: Date;
+  /** The site's origin, for the link in the email — `https://tender.madcowsailing.com`. */
+  siteUrl: string;
+};
+
+export type DispatchResult = { sent: number; skippedCap: number; failed: number };
+
+/**
  * The day the cap counts within: UTC. Resend's documentation states the daily limit without a
  * zone; UTC is the recorded default, and the club's evening is mid-day UTC the next morning
  * either way — what matters is that the count and the provider agree on roughly one day.
@@ -149,31 +167,24 @@ export function rungMessage(post: RungPost, to: string, siteUrl: string): Messag
   };
 }
 
-export async function notifyRung(postId: string, deps: NotifyDeps): Promise<NotifyResult | null> {
+/**
+ * Step 4 alone: email everyone on the post with `notified_at` still NULL, under the day's cap.
+ *
+ * Every rule about SENDING lives here and nowhere else — the cap and its headroom, the
+ * attempt-counts-whether-or-not-the-provider-accepts rule, the log line per outcome, and which
+ * failures leave `notified_at` NULL so the next call retries that person alone. notifyRung()
+ * calls it after running the ladder; the tick route calls it after runTick() has widened a post,
+ * which is what "dispatch is reused from the email story, not rebuilt" means (#25).
+ *
+ * It sends to whoever is pending, not to whoever the caller thinks is new. That is what makes
+ * "run the tick again a minute later and nothing is emailed" true for a second, independent
+ * reason: the first pass set `notified_at`.
+ */
+export async function dispatchPending(post: RungPost, deps: DispatchDeps): Promise<DispatchResult> {
   const { store, transport, now, siteUrl } = deps;
-  const post = await store.post(postId);
-  if (!post || post.closedAt !== null) return null;
-
-  // 1. The engine, over today's pool, against the stored rung.
-  const pool = await store.pool(post.raceDateId);
-  const enginePost: Post = { raceAt: new Date(post.startsAt), boatClass: post.boatClass, minimum: post.minimum };
-  const computed = suggest(enginePost, pool, now).rung;
-  const rung = openRung(post.currentRung, computed);
-
-  // 2. Persist a widening only; a decrease is never asked for, and 0010 would refuse it.
-  if (rung > post.currentRung) await store.raiseRung(post.id, rung);
-
-  // 3. Everyone available on or above the open rung, at their own rung.
-  const candidates = pool
-    .filter((crew) => crew.available)
-    .map((crew) => ({ postId: post.id, personId: crew.id, rung: rungOf(enginePost, crew) }))
-    .filter((c) => c.rung <= rung);
-  if (candidates.length > 0) await store.addSuggestions(candidates);
-
-  // 4. Send to whoever has not been told, under the cap.
   const pending = await store.pending(post.id);
   let sentToday = await store.emailsSentToday(now);
-  const result: NotifyResult = { rung, suggested: candidates.length, sent: 0, skippedCap: 0, failed: 0 };
+  const result: DispatchResult = { sent: 0, skippedCap: 0, failed: 0 };
   for (const p of pending) {
     if (p.email === null) {
       result.failed += 1;
@@ -198,4 +209,31 @@ export async function notifyRung(postId: string, deps: NotifyDeps): Promise<Noti
     }
   }
   return result;
+}
+
+export async function notifyRung(postId: string, deps: NotifyDeps): Promise<NotifyResult | null> {
+  const { store, transport, now, siteUrl } = deps;
+  const post = await store.post(postId);
+  if (!post || post.closedAt !== null) return null;
+
+  // 1. The engine, over today's pool, against the stored rung.
+  const pool = await store.pool(post.raceDateId);
+  const enginePost: Post = { raceAt: new Date(post.startsAt), boatClass: post.boatClass, minimum: post.minimum };
+  const computed = suggest(enginePost, pool, now).rung;
+  const rung = openRung(post.currentRung, computed);
+
+  // 2. Persist a widening only; a decrease is never asked for, and 0010 would refuse it.
+  if (rung > post.currentRung) await store.raiseRung(post.id, rung);
+
+  // 3. Everyone available on or above the open rung, at their own rung.
+  const candidates = pool
+    .filter((crew) => crew.available)
+    .map((crew) => ({ postId: post.id, personId: crew.id, rung: rungOf(enginePost, crew) }))
+    .filter((c) => c.rung <= rung);
+  if (candidates.length > 0) await store.addSuggestions(candidates);
+
+  // 4. Send to whoever has not been told, under the cap — dispatchPending() above, which the
+  // ladder tick calls with the same post and the same rules.
+  const dispatched = await dispatchPending(post, { store, transport, now, siteUrl });
+  return { rung, suggested: candidates.length, ...dispatched };
 }
