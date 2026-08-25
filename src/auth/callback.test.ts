@@ -93,4 +93,23 @@ describe("explainReason — plain words for every reason the callback can return
     expect(s).toMatch(/invite code/i);
     expect(s.search(/already a member/i)).toBeLessThan(s.search(/invite code/i));
   });
+
+  /**
+   * #82. "Sign in with the email you joined with" now means email + PASSWORD, and the population
+   * that reaches these two sentences is the one least likely to have one: a Google-created
+   * account has none, and neither does any account made before #82. Without the Forgot pointer
+   * the advice sends them to a screen they cannot get through. Both sentences give this advice,
+   * so both are asserted — the sibling was the one missed when #74 wrote it.
+   */
+  it("points a password-less member at Forgot my password, in both sentences that say to sign in", () => {
+    for (const reason of ["not-invited", "already-linked"]) {
+      const s = explainReason(reason);
+      expect(s, reason).toMatch(/sign in with the email you joined with/i);
+      expect(s, reason).toMatch(/forgot my password/i);
+      // the pointer sits with the advice it qualifies, not tacked on after the alternative
+      expect(s.search(/forgot my password/i), reason).toBeLessThan(
+        s.search(/invite code|different Google account/i),
+      );
+    }
+  });
 });

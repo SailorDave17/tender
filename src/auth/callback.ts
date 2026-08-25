@@ -66,14 +66,19 @@ export function explainReason(reason: string): string {
     // when the verified email matches, so they arrive here as a stranger, and following that
     // advice gave the same human a SECOND person row. Sign in first, then link, is the route
     // that keeps one person one account.
+    // #82: "sign in with the email you joined with" now means email + password. The population
+    // that reaches this sentence — a member whose Google address differs from the one they joined
+    // with — is exactly the one likely to have NO password (a Google-created or pre-#82 account),
+    // so the advice points them at Forgot my password, where the sign-in link still works and the
+    // reset arm sets a first one. Flagged on the issue by #74 when it wrote this sentence.
     case "not-invited":
-      return "That account is not linked to a member here. If you are already a member, sign in with the email you joined with, then link Google from your profile. If you are new, sign up with this season's invite code.";
+      return "That account is not linked to a member here. If you are already a member, sign in with the email you joined with — use Forgot my password if you have never set one — then link Google from your profile. If you are new, sign up with this season's invite code.";
     case "missing-code":
       return "That link was incomplete. Ask for a new one.";
     case "cancelled":
       return "Google sign-in was cancelled. Nothing has changed — try again when you are ready.";
     case "already-linked":
-      return "That Google account is already attached to an account here. Sign in with the email you joined with, or use a different Google account.";
+      return "That Google account is already attached to an account here. Sign in with the email you joined with — use Forgot my password if you have never set one — or use a different Google account.";
     case "provider-error":
       return "Google or the sign-in service returned an error. Try again in a minute, or use an email link.";
     default:

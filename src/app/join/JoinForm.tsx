@@ -7,9 +7,11 @@ type State = { kind: "idle" } | { kind: "sending" } | { kind: "done"; message: s
 type Mode = "signin" | "signup";
 
 /**
- * /join since #70: two distinct choices. Sign in (returning member) asks for email only, or
- * offers Google; Sign up (new member) asks for name, invite code and the 18+ attestation, then
- * finishes by email link or by Google. Only sign-up ever sends the code.
+ * /join since #70, mechanisms changed by #82: two distinct choices. Sign in (returning member)
+ * asks for email + password, or offers Google, with a Forgot-my-password link — no magic-link
+ * request on this screen any more. Sign up (new member) asks for name, invite code, the 18+
+ * attestation and a password, then finishes by email link or by Google (Google needs no password).
+ * Only sign-up ever sends the code.
  */
 export function JoinForm({ initialError }: { initialError?: string }) {
   const [mode, setMode] = useState<Mode>("signin");
@@ -41,7 +43,13 @@ export function JoinForm({ initialError }: { initialError?: string }) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     setState({ kind: "sending" });
-    const { ok, body } = await post("/api/signin", { email: f.get("email") });
+    const { ok, body } = await post("/api/signin", { email: f.get("email"), password: f.get("password") });
+    // A successful password sign-in returns where to go, not a message — the session cookies are
+    // already on the response, so the browser just follows.
+    if (ok && typeof body.redirect === "string") {
+      window.location.assign(body.redirect);
+      return;
+    }
     setState({ kind: "done", ok, message: String(body.message ?? "Something went wrong.") });
   }
 
@@ -72,8 +80,14 @@ export function JoinForm({ initialError }: { initialError?: string }) {
       setState({ kind: "done", ok: false, message: "Enter your email address to be sent a link." });
       return;
     }
+    const password = String(f.get("password") ?? "");
+    if (password.length < 8) {
+      form.querySelector<HTMLInputElement>('input[name="password"]')?.reportValidity();
+      setState({ kind: "done", ok: false, message: "Choose a password of at least 8 characters." });
+      return;
+    }
     setState({ kind: "sending" });
-    const { ok, body } = await post("/api/join", { ...common, email });
+    const { ok, body } = await post("/api/join", { ...common, email, password });
     setState({ kind: "done", ok, message: String(body.message ?? "Something went wrong.") });
   }
 
@@ -110,16 +124,23 @@ export function JoinForm({ initialError }: { initialError?: string }) {
 
       {mode === "signin" ? (
         <form onSubmit={onSignIn} data-form="signin" style={{ display: "grid", gap: "0.75rem" }}>
-          <p>Already a member? A sign-in link will be emailed to you — no invite code needed.</p>
+          <p>Already a member? Sign in with your email and password — no invite code needed.</p>
           <label>
             Email
             <input name="email" type="email" required autoComplete="email" />
           </label>
+          <label>
+            Password
+            <input name="password" type="password" required autoComplete="current-password" />
+          </label>
           <button type="submit" disabled={busy}>
-            {busy ? "Sending…" : "Email me a sign-in link"}
+            {busy ? "Signing in…" : "Sign in"}
           </button>
           <a href="/auth/google" data-google="signin">
             Continue with Google
+          </a>
+          <a href="/forgot" data-forgot>
+            Forgot my password?
           </a>
         </form>
       ) : (
@@ -142,9 +163,16 @@ export function JoinForm({ initialError }: { initialError?: string }) {
               Email
               <input name="email" type="email" autoComplete="email" />
             </label>
+            <label>
+              Password
+              <input name="password" type="password" autoComplete="new-password" minLength={8} />
+            </label>
             <button type="submit" value="email" disabled={busy}>
               {busy ? "Sending…" : "Email me a link"}
             </button>
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              Or skip the password and use Google — nothing else to fill in:
+            </p>
             <button type="submit" value="google" data-google="signup" disabled={busy}>
               Continue with Google
             </button>
