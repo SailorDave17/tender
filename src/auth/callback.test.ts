@@ -35,6 +35,20 @@ describe("decideCallback — what the callback does with its query (#70 AC 7)", 
     });
   });
 
+  // #74: the link leg's own refusal. GoTrue links the identity at ITS provider callback, so an
+  // already-taken Google account never reaches linkIdentity's return — it arrives here as a
+  // query parameter, and without this line it would read as a generic "try again", which cannot
+  // work. Placed before otp_expired because it is the more specific code.
+  it("names an already-taken Google account as already-linked, not as a provider error", () => {
+    expect(
+      decideCallback({
+        error: "server_error",
+        error_code: "identity_already_exists",
+        error_description: "Identity is already linked to another user",
+      }),
+    ).toEqual({ kind: "back", reason: "already-linked" });
+  });
+
   it("names any other provider failure as a provider error", () => {
     expect(decideCallback({ error: "server_error", error_description: "Unable to exchange external code" })).toEqual(
       { kind: "back", reason: "provider-error" },
@@ -50,12 +64,33 @@ describe("decideCallback — what the callback does with its query (#70 AC 7)", 
 
 describe("explainReason — plain words for every reason the callback can return", () => {
   it("has a distinct sentence for each known reason and a fallback for the rest", () => {
-    const known = ["link-invalid", "not-invited", "missing-code", "cancelled", "provider-error"];
+    const known = ["link-invalid", "not-invited", "missing-code", "cancelled", "provider-error", "already-linked"];
     const sentences = known.map(explainReason);
     expect(new Set(sentences).size).toBe(known.length);
+    // Distinctness alone does not catch a reason falling through to the fallback — the fallback
+    // is distinct too, so deleting a case leaves the set the same size. Predicted before running
+    // the #74 mutation pass; without this line, removing `already-linked` reddened nothing.
+    expect(sentences).not.toContain(explainReason("no-such-reason"));
     expect(explainReason("cancelled")).toMatch(/cancelled/i);
     expect(explainReason("cancelled")).not.toMatch(/error|fault|wrong/i);
     expect(explainReason("not-invited")).toMatch(/invite code/i);
     expect(explainReason("whatever")).toMatch(/did not complete/);
+  });
+
+  /**
+   * #74 AC 3. This is the sentence a returning member sees when their Google address differs
+   * from the one they joined with — the commonest way to reach `not-invited`, because Supabase
+   * links a Google identity only on a matching verified email. It used to say ONLY "sign up with
+   * this season's invite code", and following that advice gave the same human a second person
+   * row. The advice must now lead them to sign in and then link.
+   */
+  it("tells an existing member to sign in and link, not to sign up again (AC 3)", () => {
+    const s = explainReason("not-invited");
+    expect(s).toMatch(/already a member/i);
+    expect(s).toMatch(/sign in with the email you joined with/i);
+    expect(s).toMatch(/link Google from your profile/i);
+    // the sign-up route is still offered — but second, and only to someone who is new
+    expect(s).toMatch(/invite code/i);
+    expect(s.search(/already a member/i)).toBeLessThan(s.search(/invite code/i));
   });
 });
