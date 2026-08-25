@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FoundUser } from "./find-user";
 import type { PassPayload } from "./pass";
+import { validatePassword } from "./password";
 
 /**
  * The invite gate, as a pure decision over injected effects.
@@ -40,22 +41,31 @@ export type JoinInput = {
   displayName: string;
   code: string;
   attested: boolean;
+  /** Chosen at sign-up (#82): set on the auth user so the member can sign in without email after. */
+  password: string;
 };
 
 export type JoinDeps = {
   /** The club's current invite code, read with the service role — never by a client. */
   inviteCode: () => Promise<string>;
-  /** Creates the auth user, or reports that one already exists for the address. */
+  /** Creates the auth user with the chosen password, or reports that one already exists (#82). */
   createUser: (user: {
     email: string;
+    password: string;
     user_metadata: { display_name: string; adult_attested_at: string };
   }) => Promise<{ created: boolean } | { error: string }>;
   /** The auth user already at this address, and whether it carries an attestation (#85). */
   existingUser: (email: string) => Promise<FoundUser>;
-  /** Writes this gate's attestation and name onto an existing auth user, as the service role (#85). */
+  /**
+   * Writes this gate's attestation and name onto an existing UNATTESTED auth user, and sets the
+   * password chosen on this submission (#85, extended #82). Only ever called for a stray with no
+   * attestation, so setting the password is claiming a squatted address, not overwriting a
+   * member's — an already-attested user is left untouched a line up in `join`.
+   */
   attestExisting: (
     id: string,
     meta: { display_name: string; adult_attested_at: string },
+    password: string,
   ) => Promise<{ error?: string }>;
   /** Sends the magic link to an address that already has a user (shouldCreateUser: false). */
   sendMagicLink: (email: string) => Promise<{ error?: string }>;
@@ -87,6 +97,12 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
   if (!EMAIL.test(email) || displayName.length < 1 || displayName.length > 80) {
     return { status: 400, body: { message: "Enter a name and a valid email address." } };
   }
+  // The password is validated before the code is read, alongside the name and email, so a too-short
+  // one is refused before anything is touched — same as every other bad-input case (#82).
+  const pw = validatePassword(input.password);
+  if (!pw.ok) {
+    return { status: 400, body: { message: pw.message } };
+  }
   if (!codesMatch(input.code, await deps.inviteCode())) {
     return { status: 403, body: { message: "That invite code is not this season's." } };
   }
@@ -95,7 +111,7 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
     display_name: displayName,
     adult_attested_at: (deps.now ?? (() => new Date()))().toISOString(),
   };
-  const created = await deps.createUser({ email, user_metadata: meta });
+  const created = await deps.createUser({ email, password: input.password, user_metadata: meta });
   if ("error" in created) {
     return { status: 500, body: { message: "Could not start sign-in. Try again in a minute." } };
   }
@@ -112,7 +128,7 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
       return { status: 500, body: { message: "Could not start sign-in. Try again in a minute." } };
     }
     if (!existing.attested) {
-      const written = await deps.attestExisting(existing.id, meta);
+      const written = await deps.attestExisting(existing.id, meta, input.password);
       if (written.error) {
         return { status: 500, body: { message: "Could not start sign-in. Try again in a minute." } };
       }

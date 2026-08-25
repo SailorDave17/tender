@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       displayName: String(body.displayName ?? ""),
       code: String(body.code ?? ""),
       attested: body.attested === true,
+      password: String(body.password ?? ""),
     },
     {
       inviteCode: async () => {
@@ -46,8 +47,8 @@ export async function POST(request: NextRequest) {
           if (error) return { error: error.message };
           return { users: data.users };
         }),
-      attestExisting: async (id, meta) => {
-        const { error } = await admin.auth.admin.updateUserById(id, { user_metadata: meta });
+      attestExisting: async (id, meta, password) => {
+        const { error } = await admin.auth.admin.updateUserById(id, { user_metadata: meta, password });
         return error ? { error: error.message } : {};
       },
       sendMagicLink: async (email) => {
