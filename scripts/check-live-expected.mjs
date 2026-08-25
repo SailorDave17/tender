@@ -20,6 +20,7 @@ export const EXPECTED_TABLES = [
   "post",
   "race_date",
   "suggestion",
+  "tick_run",
 ];
 
 /** A placeholder that is a valid uuid and matches nobody's row. */

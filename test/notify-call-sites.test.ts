@@ -5,18 +5,36 @@ import { join, relative } from "node:path";
 /**
  * Two facts about src/ that only a read of src/ can hold (story #23 AC 3 and AC 7).
  *
- * AC 3: notifyRung() is called from the post-create and availability-toggle Server Actions and
- * nowhere else — a board GET sends no email and writes no suggestion row because no render
- * path can reach the function. The set of importers is asserted exactly, so a later story
- * adding a call site changes this list on purpose, and a page importing it fails here.
+ * AC 3: nothing on a RENDER path can send. The set of files that import a sending entry point is
+ * asserted exactly, so a later story adding one changes this list on purpose and a page importing
+ * one fails here.
  *
- * AC 7: no client component references RESEND and no NEXT_PUBLIC_RESEND exists — the key
- * stays on the server. Both hunts are grep-shaped, so each is proven on a fixture first: a
- * guard that reads source can pass on an empty corpus (cairn:
+ * WHAT THE SUBJECT IS, AND WHY IT NARROWED (story #25). This used to hold "files importing
+ * anything under src/notify/", which was the same set while notify/ had one job. The ladder tick
+ * made it two: `src/engine/tick.ts` imports `openRung` — two lines of `Math.max` on a rung — and
+ * `src/engine/tick-store.ts` imports the store's TYPE, and neither can cause an email. Left as it
+ * was, this test would have refused a correct file for naming a pure helper, which is the failure
+ * mode of a guard whose scan is wider than its claim (cairn:
+ * a-guard-that-reads-source-must-survive-its-own-docs-2026-08-09). So the scan now matches the
+ * claim: the SENDING symbols, by name.
+ *
+ * The list below is the whole surface — two Server Actions and one Route Handler — and the second
+ * assertion is what keeps the original claim intact now that a route is on it: a sender is a
+ * Server Action or a route under app/api/, never a page and never a component.
+ *
+ * AC 7: no client component references RESEND and no NEXT_PUBLIC_RESEND exists — the key stays on
+ * the server. Every hunt here is grep-shaped, so each is proven on a fixture first: a guard that
+ * reads source can pass on an empty corpus (cairn:
  * a-mutation-certifies-the-corpus-not-the-guard-2026-08-20).
  */
 
 const SRC = join(process.cwd(), "src");
+
+/**
+ * The four ways a caller can cause a rung email. `notifyRung`/`notifyRungLive` run the ladder and
+ * then send; `dispatchPending`/`dispatchPendingLive` send what the tick has already queued.
+ */
+const SENDERS = ["notifyRung", "notifyRungLive", "dispatchPending", "dispatchPendingLive"];
 
 async function sourceFiles(): Promise<{ path: string; text: string }[]> {
   const out: { path: string; text: string }[] = [];
@@ -31,34 +49,65 @@ async function sourceFiles(): Promise<{ path: string; text: string }[]> {
   return out;
 }
 
-/** Files importing any module under src/notify/. */
-function importersOfNotify(files: { path: string; text: string }[]): string[] {
+/** The names a file binds from src/notify/, whether or not the import is type-only. */
+function notifyBindings(text: string): string[] {
+  const names: string[] = [];
+  for (const m of text.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']@\/notify\/[a-z-]+["']/g)) {
+    for (const raw of m[1].split(",")) {
+      const name = raw.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0].trim();
+      if (name) names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Files outside src/notify/ that import something able to send. */
+function sendersAmong(files: { path: string; text: string }[]): string[] {
   return files
     .filter((f) => !f.path.startsWith("notify/"))
-    .filter((f) => /from\s+["']@\/notify\/[a-z]+["']/.test(f.text))
+    .filter((f) => notifyBindings(f.text).some((n) => SENDERS.includes(n)))
     .map((f) => f.path)
     .sort();
 }
 
 const isClientComponent = (text: string) => /^\s*["']use client["']\s*;?/m.test(text);
 
-describe("notifyRung's call sites (AC 3)", () => {
-  it("the importer scan finds an import by alias and ignores one inside a comment-free unrelated file", () => {
+describe("what can send a rung email (AC 3)", () => {
+  it("the scan finds a sender, ignores a pure helper from the same module, and ignores a type-only import", () => {
+    // Proven on a fixture first, and every negative here is a real line from src/: the guard
+    // narrowed for #25 precisely because these three shapes had to be told apart.
     const fixture = [
       { path: "app/x/actions.ts", text: `import { notifyRungLive } from "@/notify/live";\n` },
+      { path: "app/api/y/route.ts", text: `import { dispatchPendingLive } from "@/notify/live";\n` },
+      { path: "engine/tick.ts", text: `import { openRung, type RungPost } from "@/notify/rung";\n` },
+      { path: "engine/tick-store.ts", text: `import type { RungStore } from "@/notify/rung";\n` },
       { path: "app/y/page.tsx", text: `import { viewPost } from "@/board/post-view";\n` },
       { path: "notify/live.ts", text: `import { notifyRung } from "./rung";\n` },
     ];
-    expect(importersOfNotify(fixture)).toEqual(["app/x/actions.ts"]);
+    expect(sendersAmong(fixture)).toEqual(["app/api/y/route.ts", "app/x/actions.ts"]);
+    // and the binding parse itself, since everything above rests on it
+    expect(notifyBindings(`import {\n  dispatchPending as send,\n  type RungPost,\n} from "@/notify/rung";`)).toEqual([
+      "dispatchPending",
+      "RungPost",
+    ]);
   });
 
-  it("exactly the post action and the board (availability) action import it — no page, no component", async () => {
+  it("exactly the two Server Actions and the tick route can send — no page, no component", async () => {
     const files = await sourceFiles();
     expect(files.length).toBeGreaterThan(20);
-    expect(importersOfNotify(files)).toEqual(["app/board/actions.ts", "app/post/actions.ts"]);
-    // And both are Server Actions, not modules a page could call during a render.
-    for (const p of ["app/board/actions.ts", "app/post/actions.ts"]) {
-      expect(files.find((f) => f.path === p)!.text.startsWith('"use server";')).toBe(true);
+    expect(sendersAmong(files)).toEqual([
+      "app/api/ladder/tick/route.ts",
+      "app/board/actions.ts",
+      "app/post/actions.ts",
+    ]);
+    // A sender is a Server Action or a Route Handler. Both are entered by a request the person
+    // made on purpose; neither is reached by rendering a page, which is the claim AC 3 is about.
+    for (const p of sendersAmong(files)) {
+      const text = files.find((f) => f.path === p)!.text;
+      expect(text.startsWith('"use server";') || /^app\/api\/.*\/route\.ts$/.test(p), `${p} is an action or a route`).toBe(
+        true,
+      );
+      expect(isClientComponent(text), `${p} is not a client component`).toBe(false);
     }
   });
 });
