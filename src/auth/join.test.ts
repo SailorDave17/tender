@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { GENERIC_OK, codesMatch, join, type JoinDeps, type JoinInput } from "./join";
 
-/** A fake for every effect, recording each call so the negative cases can assert zero. */
-function fakes(overrides: Partial<JoinDeps> = {}) {
-  const calls = { inviteCode: 0, createUser: 0, sendMagicLink: 0 };
+/** The auth user a fake `existingUser` reports when a test makes the address taken. */
+const EXISTING_ID = "33333333-3333-4333-8333-333333333333";
+
+/**
+ * A fake for every effect, recording each call so the negative cases can assert zero.
+ *
+ * `taken` makes `createUser` report the address as already having an auth user — the only branch
+ * on which #85's lookup runs at all. It is a flag rather than an override so that the call
+ * counter survives it; overriding `createUser` to return `{ created: false }` silently stops it
+ * counting, which reads as *the gate never tried to create a user*.
+ */
+function fakes(overrides: Partial<JoinDeps> = {}, { taken = false } = {}) {
+  const calls = { inviteCode: 0, createUser: 0, existingUser: 0, attestExisting: 0, sendMagicLink: 0 };
+  /** Every attestation write, so AC 2 and AC 3 can assert on the argument and not only the count. */
+  const written: { id: string; meta: { display_name: string; adult_attested_at: string } }[] = [];
   const deps: JoinDeps = {
     inviteCode: async () => {
       calls.inviteCode++;
@@ -11,7 +23,16 @@ function fakes(overrides: Partial<JoinDeps> = {}) {
     },
     createUser: async () => {
       calls.createUser++;
-      return { created: true };
+      return { created: !taken };
+    },
+    existingUser: async () => {
+      calls.existingUser++;
+      return { found: true, id: EXISTING_ID, attested: false };
+    },
+    attestExisting: async (id, meta) => {
+      calls.attestExisting++;
+      written.push({ id, meta });
+      return {};
     },
     sendMagicLink: async () => {
       calls.sendMagicLink++;
@@ -20,7 +41,7 @@ function fakes(overrides: Partial<JoinDeps> = {}) {
     now: () => new Date("2026-08-22T12:00:00Z"),
     ...overrides,
   };
-  return { deps, calls };
+  return { deps, calls, written };
 }
 
 const good: JoinInput = {
@@ -41,7 +62,14 @@ describe("join — the happy path", () => {
     };
     const r = await join(good, deps);
     expect(r).toEqual({ status: 200, body: { message: GENERIC_OK } });
-    expect(calls).toEqual({ inviteCode: 1, createUser: 1, sendMagicLink: 1 });
+    // A fresh address is created outright, so nothing is looked up and nothing is stamped.
+    expect(calls).toEqual({
+      inviteCode: 1,
+      createUser: 1,
+      existingUser: 0,
+      attestExisting: 0,
+      sendMagicLink: 1,
+    });
     expect(created).toEqual({
       email: "alice@example.org",
       user_metadata: { display_name: "Alice", adult_attested_at: "2026-08-22T12:00:00.000Z" },
@@ -49,7 +77,10 @@ describe("join — the happy path", () => {
   });
 
   it("answers the same sentence for a returning member, so the address is not revealed", async () => {
-    const { deps, calls } = fakes({ createUser: async () => ({ created: false }) });
+    const { deps, calls } = fakes(
+      { existingUser: async () => ({ found: true, id: EXISTING_ID, attested: true }) },
+      { taken: true },
+    );
     const r = await join(good, deps);
     expect(r).toEqual({ status: 200, body: { message: GENERIC_OK } });
     expect(calls.sendMagicLink).toBe(1);
@@ -62,7 +93,13 @@ describe("join — the refusals reach neither the user store nor the mailer (AC 
     const r = await join({ ...good, attested: false }, deps);
     expect(r.status).toBe(400);
     expect(r.body.message).toMatch(/18 or over/);
-    expect(calls).toEqual({ inviteCode: 0, createUser: 0, sendMagicLink: 0 });
+    expect(calls).toEqual({
+      inviteCode: 0,
+      createUser: 0,
+      existingUser: 0,
+      attestExisting: 0,
+      sendMagicLink: 0,
+    });
   });
 
   it("403 on a wrong invite code", async () => {
@@ -70,7 +107,13 @@ describe("join — the refusals reach neither the user store nor the mailer (AC 
     const r = await join({ ...good, code: "HSC-2026" }, deps);
     expect(r.status).toBe(403);
     expect(r.body.message).toMatch(/invite code/);
-    expect(calls).toEqual({ inviteCode: 1, createUser: 0, sendMagicLink: 0 });
+    expect(calls).toEqual({
+      inviteCode: 1,
+      createUser: 0,
+      existingUser: 0,
+      attestExisting: 0,
+      sendMagicLink: 0,
+    });
   });
 
   it("403 on a stale code that differs only in length", async () => {
@@ -84,7 +127,13 @@ describe("join — the refusals reach neither the user store nor the mailer (AC 
     const { deps, calls } = fakes();
     expect((await join({ ...good, email: "not-an-address" }, deps)).status).toBe(400);
     expect((await join({ ...good, displayName: "   " }, deps)).status).toBe(400);
-    expect(calls).toEqual({ inviteCode: 0, createUser: 0, sendMagicLink: 0 });
+    expect(calls).toEqual({
+      inviteCode: 0,
+      createUser: 0,
+      existingUser: 0,
+      attestExisting: 0,
+      sendMagicLink: 0,
+    });
   });
 
   it("500 without sending when the user store fails, and 500 when the mailer fails", async () => {
@@ -93,6 +142,106 @@ describe("join — the refusals reach neither the user store nor the mailer (AC 
     expect(a.calls.sendMagicLink).toBe(0);
     const b = fakes({ sendMagicLink: async () => ({ error: "smtp down" }) });
     expect((await join(good, b.deps)).status).toBe(500);
+  });
+});
+
+/**
+ * #85. `createUser` answering `email_exists` used to end the story: the metadata this gate had
+ * just assembled was dropped, the link went out, and the callback deleted an invited member for
+ * having no attestation. Signups are ON, so any browser can leave a stray auth user on somebody
+ * else's address — four of the live project's five auth users were exactly that on 2026-08-25,
+ * one of them belonging to a person the owner was about to invite.
+ */
+describe("join — a stray auth user on the address (#85)", () => {
+  it("stamps this submission's attestation onto an unattested existing user, then sends (AC 1)", async () => {
+    const { deps, calls, written } = fakes({}, { taken: true });
+    const r = await join(good, deps);
+    expect(r).toEqual({ status: 200, body: { message: GENERIC_OK } });
+    expect(calls).toEqual({
+      inviteCode: 1,
+      createUser: 1,
+      existingUser: 1,
+      attestExisting: 1,
+      sendMagicLink: 1,
+    });
+    // The same name and clock the createUser attempt carried — what they typed and when the gate
+    // ran, not anything reconstructed later.
+    expect(written).toEqual([
+      {
+        id: EXISTING_ID,
+        meta: { display_name: "Alice", adult_attested_at: "2026-08-22T12:00:00.000Z" },
+      },
+    ]);
+  });
+
+  it("looks up the lowercased address, not the one that was typed", async () => {
+    const seen: string[] = [];
+    const { deps } = fakes(
+      {
+        existingUser: async (email) => {
+          seen.push(email);
+          return { found: true, id: EXISTING_ID, attested: false };
+        },
+      },
+      { taken: true },
+    );
+    await join(good, deps);
+    expect(seen).toEqual(["alice@example.org"]);
+  });
+
+  it("writes nothing when the existing user is already attested — a member is not overwritten (AC 2)", async () => {
+    const { deps, calls, written } = fakes(
+      { existingUser: async () => ({ found: true, id: EXISTING_ID, attested: true }) },
+      { taken: true },
+    );
+    const r = await join(good, deps);
+    expect(r.status).toBe(200);
+    expect(written).toEqual([]);
+    expect(calls.attestExisting).toBe(0);
+    expect(calls.sendMagicLink).toBe(1);
+  });
+
+  it("does NOT send when the attestation write fails — a link that ends in deletion is the defect", async () => {
+    const { deps, calls } = fakes(
+      { attestExisting: async () => ({ error: "gotrue down" }) },
+      { taken: true },
+    );
+    const r = await join(good, deps);
+    expect(r.status).toBe(500);
+    expect(calls.sendMagicLink).toBe(0);
+  });
+
+  it("does NOT send when the lookup errors", async () => {
+    const { deps, calls } = fakes({ existingUser: async () => ({ error: "page 2 failed" }) }, { taken: true });
+    const r = await join(good, deps);
+    expect(r.status).toBe(500);
+    expect(calls.attestExisting).toBe(0);
+    expect(calls.sendMagicLink).toBe(0);
+  });
+
+  it("does NOT send when the lookup finds nobody, which contradicts the refusal that got us here", async () => {
+    const { deps, calls } = fakes({ existingUser: async () => ({ found: false }) }, { taken: true });
+    const r = await join(good, deps);
+    expect(r.status).toBe(500);
+    expect(calls.attestExisting).toBe(0);
+    expect(calls.sendMagicLink).toBe(0);
+  });
+
+  it("a wrong code or an unticked box reaches neither the lookup nor the write (AC 3)", async () => {
+    // The fixture is otherwise maximally permissive — the address IS taken and the existing user
+    // IS unattested, so this is the exact input that would be stamped a line later. Only the gate
+    // stands between a stranger guessing addresses and an attestation on somebody's account.
+    const wrong = fakes({}, { taken: true });
+    expect((await join({ ...good, code: "HSC-2026" }, wrong.deps)).status).toBe(403);
+    expect(wrong.calls.existingUser + wrong.calls.attestExisting).toBe(0);
+
+    const unticked = fakes({}, { taken: true });
+    expect((await join({ ...good, attested: false }, unticked.deps)).status).toBe(400);
+    expect(unticked.calls.existingUser + unticked.calls.attestExisting).toBe(0);
+
+    const badEmail = fakes({}, { taken: true });
+    expect((await join({ ...good, email: "not-an-address" }, badEmail.deps)).status).toBe(400);
+    expect(badEmail.calls.existingUser + badEmail.calls.attestExisting).toBe(0);
   });
 });
 
