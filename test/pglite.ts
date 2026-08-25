@@ -85,6 +85,12 @@ export type FreshDbOptions = {
  * produces under load (10 134 ms), which is the whole of #78: the boundary ran right through the
  * observed maximum, so whether the suite passed was a fact about what else the machine was doing.
  *
+ * *Measured on CI 2026-08-25* (`ubuntu-latest`, run 32874204521), because a budget calibrated on
+ * one developer's machine is a local gate that can run a different graph: the guard test that
+ * performs a full real `freshDb()` in a test body took **5819 ms** wall — boot, all eleven
+ * migrations and the close. So a shared runner is not slower than this box for this work, and the
+ * budget has roughly 3.4x headroom there. That is the number to compare a future CI red against.
+ *
  * 20 000 is that measured worst case doubled. It is deliberately far below `hookTimeout` (see
  * vitest.config.ts): the two are not redundant, they answer different questions. This budget
  * decides how long a boot may take before it is a breakage; `hookTimeout` is only the backstop
