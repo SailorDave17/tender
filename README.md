@@ -148,10 +148,18 @@ instrument for that, and it probes with `limit=0` so it can never write.
    typed the right invite code. It then self-healed, because the delete cleared the address, so
    the second attempt worked and there was nothing left to reproduce.
 
-   Since #85 the gate stamps its own attestation onto an unattested existing user before sending,
-   so the first attempt works. An already-attested user is left untouched, and a wrong code or an
-   unticked box still reaches neither the lookup nor the write. Nothing to do here, and **no
-   auth user needs deleting by hand any more**.
+   Since #85 the gate stamps its own attestation onto an unattested existing user and carries on,
+   so the first attempt works. A wrong code or an unticked box still reaches neither the lookup
+   nor the write. Nothing to do here, and **no auth user needs deleting by hand any more**.
+
+   Two things in that paragraph changed with #99, which removed the emailed link. There is no
+   "sent the link anyway" any more, because there is no link: a sign-up creates the account,
+   mints the person row and signs the member in on the spot. And an already-**attested** user is
+   no longer left untouched and told nothing - it is somebody's account, so the sign-up answers
+   *"You already have an account here - sign in with your password"* and puts them on the Sign in
+   tab. That reveals the address is registered, deliberately: the caller has already typed this
+   season's invite code, and the old generic sentence stopped being honest the moment no link was
+   on its way to anybody.
 
    To clear the historical ones anyway — they are inert, this is tidiness rather than repair:
 
@@ -219,7 +227,10 @@ instrument for that, and it probes with `limit=0` so it can never write.
    `tender@tender.madcowsailing.com`, and without the key the notification step fails before
    any send — the post still stands, the failure goes to the function log, nobody is emailed
    (#65 is where a missing name becomes a startup error). Both kinds of mail share Resend Free's 100/day;
-   the app stops at 95 of its own sends and leaves the rest for magic links.
+   the app stops at 95 of its own sends and leaves the rest for password resets. (That headroom
+   was sized for magic links; #99 removed them, so what it now protects is the one screen that
+   still emails anything - Forgot my password. The number is unchanged and is a recorded default,
+   not a measurement.)
 2b. **Web push keys** (#29). Run **`npm run vapid:keys`** and put the pair it prints in
    `.env.local` and in Vercel's environment (Production **and** Preview):
    `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` — a sixth and seventh name beside the

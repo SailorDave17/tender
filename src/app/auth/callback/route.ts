@@ -9,7 +9,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
 /**
- * Where the magic link and the Google redirect both land. Exchanges the PKCE code for a session
+ * Where the Google redirect and the emailed reset link both land — the magic link was the third
+ * leg until #99 removed it, and a sign-up now finishes without coming back here at all (the
+ * invite gate calls `ensurePerson` itself). Exchanges the PKCE code for a session
  * (the cookie-bound client writes the session cookies), makes sure the person rows exist — or,
  * for a Google-created user with no gate pass, deletes the auth user and the session (#70) —
  * and redirects to a sanitised `next`. Any failure goes back to a reason the page can show;

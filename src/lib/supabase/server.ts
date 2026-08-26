@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 /**
  * The cookie-bound client for Server Components and Route Handlers. Anon key: everything it
  * reads goes through RLS as the signed-in person. PKCE is forced by @supabase/ssr, so the
- * magic link carries a `code` and the callback exchanges it.
+ * emailed reset link carries a `code` and the callback exchanges it.
  */
 export async function supabaseServer() {
   const store = await cookies();

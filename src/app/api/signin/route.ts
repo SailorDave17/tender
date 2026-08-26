@@ -8,9 +8,13 @@ import { supabaseServer } from "@/lib/supabase/server";
  * Next merges that store onto this response — so this path never touches /auth/callback.
  *
  * That is exactly why the person-row guard lives here as well as at the callback: with signups ON
- * a confirmed stray can hold a session, and only a person row (minted at the callback, never here)
- * makes it a membership. `passwordSignIn` refuses a rowless session and signs it back out (AC 7);
- * the read is scoped to the caller's own id and no user is created on this path.
+ * a confirmed stray can hold a session, and only a person row makes it a membership.
+ * `passwordSignIn` refuses a rowless session and signs it back out (AC 7); the read is scoped to
+ * the caller's own id and no user is created on this path.
+ *
+ * The row is minted by `ensurePerson` and by nothing else, but since #99 that is reached from two
+ * places rather than one — /auth/callback and the invite gate — so "minted at the callback, never
+ * here" is no longer the way to say it. Never HERE is still exact: this route creates nothing.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));

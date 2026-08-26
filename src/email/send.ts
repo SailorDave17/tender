@@ -9,7 +9,7 @@
  * no public-prefixed spelling of the key exists for a bundle to inline.
  *
  * Sends from the club's own domain (README runbook: Resend verifies tender.madcowsailing.com,
- * which also carries the magic links). Text only: a notification read on a phone on a Saturday
+ * which also carries the password resets). Text only: a notification read on a phone on a Saturday
  * night needs the date, the boat and a link, not a layout.
  */
 

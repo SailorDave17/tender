@@ -18,7 +18,7 @@ import { supabaseServer } from "@/lib/supabase/server";
  * refuses. A second check in front would make either deletable with nothing going red.
  *
  * The snapshot around the call is not defensive tidiness: a refused start leaves a stale PKCE
- * verifier over the one key /auth/callback reads, which kills a magic link already sitting in the
+ * verifier over the one key /auth/callback reads, which kills an emailed link already sitting in the
  * member's inbox — and with *Allow manual linking* off, refusal is the default path.
  * `src/auth/link.ts` carries the measurement. The restore goes through the cookie STORE rather
  * than the response, because Next merges that store over any Set-Cookie a handler sets itself and

@@ -8,7 +8,7 @@ import { supabaseRungStore } from "./store";
 /**
  * notifyRung() with the live dependencies, for the two Server Actions that call it (post
  * create, availability mark). The site URL in the email is this request's origin — the same
- * way /api/join builds the magic link's redirect — so a local stack emails localhost links and
+ * way /api/forgot builds the reset link's redirect — so a local stack emails localhost links and
  * production emails its own.
  *
  * A failure here is logged and swallowed on purpose: the post or the availability row is

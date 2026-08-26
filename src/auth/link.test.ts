@@ -173,11 +173,12 @@ describe("explainLinkReason — plain words, and silence on reasons it does not 
 /**
  * The PKCE-verifier repair. `linkIdentity` writes a verifier before it asks whether the link may
  * proceed and cleans nothing up on refusal, so a refused start overwrites the fixed key
- * /auth/callback reads and kills a magic link already in the member's inbox. With *Allow manual
+ * /auth/callback reads and kills an emailed link already in the member's inbox — since #99 that
+ * link is a password reset, which is the one a stranded member most needs. With *Allow manual
  * linking* off — the Supabase default, and the live project's state on 2026-08-24 — refusal is
  * the ordinary path, so this runs on every press until the owner flips it.
  */
-describe("verifierCookies / restoreVerifiers — a refused link must not eat a pending magic link", () => {
+describe("verifierCookies / restoreVerifiers — a refused link must not eat a pending reset link", () => {
   const K = "sb-proj-auth-token-code-verifier";
   const SLOT = "sb-proj-auth-token-flow-abcdef0123456789-code-verifier";
   const INDEX = "sb-proj-auth-token-flows-code-verifier";
@@ -194,7 +195,7 @@ describe("verifierCookies / restoreVerifiers — a refused link must not eat a p
     expect(verifierCookies(all).map((c) => c.name)).toEqual([K, SLOT, INDEX]);
   });
 
-  it("puts a clobbered verifier back to the value the magic link needs", () => {
+  it("puts a clobbered verifier back to the value the reset link needs", () => {
     const plan = restoreVerifiers([{ name: K, value: "MAGIC" }], [{ name: K, value: "FROM-THE-LINK" }]);
     expect(plan).toEqual([{ name: K, value: "MAGIC" }]);
   });

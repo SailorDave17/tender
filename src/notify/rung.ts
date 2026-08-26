@@ -36,7 +36,11 @@ import { ratingLabel } from "@/profile/profile";
  * against an in-memory store with a fake transport and count recipients exactly.
  */
 
-/** The 100/day Resend Free cap, less headroom for magic links. A recorded default, not a decision. */
+/**
+ * The 100/day Resend Free cap, less headroom for the identity mail the app also sends — password
+ * resets, which since #99 are the only kind (the magic link this headroom was first sized for is
+ * gone). A recorded default, not a decision.
+ */
 export const EMAIL_DAY_CAP = 100;
 export const EMAIL_HEADROOM = 5;
 export const EMAIL_SKIP_AT = EMAIL_DAY_CAP - EMAIL_HEADROOM;
