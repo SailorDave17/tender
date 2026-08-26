@@ -1,0 +1,39 @@
+# Supabase Free pauses a project after 7 idle days (pricing page, 2026-08-21). One read a week
+# keeps it awake through the off-season. GitHub disables scheduled workflows after 60 days of
+# repo inactivity — so a spring check stays in the README runbook; this is not a guarantee.
+name: keepalive
+on:
+  schedule:
+    - cron: "17 9 * * 1" # Mondays 09:17 UTC
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: one read against the live project
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$URL" && test -n "$KEY" || { echo "secrets not set"; exit 1; }
+          body=$(mktemp)
+          code=$(curl -s -o "$body" -w '%{http_code}' "$URL/rest/v1/club?select=id&limit=0" -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "HTTP $code"
+          head -c 200 "$body"; echo
+          # This job's whole purpose is to be ACTIVITY against the 7-day pause, so the question is
+          # not "did something answer" but "did the database answer". A rejected key is turned away
+          # by the API gateway before Postgres is reached — a 401 carrying no SQLSTATE — so it is a
+          # green run that kept nothing awake. Postgres's own refusal of the anon role on `club`
+          # carries 42501, and that IS a database read. Same distinction as scripts/check-live-core.mjs.
+          case "$code" in
+            200)
+              exit 0 ;;
+            401|403)
+              if grep -q '"code":"42501"' "$body"; then exit 0; fi
+              echo "keepalive: HTTP $code with no Postgres 42501 — the key was rejected by the gateway."
+              echo "keepalive: this read never reached the database, so it is not activity against the 7-day pause."
+              exit 1 ;;
+            *)
+              echo "keepalive: unexpected HTTP $code"
+              exit 1 ;;
+          esac

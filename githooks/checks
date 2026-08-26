@@ -1,0 +1,7 @@
+# One shell command per line, run from the repo root. Non-zero exit refuses the
+# push. Lines starting with # are ignored. Mirrors .github/workflows/ci.yml; the
+# build is left to CI because it is slow and a Linux runner is the artefact that
+# ships.
+npm run lint
+npm run typecheck
+npm test -- --run

@@ -1,0 +1,10 @@
+:root {
+  color-scheme: light dark;
+  --hull-green: #1e5443;
+  --paper: #edf0ea;
+}
+html, body { margin: 0; }
+body { background: var(--paper); color: #1a1a1a; }
+@media (prefers-color-scheme: dark) {
+  body { background: #121a17; color: var(--paper); }
+}
