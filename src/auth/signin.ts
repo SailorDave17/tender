@@ -39,3 +39,29 @@ export async function signIn(input: { email: string }, deps: SignInDeps): Promis
   }
   return { status: 200, body: { message: GENERIC_OK } };
 }
+
+/**
+ * The Forgot-my-password reset arm (#82 AC 4): send a password-reset email. The other arm of that
+ * screen is `signIn` above — the same sign-in link a returning member already gets.
+ *
+ * `resetPasswordForEmail` does not reveal whether the address is registered — it answers success
+ * either way and simply sends nothing for an unknown one — so the criterion's "does not reveal
+ * whether an address is registered" is a property of the platform call, not something this code
+ * has to defend. An error therefore means a real transport failure rather than an unknown address,
+ * and gets its own status without leaking anything: registration looks identical from the outside.
+ */
+export type RequestResetDeps = {
+  sendReset: (email: string) => Promise<{ error?: { message: string } }>;
+};
+
+export async function requestReset(input: { email: string }, deps: RequestResetDeps): Promise<SignInResult> {
+  const email = input.email.trim().toLowerCase();
+  if (!EMAIL.test(email)) {
+    return { status: 400, body: { message: "Enter a valid email address." } };
+  }
+  const sent = await deps.sendReset(email);
+  if (sent.error) {
+    return { status: 500, body: { message: "Could not send the reset email. Try again in a minute." } };
+  }
+  return { status: 200, body: { message: GENERIC_OK } };
+}

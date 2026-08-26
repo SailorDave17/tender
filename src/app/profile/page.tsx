@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { explainLinkReason, hasGoogleIdentity } from "@/auth/link";
+import { PushToggle } from "@/push/PushToggle";
 import { ProfileCard } from "@/profile/ProfileCard";
 import { RATINGS, explainProfileRefusal } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -24,7 +25,7 @@ export default async function ProfilePage({
   } = await client.auth.getUser();
   if (!user) redirect("/join");
 
-  const [{ data: me }, { data: contact }, { data: classes }] = await Promise.all([
+  const [{ data: me }, { data: contact }, { data: classes }, { data: devices }] = await Promise.all([
     client
       .from("person")
       .select("id, display_name, rating, any_hull, hulls")
@@ -32,9 +33,16 @@ export default async function ProfilePage({
       .maybeSingle(),
     client.from("person_contact").select("phone").eq("person_id", user.id).maybeSingle(),
     client.from("boat_class").select("name").order("name"),
+    // 0013's read policy is self-only, so this is the caller's own devices and cannot be
+    // anyone else's. The keys are withheld at the grant — the page has no use for them.
+    client.from("push_subscription").select("id").eq("person_id", user.id),
   ]);
   if (!me) redirect("/join?error=not-invited");
   const { error, saved, linked } = await searchParams;
+  // Read on the server and handed down: NEXT_PUBLIC_ is inlined at build time, so a client
+  // component reading it directly would bake in whatever the BUILDING machine had rather than
+  // what this deployment holds (cairn: nextjs-proxy-inlines-public-env-at-build).
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
   // `user.identities` comes back on the same getUser() call the page already made, so knowing
   // whether Google is linked costs nothing. It is optional in the client's own User type, so an
   // absent list reads as "not linked" — the safe direction: the member still sees the control,
@@ -93,6 +101,25 @@ export default async function ProfilePage({
 
         <button type="submit">Save profile</button>
       </form>
+
+      {/*
+        #29: web push is ADR 007's bet, and this is the only place a crew can take it. The
+        control is rendered only where a key exists to subscribe with — a deployment with no
+        VAPID key would otherwise show a button that can only fail, and the honest thing is to
+        show nothing rather than a promise the server cannot keep.
+      */}
+      <section style={{ marginTop: "2rem" }}>
+        <h2 style={{ fontSize: "1rem" }}>Notifications</h2>
+        {vapidPublicKey ? (
+          <PushToggle vapidPublicKey={vapidPublicKey} subscribed={(devices ?? []).length > 0} />
+        ) : (
+          <p>Push notifications are not set up for this club yet. You will still be emailed.</p>
+        )}
+        <p style={{ fontSize: "0.875rem" }}>
+          On an iPhone, add Tender to your home screen first — Apple only offers notifications to a
+          web app that has been installed.
+        </p>
+      </section>
 
       {/*
         #74: a member whose Google address differs from the one they joined with is a stranger to

@@ -129,6 +129,27 @@ export function formatStartsAt(iso: string): { date: string; time: string } {
   };
 }
 
+/**
+ * How a race start reads inside a sentence — "Sun, Jun 13, 1:00 PM" — for the notifications that
+ * name it (story #23's email, story #29's push).
+ *
+ * It lives here rather than beside either sender because there is exactly one right answer to
+ * "what time does this race start", and it is the club's wall clock. `src/notify/rung.ts` carried
+ * its own `timeZone: "America/New_York"` literal until #29, which would have become the third
+ * copy the moment push needed the same string — and a notification whose date disagrees with the
+ * board's by an hour twice a year is the kind of defect nobody reproduces.
+ */
+export function whenLabel(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: CLUB_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(iso));
+}
+
 /** The message the admin sees for a refusal. */
 export function explainRefusal(reason: string): string {
   switch (reason) {

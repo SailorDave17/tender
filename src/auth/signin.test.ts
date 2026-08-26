@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GENERIC_OK } from "./join";
-import { isNotAUser, signIn, type SignInDeps } from "./signin";
+import { isNotAUser, requestReset, signIn, type RequestResetDeps, type SignInDeps } from "./signin";
 
 function fakes(overrides: Partial<SignInDeps> = {}) {
   const sent: string[] = [];
@@ -40,6 +40,39 @@ describe("signIn — email only, returning member (#70 AC 2)", () => {
   it("500 on any other mailer failure — a refusal that is not about the address", async () => {
     const { deps } = fakes({ sendMagicLink: async () => ({ error: { message: "smtp down" } }) });
     expect((await signIn({ email: "alice@example.org" }, deps)).status).toBe(500);
+  });
+});
+
+describe("requestReset — the Forgot screen's reset arm (#82 AC 4)", () => {
+  function resetFakes(overrides: Partial<RequestResetDeps> = {}) {
+    const sent: string[] = [];
+    const deps: RequestResetDeps = {
+      sendReset: async (email) => {
+        sent.push(email);
+        return {};
+      },
+      ...overrides,
+    };
+    return { deps, sent };
+  }
+
+  it("sends the reset to the normalised address and answers the generic sentence", async () => {
+    const { deps, sent } = resetFakes();
+    const r = await requestReset({ email: " Alice@Example.org " }, deps);
+    expect(r).toEqual({ status: 200, body: { message: GENERIC_OK } });
+    expect(sent).toEqual(["alice@example.org"]);
+  });
+
+  it("400 on a malformed address, before anything is sent", async () => {
+    const { deps, sent } = resetFakes();
+    expect((await requestReset({ email: "not-an-address" }, deps)).status).toBe(400);
+    expect((await requestReset({ email: "" }, deps)).status).toBe(400);
+    expect(sent).toEqual([]);
+  });
+
+  it("500 on a transport failure — resetPasswordForEmail does not surface an unknown address, so an error is real", async () => {
+    const { deps } = resetFakes({ sendReset: async () => ({ error: { message: "smtp down" } }) });
+    expect((await requestReset({ email: "alice@example.org" }, deps)).status).toBe(500);
   });
 });
 

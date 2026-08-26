@@ -2,15 +2,16 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 /**
- * Two route files carry the option AC 2 (#70) and AC 3 (#15) rest on, and no unit test reads a
- * route: `shouldCreateUser: false` on the magic-link send is what stops an unknown address
- * minting an attestation-less auth user and spending a Resend send. The #70 mutation pass could
- * only prove it live; this is the in-suite half (review finding, 2026-08-23). The source is the
- * only subject there is (cairn: a-guard-that-reads-source-must-survive-its-own-docs), so the
- * assertion is anchored on the `signInWithOtp({` call itself — a header comment mentioning the
- * option cannot satisfy it.
+ * The magic-link senders carry the option AC 2 (#70) and AC 3 (#15) rest on, and no unit test
+ * reads a route: `shouldCreateUser: false` on the magic-link send is what stops an unknown address
+ * minting an attestation-less auth user and spending a Resend send. Since #82 the sign-in-link
+ * flow lives on the Forgot screen (/api/forgot), not the Sign in screen — so the two senders are
+ * now /api/forgot and /api/join. The #70 mutation pass could only prove it live; this is the
+ * in-suite half (review finding, 2026-08-23). The source is the only subject there is (cairn:
+ * a-guard-that-reads-source-must-survive-its-own-docs), so the assertion is anchored on the
+ * `signInWithOtp({` call itself — a header comment mentioning the option cannot satisfy it.
  */
-const ROUTES = ["../app/api/signin/route.ts", "../app/api/join/route.ts"];
+const ROUTES = ["../app/api/forgot/route.ts", "../app/api/join/route.ts"];
 
 async function otpCall(rel: string): Promise<string> {
   const src = await readFile(new URL(rel, import.meta.url), "utf8");
@@ -28,11 +29,31 @@ describe("the magic-link senders never create a user", () => {
       expect(call).not.toMatch(/shouldCreateUser:\s*true/);
     });
   }
+});
 
-  it("the sign-in route makes no other Supabase call — no invite code read, no createUser (AC 2)", async () => {
-    const src = await readFile(new URL("../app/api/signin/route.ts", import.meta.url), "utf8");
-    expect(src).not.toMatch(/supabaseAdmin|createUser|invite_code|from\("club"\)/);
-    expect(src.match(/client\.auth\.\w+/g)).toEqual(["client.auth.signInWithOtp"]);
+/**
+ * #82. The Sign in screen is now email + password, and `signInWithPassword` returns a session
+ * WITHOUT touching /auth/callback — so the terminal guard that deletes/refuses a rowless user
+ * has to be re-applied on this path or a confirmed stray gets in (AC 7). `passwordSignIn` decides
+ * that; this proves the route WIRES it (cairn: prove-a-guard-test-can-fail, twelfth outcome — a
+ * unit test builds the call, the route is the call). No unit test reads a route.
+ */
+describe("/api/signin is a password sign-in that guards the callback bypass (#82 AC 3 / AC 7)", () => {
+  const SIGNIN = "../app/api/signin/route.ts";
+
+  it("authenticates with a password and never sends a magic link, reads an invite code, or creates a user", async () => {
+    const src = await readFile(new URL(SIGNIN, import.meta.url), "utf8");
+    expect(src).toMatch(/signInWithPassword/);
+    expect(src).not.toMatch(/signInWithOtp|supabaseAdmin|createUser|invite_code|from\("club"\)/);
+  });
+
+  it("wires the person-row guard, scoped to the returned id, and signs out when it is absent", async () => {
+    const src = await readFile(new URL(SIGNIN, import.meta.url), "utf8");
+    // the guard reads person filtered to the signed-in user's own id — not any wider read that
+    // would pass for a stray because SOMEONE has a row
+    expect(src).toMatch(/from\("person"\)[\s\S]*\.eq\("id",\s*userId\)/);
+    // and the session written by a refused sign-in is undone
+    expect(src).toMatch(/signOut/);
   });
 });
 

@@ -40,6 +40,7 @@ npm test           # vitest: the engine (src/engine) and the RLS harness (test/)
 npm run lint
 npm run typecheck
 npm run check:live # read-only probe of the live Supabase project; needs .env.local
+npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
 ```
 
 Node 24 (`.nvmrc`). Copy `.env.example` to `.env.local` — names only are committed, never values.
@@ -48,6 +49,28 @@ Node 24 (`.nvmrc`). Copy `.env.example` to `.env.local` — names only are commi
 rung and the candidates (each carrying their own rung) out. Its test is the scaffold's one real
 test: six mutations on 2026-08-21 reddened exactly the predicted 3, 1, 2, 3, 1, 1 of 14
 (`docs/adr/006-testing-strategy.md`).
+
+**Installable to a home screen** (#28). `src/app/manifest.ts` is the manifest, `public/sw.js` the
+service worker, and `src/install/` the "add to home screen" banner on /board. The worker is
+**online only and has no listener for network requests** — a cached board would show a need that
+has already been filled — and `test/service-worker.test.ts` enforces that. The icons under
+`public/` are committed; `npm run icons` regenerates them and `test/manifest.test.ts` reads their
+real pixel sizes back out of the PNG headers.
+
+The served half of that — `/manifest.webmanifest` and the icons as a real build returns them —
+is `test/manifest-served.test.ts`, which runs **only** when pointed at a running server, because
+CI runs the tests before the build:
+
+```
+npm run build && npm start &
+TENDER_BASE_URL=http://localhost:3000 npx vitest run test/manifest-served.test.ts
+```
+
+**`next build` bakes `NEXT_PUBLIC_*` into the proxy.** To run a production build against a local
+Supabase stack, those variables must be set for the **build**, not just for `next start` — the
+proxy runs in the Edge runtime, where they are inlined rather than read at runtime. Build without
+them and `.env.local` supplies the live project instead, so every local session is refused and
+/board redirects to /join with the cookie sitting right there (measured 2026-08-25 on #28).
 
 **The RLS harness** (`test/pglite.ts`) applies `supabase/migrations/*.sql` to an in-memory
 Postgres and runs SQL as `anon` or `authenticated`. It creates those roles itself and is therefore
@@ -197,6 +220,30 @@ instrument for that, and it probes with `limit=0` so it can never write.
    any send — the post still stands, the failure goes to the function log, nobody is emailed
    (#65 is where a missing name becomes a startup error). Both kinds of mail share Resend Free's 100/day;
    the app stops at 95 of its own sends and leaves the rest for magic links.
+2b. **Web push keys** (#29). Run **`npm run vapid:keys`** and put the pair it prints in
+   `.env.local` and in Vercel's environment (Production **and** Preview):
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` — a sixth and seventh name beside the
+   five above, and the only public one in the set.
+
+   Three things about them that are not obvious:
+
+   - **The public one is inlined into the browser bundle at build time.** A deployment built
+     before the variable was set will not have it however many times it is set afterwards —
+     redeploy. `/profile` shows *"Push notifications are not set up for this club yet"* instead of
+     the control when it is missing, which is the symptom to recognise.
+   - **Rotating them silently switches notifications off for everybody.** A browser stores the
+     public key inside the subscription it made, so a new pair makes every stored subscription
+     undeliverable, and nothing tells the member. Generate once; rotate only if the private key
+     has leaked, and expect to ask everyone to press the button again.
+   - **Without them the app still emails.** `notifyRung` treats push as best-effort and logs one
+     warning per send when the keys are absent (ADR 007's own fallback), so a missing key is a
+     degradation rather than an outage — and it is silent apart from that line, which is why #65
+     exists.
+
+   **iPhones only offer push to an installed web app.** A crew who has not added Tender to their
+   home screen will see the button and be refused by the browser; `/profile` says so in as many
+   words. That is Apple's rule, not a bug, and it is why #28 shipped before this.
+
 3. **Vercel**: import the repo, set the production branch to `release`, add the environment
    variables, turn on Deployment Protection → Standard Protection (previews carry the production
    Supabase host), add the domain `tender.madcowsailing.com` (CNAME per Vercel's per-project

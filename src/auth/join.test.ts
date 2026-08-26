@@ -15,7 +15,7 @@ const EXISTING_ID = "33333333-3333-4333-8333-333333333333";
 function fakes(overrides: Partial<JoinDeps> = {}, { taken = false } = {}) {
   const calls = { inviteCode: 0, createUser: 0, existingUser: 0, attestExisting: 0, sendMagicLink: 0 };
   /** Every attestation write, so AC 2 and AC 3 can assert on the argument and not only the count. */
-  const written: { id: string; meta: { display_name: string; adult_attested_at: string } }[] = [];
+  const written: { id: string; meta: { display_name: string; adult_attested_at: string }; password: string }[] = [];
   const deps: JoinDeps = {
     inviteCode: async () => {
       calls.inviteCode++;
@@ -29,9 +29,9 @@ function fakes(overrides: Partial<JoinDeps> = {}, { taken = false } = {}) {
       calls.existingUser++;
       return { found: true, id: EXISTING_ID, attested: false };
     },
-    attestExisting: async (id, meta) => {
+    attestExisting: async (id, meta, password) => {
       calls.attestExisting++;
-      written.push({ id, meta });
+      written.push({ id, meta, password });
       return {};
     },
     sendMagicLink: async () => {
@@ -49,6 +49,7 @@ const good: JoinInput = {
   displayName: "Alice",
   code: "HSC-2027",
   attested: true,
+  password: "sail-away-2027",
 };
 
 describe("join — the happy path", () => {
@@ -72,6 +73,7 @@ describe("join — the happy path", () => {
     });
     expect(created).toEqual({
       email: "alice@example.org",
+      password: "sail-away-2027",
       user_metadata: { display_name: "Alice", adult_attested_at: "2026-08-22T12:00:00.000Z" },
     });
   });
@@ -136,6 +138,20 @@ describe("join — the refusals reach neither the user store nor the mailer (AC 
     });
   });
 
+  it("400 on a too-short password, before the code is read and before any user is touched (#82)", async () => {
+    const { deps, calls } = fakes();
+    const r = await join({ ...good, password: "short" }, deps);
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/at least 8/);
+    expect(calls).toEqual({
+      inviteCode: 0,
+      createUser: 0,
+      existingUser: 0,
+      attestExisting: 0,
+      sendMagicLink: 0,
+    });
+  });
+
   it("500 without sending when the user store fails, and 500 when the mailer fails", async () => {
     const a = fakes({ createUser: async () => ({ error: "boom" }) });
     expect((await join(good, a.deps)).status).toBe(500);
@@ -164,12 +180,14 @@ describe("join — a stray auth user on the address (#85)", () => {
       attestExisting: 1,
       sendMagicLink: 1,
     });
-    // The same name and clock the createUser attempt carried — what they typed and when the gate
-    // ran, not anything reconstructed later.
+    // The same name, clock and password the createUser attempt carried — what they typed and when
+    // the gate ran, not anything reconstructed later. The password is set on the stray too (#82),
+    // so the member who was squatted on can still password-sign-in after.
     expect(written).toEqual([
       {
         id: EXISTING_ID,
         meta: { display_name: "Alice", adult_attested_at: "2026-08-22T12:00:00.000Z" },
+        password: "sail-away-2027",
       },
     ]);
   });

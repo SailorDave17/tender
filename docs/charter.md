@@ -48,9 +48,15 @@ season. Known blind spot: matches it caused that closed by text.
   the ladder's three rungs below, which are a different scale.
 - **Admin** — the owner, a minimal role: adds race dates (or imports them), invites people, sets
   the club theme, rotates the invite code, reads the failure metric.
-- **Identity**: email magic link or Google (#70, 2026-08-23 — returning members sign in with
-  email alone or Google; new members sign up with the invite code and finish by email link or
-  Google). Email is required (it is the login); phone is optional and is exchanged only on a
+- **Identity**: email + password or Google (#82, 2026-08-25 — returning members sign in with
+  their email and password, or with Google; new members sign up with the invite code and finish
+  either by choosing a password and opening the emailed link, or with Google, which needs no
+  password. The magic link is no longer on the sign-in screen: it moved to a Forgot-my-password
+  screen carrying both arms — *email me a sign-in link* and *reset my password* — which is how a
+  member with no password, anyone from before #82, still gets in. A password on its own is not a
+  first way in: the person row is created only at `/auth/callback`, so a member who set one at
+  sign-up still opens the emailed link once. Supersedes #70's email-alone sign-in, 2026-08-23.)
+  Email is required (it is the login); phone is optional and is exchanged only on a
   closed match. **One person is one account, and may carry more than one way into it** (#74,
   2026-08-24): a member whose Google address differs from the one they joined with links it from
   their profile, so both sign-ins resolve to the same `auth.uid()` — the thing every access rule

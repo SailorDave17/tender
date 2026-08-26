@@ -91,6 +91,9 @@ describe("suggestion (0010)", () => {
       { column_name: "notified_at", is_nullable: "YES" },
       { column_name: "person_id", is_nullable: "NO" },
       { column_name: "post_id", is_nullable: "NO" },
+      // 0013 (#29): the push half of the same ledger row. A second column rather than sharing
+      // notified_at, because a send skipped at the email cap must not re-push tomorrow.
+      { column_name: "pushed_at", is_nullable: "YES" },
       { column_name: "rung", is_nullable: "NO" },
     ]);
     const pk = await db.query<{ cols: string }>(

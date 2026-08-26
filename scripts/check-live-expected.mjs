@@ -18,8 +18,10 @@ export const EXPECTED_TABLES = [
   "person",
   "person_contact",
   "post",
+  "push_subscription",
   "race_date",
   "suggestion",
+  "tick_run",
 ];
 
 /** A placeholder that is a valid uuid and matches nobody's row. */
@@ -40,5 +42,6 @@ export const EXPECTED_FUNCTIONS = [
   { name: "accept_answer", args: { post_id: NIL_UUID, person_id: NIL_UUID } },
   { name: "answer_counts", args: { post_ids: `{${NIL_UUID}}` } },
   { name: "current_invite_code", args: {} },
+  { name: "push_install_status", args: {} },
   { name: "rotate_invite_code", args: {} },
 ];
