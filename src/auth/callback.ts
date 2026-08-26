@@ -27,8 +27,10 @@ export function decideCallback(q: CallbackQuery): CallbackDecision {
     if (code === "identity_already_exists") {
       return { kind: "back", reason: "already-linked" };
     }
-    // GoTrue reports an expired or already-used magic link as error=access_denied with
-    // error_code=otp_expired — the precise key for that already exists, so it goes first.
+    // GoTrue reports an expired or already-used emailed link as error=access_denied with
+    // error_code=otp_expired — the precise key for that already exists, so it goes first. Since
+    // #99 the only link that reaches this is a password reset (plus any pre-#99 magic link still
+    // sitting unopened in an inbox, which keeps working until GoTrue expires it).
     if (code === "otp_expired" || /expired|already been used/i.test(q.error_description ?? "")) {
       return { kind: "back", reason: "link-invalid" };
     }
@@ -51,9 +53,9 @@ export function decideCallback(q: CallbackQuery): CallbackDecision {
 export function explainReason(reason: string): string {
   switch (reason) {
     case "link-invalid":
-      return "That link has expired or was already used. Ask for a new one.";
-    // #83: `link-invalid` above says "expired or was already used" because a magic link gives no
-    // way to tell them apart. An OAuth state does — GoTrue answers with a different error code for
+      return "That link has expired or was already used. Ask for a new one from Forgot your password.";
+    // #83: `link-invalid` above says "expired or was already used" because an emailed link gives
+    // no way to tell them apart. An OAuth state does — GoTrue answers with a different error code for
     // each — so these two say which, and neither puts it on the member: the five-minute window
     // starts when they press the control, and pressing back is not a mistake.
     case "state-expired":
@@ -69,8 +71,10 @@ export function explainReason(reason: string): string {
     // #82: "sign in with the email you joined with" now means email + password. The population
     // that reaches this sentence — a member whose Google address differs from the one they joined
     // with — is exactly the one likely to have NO password (a Google-created or pre-#82 account),
-    // so the advice points them at Forgot my password, where the sign-in link still works and the
-    // reset arm sets a first one. Flagged on the issue by #74 when it wrote this sentence.
+    // so the advice points them at Forgot my password, which sets a first one. #99 removed that
+    // screen's other arm, so the reset IS the route now rather than one of two; the sentence did
+    // not have to change, because it never named the arm. Flagged on the issue by #74 when it
+    // wrote this sentence.
     case "not-invited":
       return "That account is not linked to a member here. If you are already a member, sign in with the email you joined with — use Forgot my password if you have never set one — then link Google from your profile. If you are new, sign up with this season's invite code.";
     case "missing-code":
@@ -80,8 +84,8 @@ export function explainReason(reason: string): string {
     case "already-linked":
       return "That Google account is already attached to an account here. Sign in with the email you joined with — use Forgot my password if you have never set one — or use a different Google account.";
     case "provider-error":
-      return "Google or the sign-in service returned an error. Try again in a minute, or use an email link.";
+      return "Google or the sign-in service returned an error. Try again in a minute, or sign in with your email and password.";
     default:
-      return "Sign-in did not complete. Ask for a new link.";
+      return "Sign-in did not complete. Try again.";
   }
 }

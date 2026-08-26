@@ -15,6 +15,8 @@ The forge pre-mortem made the notification the product: a two-sided board at ~10
 ## Decision
 Push to every crew on the current rung; **email to the current rung only, never the whole pool**. Resend Free as the SMTP for both magic links and notifications, sending from tender.madcowsailing.com.
 
+*2026-08-26 (#99): identity mail is now a password reset rather than a magic link — sign-up sends nothing. Both mentions above are kept as written: they record why email was already in the stack when the channel was chosen in phase 3, and that reasoning does not depend on which identity mail it was. Resend is still the SMTP for both kinds, and the 100/day cap the bet is priced against is unchanged; if anything it is less contended.*
+
 ## Consequences
 - PWA install is an onboarding step the invite walks a crew through; a crew who never installs gets email only.
 - The engine's rung membership bounds the daily email count; the admin view shows the day's send count against 100.

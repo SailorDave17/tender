@@ -80,11 +80,17 @@ describe("startGoogleLink — links, and does not sign in (#74 AC 1)", () => {
  * whether the link may proceed, and its failure path cleans nothing up. Everything is offline —
  * the transport is stubbed with GoTrue's own 404 body, which is the shape a project with *Allow
  * manual linking* off returns and which no probe against the live project can produce.
+ *
+ * #99 removed the magic link and this stayed, which is the one place in that story where the
+ * obvious tidy-up would have removed a live defence. `resetPasswordForEmail` is a PKCE link too,
+ * addressed at the same fixed slot, so the victim moved rather than went: the link a refused
+ * Google start now eats is a password reset, belonging to the one member who cannot sign in
+ * without it. The fixture is renamed to say so; the mechanism is untouched.
  */
-describe("a refused link start must not eat a pending magic link (#74)", () => {
+describe("a refused link start must not eat a pending reset link (#74, kept by #99)", () => {
   const REF = "sb-proj-auth-token";
   const FIXED = `${REF}-code-verifier`;
-  const MAGIC = "the-verifier-a-magic-link-in-the-inbox-depends-on";
+  const PENDING_RESET = "the-verifier-a-reset-link-in-the-inbox-depends-on";
 
   function jar(seed: Record<string, string>) {
     const map = new Map(Object.entries(seed));
@@ -104,7 +110,7 @@ describe("a refused link start must not eat a pending magic link (#74)", () => {
       { status: 404, headers: { "content-type": "application/json" } });
 
   it("the library really does clobber the fixed key on a refusal — and the plan puts it back", async () => {
-    const j = jar({ [FIXED]: MAGIC });
+    const j = jar({ [FIXED]: PENDING_RESET });
     const client = createServerClient("https://proj.supabase.co", "anon-key", {
       cookies: j.cookies,
       global: { fetch: async () => REFUSED() },
@@ -116,12 +122,12 @@ describe("a refused link start must not eat a pending magic link (#74)", () => {
 
     // The damage, asserted rather than assumed — if the library ever starts cleaning up, this
     // goes red and the restore below becomes unnecessary rather than silently pointless.
-    expect(j.map.get(FIXED), "a refused start overwrote the magic link's verifier").not.toBe(MAGIC);
+    expect(j.map.get(FIXED), "a refused start overwrote the reset link's verifier").not.toBe(PENDING_RESET);
 
     for (const { name, value } of restoreVerifiers(before, verifierCookies(j.cookies.getAll()))) {
       if (value === null) j.map.delete(name); else j.map.set(name, value);
     }
-    expect(j.map.get(FIXED)).toBe(MAGIC);
+    expect(j.map.get(FIXED)).toBe(PENDING_RESET);
     expect([...j.map.keys()]).toEqual([FIXED]); // and the keys it added are gone too
   });
 

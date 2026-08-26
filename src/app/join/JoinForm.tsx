@@ -7,14 +7,30 @@ type State = { kind: "idle" } | { kind: "sending" } | { kind: "done"; message: s
 type Mode = "signin" | "signup";
 
 /**
- * /join since #70, mechanisms changed by #82: two distinct choices. Sign in (returning member)
- * asks for email + password, or offers Google, with a Forgot-my-password link — no magic-link
- * request on this screen any more. Sign up (new member) asks for name, invite code, the 18+
- * attestation and a password, then finishes by email link or by Google (Google needs no password).
- * Only sign-up ever sends the code.
+ * /join since #70, mechanisms changed by #82 and #99: two distinct choices. Sign in (returning
+ * member) asks for email + password, or offers Google, with a Forgot-my-password link. Sign up
+ * (new member) asks for name, invite code, the 18+ attestation and a password, and finishes
+ * **here** — the gate creates the account, mints the person row and signs them in, so the browser
+ * follows a redirect to the board rather than waiting for an email. Or it finishes with Google,
+ * which needs no password. Only sign-up ever sends the code.
+ *
+ * `initialMode` exists because the sign-up tab is otherwise unreachable without an event, and
+ * #99 AC 7 asks for its button to be asserted from the rendered HTML. It earns its place beyond
+ * that: /join?mode=signup deep-links an invited member straight to the form they need.
+ *
+ * A response carrying `then: "signin"` moves the member to the Sign in tab **without clearing the
+ * message** — the two answers that use it (an address that already has an account, and an account
+ * created whose sign-in did not follow) are both "you have an account, use it", and the Sign in
+ * tab is where the password box and the Forgot link are. Switching tabs by hand still clears.
  */
-export function JoinForm({ initialError }: { initialError?: string }) {
-  const [mode, setMode] = useState<Mode>("signin");
+export function JoinForm({
+  initialError,
+  initialMode = "signin",
+}: {
+  initialError?: string;
+  initialMode?: Mode;
+}) {
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [state, setState] = useState<State>(
     initialError ? { kind: "done", ok: false, message: explainReason(initialError) } : { kind: "idle" },
   );
@@ -76,8 +92,11 @@ export function JoinForm({ initialError }: { initialError?: string }) {
     }
     const email = String(f.get("email") ?? "");
     if (!email) {
+      // Neither box can be `required`, because *Continue with Google* submits the same form and
+      // needs neither — so the two checks below stand in for the browser's. The sentence changed
+      // with the mechanism (#99): nothing is sent to this address, it is the account's name.
       form.querySelector<HTMLInputElement>('input[name="email"]')?.reportValidity();
-      setState({ kind: "done", ok: false, message: "Enter your email address to be sent a link." });
+      setState({ kind: "done", ok: false, message: "Enter the email address you want to sign in with." });
       return;
     }
     const password = String(f.get("password") ?? "");
@@ -88,6 +107,12 @@ export function JoinForm({ initialError }: { initialError?: string }) {
     }
     setState({ kind: "sending" });
     const { ok, body } = await post("/api/join", { ...common, email, password });
+    // A finished sign-up is a session, not a sentence: the gate signed them in and says where to go.
+    if (ok && typeof body.redirect === "string") {
+      window.location.assign(body.redirect);
+      return;
+    }
+    if (body.then === "signin") setMode("signin");
     setState({ kind: "done", ok, message: String(body.message ?? "Something went wrong.") });
   }
 
@@ -168,7 +193,7 @@ export function JoinForm({ initialError }: { initialError?: string }) {
               <input name="password" type="password" autoComplete="new-password" minLength={8} />
             </label>
             <button type="submit" value="email" disabled={busy}>
-              {busy ? "Sending…" : "Email me a link"}
+              {busy ? "Setting up…" : "Create my account"}
             </button>
             <p style={{ margin: 0, fontSize: "0.85rem" }}>
               Or skip the password and use Google — nothing else to fill in:

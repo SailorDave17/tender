@@ -113,7 +113,7 @@ export function backPathFor(flow: string | null | undefined): string {
 export function explainLinkReason(reason: string): string | null {
   switch (reason) {
     case "linking-disabled":
-      return "Linking a Google account is not switched on for this club yet. Tell the club and use your email link in the meantime.";
+      return "Linking a Google account is not switched on for this club yet. Tell the club, and sign in with your email and password in the meantime.";
     case "not-signed-in":
       return "Your session had expired, so nothing was linked. Sign in again and try from your profile.";
     case "already-linked":
@@ -133,12 +133,18 @@ export function explainLinkReason(reason: string): string | null {
  * The cookies a PKCE flow start writes — and why a REFUSED link start has to put them back.
  *
  * `linkIdentity` writes a fresh code verifier BEFORE it asks GoTrue whether the link may proceed,
- * and — unlike `signInWithOtp`, which does clean up — its failure path removes nothing
+ * and — unlike `signInWithOtp`, which did clean up — its failure path removes nothing
  * (`@supabase/auth-js` 2.112.3, `linkIdentityOAuth`). The verifier goes to a per-flow slot AND is
  * mirrored into a fixed `<storageKey>-code-verifier` key, which is the one a server-side
  * `exchangeCodeForSession(code)` reads. So a link the project refuses silently overwrites the
- * verifier belonging to a magic link already sitting in the member's inbox, and that link then
+ * verifier belonging to an emailed link already sitting in the member's inbox, and that link then
  * fails — permanently, because the failed exchange deletes the fixed key on its way out.
+ *
+ * **#99 removed the magic link and this stays**, which is the one place here where the obvious
+ * tidy-up would remove a live defence: `resetPasswordForEmail` is a PKCE link too, addressed at
+ * the same fixed slot, so the victim is now a password reset rather than a sign-in link. Same
+ * mechanism, same key, and a worse outcome for the one population that needs a reset — the member
+ * who cannot sign in without it.
  *
  * *Measured 2026-08-24* against the live project with a stand-in cookie jar: a start refused with
  * 401 `no_authorization` replaced the seeded verifier and added two more keys. It is the DEFAULT
