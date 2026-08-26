@@ -92,10 +92,17 @@ describe("neither screen promises an emailed way in (#99 AC 7)", () => {
 });
 
 /**
- * The half no rendered HTML can reach: the message only exists after a submit, and this repo has
- * no way to dispatch one (`environment: "node"`, every .test.tsx on `renderToStaticMarkup`). The
- * source is the only subject there is, and it is a weaker instrument — recorded as such rather
- * than presented as equivalent.
+ * The half no rendered HTML can reach: the message only exists after a submit, and THIS file
+ * cannot dispatch one — it renders with `renderToStaticMarkup`, which runs no effect and
+ * fires no event. The source is the only subject here, and it is a weaker instrument — recorded
+ * as such rather than presented as equivalent.
+ *
+ * (This paragraph said *this repo* has no way to dispatch a submit, which was true when #99
+ * wrote it and stopped being true on #100: `src/auth/PasswordFields.test.tsx` and
+ * `src/app/join/JoinForm.test.tsx` opt into a jsdom environment per file and do dispatch
+ * events. The instrument choice here is unchanged and still right for what it asserts — the
+ * absence of a sentence from a source file — but the reason given for it was a claim about the
+ * whole repo, and that claim expired.)
  */
 describe("the client-side sentence about being sent a link is gone (#99 AC 7, source)", () => {
   it("JoinForm no longer offers to send anything", async () => {

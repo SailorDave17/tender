@@ -2,6 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { explainReason } from "@/auth/callback";
+import { PasswordFields } from "@/auth/PasswordFields";
+import { checkNewPassword, explainResetError } from "@/auth/password";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "done"; message: string; ok: boolean };
 type Mode = "signin" | "signup";
@@ -100,9 +102,17 @@ export function JoinForm({
       return;
     }
     const password = String(f.get("password") ?? "");
-    if (password.length < 8) {
-      form.querySelector<HTMLInputElement>('input[name="password"]')?.reportValidity();
-      setState({ kind: "done", ok: false, message: "Choose a password of at least 8 characters." });
+    const confirm = String(f.get("confirm") ?? "");
+    // One decision, in `@/auth/password`, shared with the reset landing (#100): a mismatch is
+    // reported before a weak password, because "they don't match" is the more useful thing to say
+    // when both are wrong. Nothing is posted until this passes — the confirm box exists precisely
+    // so a typo costs a sentence rather than an account nobody can sign in to.
+    const check = checkNewPassword(password, confirm);
+    if (!check.ok) {
+      // No `reportValidity()` here, deliberately: neither box carries a browser constraint on
+      // this screen (see below), so both are always individually valid and the call could only
+      // ever be a no-op. The sentence is the whole message.
+      setState({ kind: "done", ok: false, message: explainResetError(check.reason) });
       return;
     }
     setState({ kind: "sending" });
@@ -188,10 +198,16 @@ export function JoinForm({
               Email
               <input name="email" type="email" autoComplete="email" />
             </label>
-            <label>
-              Password
-              <input name="password" type="password" autoComplete="new-password" minLength={8} />
-            </label>
+            {/*
+              Neither box carries a browser constraint — no `required` AND no `minLength` — because
+              *Continue with Google* submits this same form and needs no password. `required`
+              would refuse an empty submission; `minLength` refuses a PARTLY TYPED one, which is
+              worse, because it is inert until the member touches the box and then silently
+              disables the Google button (*measured in a browser 2026-08-26*: with `abc` typed,
+              the submit event never fires). `onSignUp` checks both boxes itself, on the email
+              arm only, via the same `checkNewPassword` the reset landing uses.
+            */}
+            <PasswordFields passwordName="password" confirmName="confirm" />
             <button type="submit" value="email" disabled={busy}>
               {busy ? "Setting up…" : "Create my account"}
             </button>

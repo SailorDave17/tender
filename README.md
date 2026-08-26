@@ -28,7 +28,7 @@ carries the non-goals and the constraints a story must not violate.
 | Data layer | Supabase Postgres via supabase-js, RLS, SQL migrations in `supabase/migrations/` | [003](docs/adr/003-supabase-js-rls-sql-migrations.md) |
 | Hosting & scheduler | Vercel Hobby + Supabase Free; the ladder clock is pg_cron | [004](docs/adr/004-vercel-hobby-supabase-free-pg-cron-clock.md) |
 | CI/CD & branches | GitHub Actions; `develop` (default) + `release` (production) + feature PRs | [005](docs/adr/005-branch-model-and-ci.md) |
-| Testing | Vitest for the engine, pglite for RLS, Playwright smoke later | [006](docs/adr/006-testing-strategy.md) |
+| Testing | Vitest for the engine, pglite for RLS, jsdom for a click, Playwright smoke later | [006](docs/adr/006-testing-strategy.md), [008](docs/adr/008-interactive-component-tests-jsdom.md) |
 | Notifications — the bet | Web push from an installed PWA + email to the current rung (Resend) | [007](docs/adr/007-notification-channel-the-bet.md) |
 
 ## Working on it
@@ -36,7 +36,7 @@ carries the non-goals and the constraints a story must not violate.
 ```
 npm ci
 npm run dev        # http://localhost:3000
-npm test           # vitest: the engine (src/engine) and the RLS harness (test/)
+npm test           # vitest: the engine (src/engine), the RLS harness (test/), the components
 npm run lint
 npm run typecheck
 npm run check:live # read-only probe of the live Supabase project; needs .env.local
@@ -71,6 +71,17 @@ Supabase stack, those variables must be set for the **build**, not just for `nex
 proxy runs in the Edge runtime, where they are inlined rather than read at runtime. Build without
 them and `.env.local` supplies the live project instead, so every local session is refused and
 /board redirects to /join with the cookie sitting right there (measured 2026-08-25 on #28).
+
+**Component tests come in two kinds, and the split is deliberate.** Most `.test.tsx` files
+render with `renderToStaticMarkup` and assert the HTML a member is served — no effect runs and
+no event can be dispatched, which is enough for anything decided at render time. The two files
+that assert what happens after a **click** (`src/auth/PasswordFields.test.tsx`,
+`src/app/join/JoinForm.test.tsx`, both #100) opt into jsdom with a `// @vitest-environment`
+docblock on their first line. It is per file on purpose: `vitest.config.ts` stays
+`environment: "node"`, whose shape `test/harness-budget.test.ts` asserts for #78. Each of those
+files declares the environment exactly ONCE — vitest reads that directive anywhere in a file,
+comments included, so a docblock quoting it in full silently declares it a second time and the
+real line can then be deleted with nothing going red (measured on #100).
 
 **The RLS harness** (`test/pglite.ts`) applies `supabase/migrations/*.sql` to an in-memory
 Postgres and runs SQL as `anon` or `authenticated`. It creates those roles itself and is therefore

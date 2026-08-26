@@ -156,7 +156,7 @@ standalone-on-burgee's-choices (pre-decides the research), burgee module (extern
 | Data layer | Supabase Postgres via supabase-js, RLS, SQL migrations in-repo | adr/003 |
 | Hosting & scheduler | Vercel Hobby + Supabase Free; ladder clock as pg_cron | adr/004 |
 | CI/CD & branch model | GitHub Actions; `develop` (default) + `release` (production) + feature PRs | adr/005 |
-| Testing strategy | Vitest (engine), pglite (RLS), Playwright smoke later; scaffold test = rung selector | adr/006 |
+| Testing strategy | Vitest (engine), pglite (RLS), jsdom (a click), Playwright smoke later; scaffold test = rung selector | adr/006, adr/008 |
 | Notification channel — **the bet** | Web push from an installed PWA + email to the current rung via Resend | adr/007 |
 
 ## Security & compliance
