@@ -189,8 +189,12 @@ describe("what notifyRung() reads as service_role (0010 grants on older tables)"
       const r = await db.query<{ ok: boolean }>(`select has_table_privilege('service_role', 'public.${t}', 'select') as ok`);
       expect(r.rows, t).toEqual([{ ok: true }]);
     }
-    // Negative control on the instrument: a table this file grants nothing on reads false.
-    const r = await db.query<{ ok: boolean }>(`select has_table_privilege('service_role', 'public.answer', 'select') as ok`);
+    // Negative control on the instrument: a grant nothing makes reads false. This control was
+    // `service_role` on `answer` until 0014 granted exactly that (story #24) — a control chosen
+    // as "a table nobody grants yet" is one a later story destroys, so it now names an absence
+    // 0010's own design guarantees: anon select on the suggestion ledger, which 0010 revokes and
+    // no story could grant without reversing the ledger's whole access model.
+    const r = await db.query<{ ok: boolean }>(`select has_table_privilege('anon', 'public.suggestion', 'select') as ok`);
     expect(r.rows).toEqual([{ ok: false }]);
   });
 });
