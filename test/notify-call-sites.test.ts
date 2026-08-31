@@ -31,10 +31,11 @@ import { join, relative } from "node:path";
 const SRC = join(process.cwd(), "src");
 
 /**
- * The four ways a caller can cause a rung email. `notifyRung`/`notifyRungLive` run the ladder and
- * then send; `dispatchPending`/`dispatchPendingLive` send what the tick has already queued.
+ * The six ways a caller can cause a send. `notifyRung`/`notifyRungLive` run the ladder and
+ * then send; `dispatchPending`/`dispatchPendingLive` send what the tick has already queued;
+ * `notifyAnswer`/`notifyAnswerLive` tell a post's skipper that crew answered (story #24).
  */
-const SENDERS = ["notifyRung", "notifyRungLive", "dispatchPending", "dispatchPendingLive"];
+const SENDERS = ["notifyRung", "notifyRungLive", "dispatchPending", "dispatchPendingLive", "notifyAnswer", "notifyAnswerLive"];
 
 async function sourceFiles(): Promise<{ path: string; text: string }[]> {
   const out: { path: string; text: string }[] = [];

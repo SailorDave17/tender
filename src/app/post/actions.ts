@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { answerState } from "@/post/answer-rules";
 import { UUID, parsePostForm } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
-import { notifyRungLive } from "@/notify/live";
+import { notifyAnswerLive, notifyRungLive } from "@/notify/live";
 
 /**
  * A skipper's two writes on a post: post a need, close it. Both through the cookie-bound
@@ -130,6 +130,10 @@ export async function answerPost(formData: FormData): Promise<void> {
         .eq("person_id", user.id);
       if (error || !count) redirect(back("refused"));
     }
+    // The skipper is told — push at once, email behind the 15-minute window (story #24). A
+    // re-answer counts: the skipper's decision is about who is available NOW. Runs after the
+    // write succeeded, as the service role, and a failure in it never undoes the answer.
+    await notifyAnswerLive(id);
   } else {
     if (state !== "answered") redirect(back(state === "can" || state === "unavailable" ? "refused" : state));
     const { error, count } = await client

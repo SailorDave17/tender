@@ -47,6 +47,25 @@ export function rungPush(post: RungPost, rung: Rung): PushPayload {
 }
 
 /**
+ * What a skipper's phone shows when crew answer their post (story #24).
+ *
+ * The tag is `post-<id>-answer`, DISTINCT from rungPush's `post-<id>`: the two are different
+ * messages to different people about one post, and must not collapse into each other — while
+ * repeated answers on one post SHOULD collapse, into a single notification whose count
+ * updates. That collapse is why push needs no suppression window: the device shows one entry
+ * either way, and the latest count is the one worth showing (the story's premise is "accept
+ * before they change their mind", so the freshest number wins).
+ */
+export function answerPush(post: RungPost, count: number): PushPayload {
+  return {
+    title: `${count} crew answered: ${post.boatName} (${post.boatClass})`,
+    body: `${whenLabel(post.startsAt)} · tap to accept`,
+    url: `/post/${post.id}`,
+    tag: `post-${post.id}-answer`,
+  };
+}
+
+/**
  * The wire form. Throws rather than sending something the push service will reject — a caller
  * that let this through would log a success for a notification nobody received.
  */

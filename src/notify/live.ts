@@ -2,8 +2,9 @@ import "server-only";
 import { headers } from "next/headers";
 import { resendTransport } from "@/email/send";
 import { webPushTransport, type PushTransport } from "@/push/send";
+import { notifyAnswer, type AnswerNotifyResult } from "./answer";
 import { dispatchPending, notifyRung, type NotifyResult, type RungPost } from "./rung";
-import { supabaseRungStore } from "./store";
+import { supabaseAnswerStore, supabaseRungStore } from "./store";
 
 /**
  * notifyRung() with the live dependencies, for the two Server Actions that call it (post
@@ -54,6 +55,27 @@ export async function notifyRungLive(postId: string): Promise<NotifyResult | nul
     });
   } catch (e) {
     console.error(`notifyRung(${postId}) failed:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * notifyAnswer() with the live dependencies, for the answer Server Action (story #24). Same
+ * swallow as notifyRungLive and for the same reason: the answer row is already written and
+ * stands, and a notification that could not be attempted must not undo it or show the CREW an
+ * error about the skipper's inbox.
+ */
+export async function notifyAnswerLive(postId: string): Promise<AnswerNotifyResult | null> {
+  try {
+    return await notifyAnswer(postId, {
+      store: supabaseAnswerStore(),
+      transport: resendTransport(),
+      push: livePushTransport(),
+      now: new Date(),
+      siteUrl: await siteUrl(),
+    });
+  } catch (e) {
+    console.error(`notifyAnswer(${postId}) failed:`, e instanceof Error ? e.message : e);
     return null;
   }
 }
