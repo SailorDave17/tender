@@ -40,6 +40,7 @@ npm test           # vitest: the engine (src/engine), the RLS harness (test/), t
 npm run lint
 npm run typecheck
 npm run check:live # read-only probe of the live Supabase project; needs .env.local
+npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
 ```
 
@@ -96,6 +97,31 @@ explains — a hand `grant` in the SQL editor. `npm run check:live` is the instr
 probes with `limit=0` and by GET so it can never write, and since #48 it reports, per table and
 per function, whether the public anon key could still reach it — failing the run if any could.
 
+**Applying a migration** is `npm run migrate:live <file>` (#114), and it does one thing a paste
+cannot: it proves the payload arrived. It embeds the file in a dollar-quoted literal, asks
+*Postgres* for the length, byte count and md5 of what it received, compares those against the file
+on disk, and refuses if they disagree — **before** applying anything. A file compared against
+itself would prove nothing, and on this machine a clipboard really does re-encode a file: the
+characters at risk are the ones inside `comment on … is '…'` literals, which persist into the
+database as schema documentation. Every migration here carries some — `test/migrate-live.test.ts`
+asserts 0015's byte count exceeds its character count, so the hazard stays reachable rather than
+being a number in prose that ages.
+
+It takes a **file** from `supabase/migrations/` and never SQL. That narrowing is the point: a
+general "run this against production" command is what the token makes easy and what was
+deliberately not built. `-- --dry-run` prints the plan and sends nothing, and needs no credential
+at all. Note that `npm run` claims a `--dry-run` of its own, so both `-- --dry-run` and
+`--dry-run` are honoured — a silently dropped flag here is a real apply somebody thinks is a
+rehearsal, and an unknown flag is refused rather than ignored.
+
+It needs `SUPABASE_ACCESS_TOKEN` in `.env.local` — a **personal access token** from the account
+page, not a project key. It has authority over **every project in the account**, which is wider
+than anything else in `.env.local`, so `.env.example` says how to revoke it and
+`test/migrate-live-scope.test.ts` refuses the value or the name reaching a place it should not.
+The service-role key is not an alternative: it authenticates to this project's own API and cannot
+run DDL. Deciding to apply is still the owner's; this changes who can carry it out, and whether
+the result is verifiable.
+
 ## Branches and deploys
 
 - `develop` is the default and integration branch. Feature branches → PR → `develop`.
@@ -134,6 +160,12 @@ per function, whether the public anon key could still reach it — failing the r
    update public.club set admin_email = 'you@example.org' returning admin_email;
    select display_name, is_admin from public.person where is_admin;  -- your row, once signed in
    ```
+
+   **A paste is no longer the only route.** With `SUPABASE_ACCESS_TOKEN` in `.env.local`, a
+   session can run `npm run migrate:live supabase/migrations/<file>.sql`, which verifies the
+   payload the database received before applying it — see *Applying a migration* above. The
+   ordering rules in this step still hold whichever route is used, because they are facts about
+   the migrations rather than about the SQL editor. Deciding to apply remains the owner's.
 
    Put the URL, the anon key **and the service-role key** (`SUPABASE_SERVICE_ROLE_KEY`,
    server-only: the invite gate reads `club.invite_code` and creates auth users with it) in
