@@ -285,6 +285,19 @@ describe("parseStatement classifies as observable-by-nothing", () => {
     expect(none).toEqual([]);
     expect(note).toMatch(/seed rows/);
   });
+
+  /**
+   * `0017` schedules the ladder clock and must be a no-op wherever pg_cron is absent, which is
+   * every pglite boot in `test/`. So what that file describes is not a state: on one server it
+   * schedules a job and on another it does nothing, and both are the file behaving correctly.
+   */
+  it("a `do` block whose body is conditional on an extension", () => {
+    const { ops: none, note } = parseStatement(
+      "do $$ begin if not exists (select 1 from pg_extension where extname = 'pg_cron') then return; end if; perform cron.schedule('t', '* * * * *', 'select 1'); end $$",
+    );
+    expect(none).toEqual([]);
+    expect(note).toMatch(/conditional on an extension/);
+  });
 });
 
 describe("the parser refuses to guess", () => {
@@ -308,6 +321,16 @@ describe("the parser refuses to guess", () => {
    * thing that exercises the refusal. Without it the branch reddens no mutation and is
    * indistinguishable from dead code.
    */
+  /**
+   * The `do` arm above is deliberately narrow: what it accepts is a block that TESTS FOR AN
+   * EXTENSION, not `do` in general. An unconditional block can have consequences worth checking —
+   * someone creating a table inside one would otherwise slip past a classifier that read `do` and
+   * shrugged, and the corpus guard would stay green over a migration nothing was checking.
+   */
+  it("leaves an unconditional `do` block unclassified, however ordinary its body", () => {
+    expect(parseStatement("do $$ begin create table public.thing (a int); end $$")).toEqual({ ops: [], note: null });
+  });
+
   it("refuses a whole alter table when one of its clauses is a kind it cannot read", () => {
     expect(parseStatement("alter table public.t add column a int, alter column b set default 1")).toEqual({
       ops: [],

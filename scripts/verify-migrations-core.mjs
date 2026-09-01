@@ -436,6 +436,32 @@ export function parseStatement(statement) {
     return { ops, note: null };
   }
 
+  // ---- a `do` block whose whole body is conditional on an extension ------------------------
+  //
+  // `0017` schedules the ladder clock, and it must be a no-op wherever pg_cron is absent — which
+  // is every pglite boot in `test/`. So its body is guarded on `pg_extension`, and what the FILE
+  // describes is therefore not a state: on one server it schedules a job, on another it does
+  // nothing, and both are the file behaving correctly. There is no reading of `pg_catalog` that
+  // distinguishes "this was applied and did nothing" from "this was never applied", so an
+  // expectation here would be a claim this command cannot support.
+  //
+  // The narrowness is the point. A bare `do $$ … $$` is still UNRECOGNISED, because a block that
+  // is not conditional CAN have consequences worth checking — someone creating a table inside one
+  // would otherwise slip past a guard that read `do` and shrugged. What is accepted is a block
+  // that tests for an extension, and nothing else. (cairn:
+  // a-derivation-is-proven-by-renaming-its-subject-2026-09-01 — a classifier that accepts a
+  // composite input when ANY part matches reports a half-read input as fully read.)
+  if (/^do\s+\$/i.test(text)) {
+    if (!/\bfrom pg_extension where extname\b/i.test(lower)) return { ops: [], note: null };
+    return {
+      ops: [],
+      note:
+        "conditional on an extension being installed — it does one thing on a server that has it " +
+        "and nothing on a server that does not, so the files do not describe a state to check " +
+        "(0017's confirmation is `select jobname from cron.job`, story #27)",
+    };
+  }
+
   // ---- recognised, and nothing a catalog read can testify to -------------------------------
   if (/^insert into\b/i.test(lower)) {
     return {
