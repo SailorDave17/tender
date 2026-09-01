@@ -178,9 +178,10 @@ production over a connection that could change it.
 
 1. **Create the Supabase project** (Free; region near Ohio). Paste every `supabase/migrations/*.sql`
    in the SQL editor — numeric order, except **0003 after 0004** (its functions call `is_admin()`,
-   which 0004 creates). **0015 must be last**, which numeric order already gives you: it creates
-   nothing and only takes privileges away from what the earlier files created, so a table pasted
-   after it keeps the platform's default grant to `anon` and the sweep never saw it. Until it is
+   which 0004 creates). **The revoke files must be last** — 0015 and 0016 — which numeric order
+   already gives you: they create nothing and only take privileges away from what the earlier
+   files created, so a table pasted after them keeps the platform's default grant to `anon` and
+   the sweep never saw it. Until 0015 is
    pasted, `npm run check:live` exits 1 and names what `anon` can still reach — on the live
    project as of 2026-08-30 that is `club`, `answer_counts()` and `accept_answer()`. Then paste
    the **club row**, which no migration seeds and without which

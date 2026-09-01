@@ -1,0 +1,94 @@
+-- 0016 — the one privilege 0015's list could not have named, because it did not exist when the
+-- list was written (story #116).
+--
+-- **Paste after 0015.** It touches only `public.club`, which 0001 creates, and it creates nothing
+-- itself — so, like 0015, it is safe to re-paste and it belongs at the end of the set. It is not a
+-- correction to 0015's reasoning; it is the same sweep, one privilege wider.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHAT WAS LEFT BEHIND
+-- ---------------------------------------------------------------------------------------------
+--
+-- 0015 exists to take away the privileges nobody asked for. On `club` it names them one by one:
+--
+--     revoke insert, update, delete, truncate, references, trigger on public.club from authenticated;
+--
+-- *Measured 2026-08-31 against the live project* (story #116), reading `pg_catalog` rather than
+-- `information_schema` — see the note at the foot of this file:
+--
+--     club     postgres=arwdDxtm/postgres  authenticated=m/postgres  service_role=arwdDxtm/postgres
+--     answer   postgres=arwdDxtm/postgres                            service_role=arwdDxtm/postgres
+--     person   postgres=arwdDxtm/postgres                            service_role=arwdDxtm/postgres
+--
+-- That `m` is MAINTAIN, and `club` is the only table in the schema where any client role still
+-- holds a whole-table privilege. `has_table_privilege('authenticated', <table>, 'maintain')` is
+-- true for `club` and false for the other thirteen.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHY ONLY `club`, AND WHY 0015'S ENUMERATION WAS NOT A MISTAKE
+-- ---------------------------------------------------------------------------------------------
+--
+-- The six 0015 names were the complete non-SELECT set before PostgreSQL 17, which added MAINTAIN.
+-- Every other table is clean because its own migration revokes with `all`, which takes whatever
+-- the server version happens to define. `club` is the one table revoked privilege by privilege,
+-- and 0015 says why in band: a table-level `revoke all on public.club from authenticated` would
+-- also strip the COLUMN grants, silently taking 0002's
+--
+--     grant select (id, name, brand_disc, brand_mark, created_at) on public.club to authenticated;
+--
+-- with it and blanking every screen (cairn: supabase-rls-column-grants-2026-08-06). So the fix is
+-- not to widen the verb — it is to name the privilege the list is missing. `test/anon-grants.test.ts`
+-- holds both halves: MAINTAIN gone, and those five column grants still there.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHICH SERVER VERSION THIS WAS MEASURED AGAINST — AND WHY THAT SENTENCE IS THE POINT
+-- ---------------------------------------------------------------------------------------------
+--
+-- An enumerated privilege list is a claim about a server version. 0015's was correct when it was
+-- written and went one short underneath it, with no edit and nothing to grep, because the SERVER
+-- moved rather than the file. So this file records what it was measured on, and the test derives
+-- the set rather than trusting either of us:
+--
+--     live project      PostgreSQL 17.6   measured 2026-08-31 (story #116, the reading above)
+--     pglite harness    PostgreSQL 18.3   measured 2026-09-01, same ACL: authenticated=m/postgres
+--
+-- The harness runs a NEWER Postgres than production, which is the useful direction for this
+-- particular question: if 18 had added a ninth table privilege, the harness would be holding it
+-- right now. *Measured 2026-09-01* by granting `all` on a probe table to a role holding nothing
+-- and reading the ACL back apart with `aclexplode`, PostgreSQL 18.3 expands `all` on a table to
+--
+--     DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+--
+-- — eight, the same eight as 17. 0015 names six of them; SELECT is deliberately absent for the
+-- column-grant reason above; MAINTAIN is the remainder, and this file is it. The next time that
+-- list grows, the sweep in `test/anon-grants.test.ts` is what says so, on a schema where nothing
+-- has changed.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHAT THIS IS AND IS NOT WORTH
+-- ---------------------------------------------------------------------------------------------
+--
+-- Hygiene, not exposure. MAINTAIN permits VACUUM, ANALYZE, REINDEX, CLUSTER and REFRESH
+-- MATERIALIZED VIEW, and gives no access to a single row; PostgREST issues DML and RPC, so the web
+-- client cannot reach it by any route. What makes it worth a file is that it is exactly the class
+-- 0015 exists to sweep — a privilege no file here granted, on the row carrying `invite_code` and
+-- `admin_email`, which reads as a decision to whoever finds it next.
+--
+-- Nothing is written here for `anon`. 0015's `revoke all on all tables in schema public from anon`
+-- already takes MAINTAIN with everything else, and `has_table_privilege('anon', …, 'maintain')` is
+-- false on all fourteen tables *measured 2026-09-01*. A second statement would read as cover for a
+-- hole that is closed — the same argument 0015 makes for the `alter default privileges … on
+-- functions` line it deliberately does not carry.
+--
+-- ---------------------------------------------------------------------------------------------
+-- READ THE PRIVILEGES FROM `pg_catalog`, NEVER FROM `information_schema`
+-- ---------------------------------------------------------------------------------------------
+--
+-- Those views are filtered to what the CURRENT role can see, so a probe run as a read-only role
+-- returns an empty result — which reads as *no privilege is held* rather than as *you cannot see
+-- it*. A first pass at the measurement above asserted "authenticated holds only SELECT on club",
+-- passed, and printed `(none)`, for exactly that reason (cairn:
+-- supabase-management-api-tokens-2026-08-31). `relacl`, `aclexplode` and `has_table_privilege()`
+-- answer about the object rather than about the asker.
+
+revoke maintain on public.club from authenticated;
