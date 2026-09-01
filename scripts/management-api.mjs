@@ -18,13 +18,25 @@
  *
  * WHAT A TOKEN OF THIS CLASS IS
  *
- * A Supabase personal access token has full authority over EVERY project in the account. Nothing
- * else this repo holds is like that: `NEXT_PUBLIC_SUPABASE_ANON_KEY` is public by design and
- * subject to RLS, and `SUPABASE_SERVICE_ROLE_KEY` is scoped to one project and authenticates to
- * that project's own API — PostgREST and GoTrue — which is why it cannot run DDL and is not an
- * alternative to this. The containment around the token — the refusals below, `.env.example`, the
- * `.env*` gitignore rule and the repo-wide scan in `test/migrate-live-scope.test.ts` — is as much
- * of #114 as the feature is.
+ * A Supabase personal access token is SCOPED, by project and by permission — *measured 2026-08-31
+ * across three of them*: one reached only tender and connected as `supabase_read_only_user`; one
+ * reached only another project in the same account and answered `403` to every tender endpoint,
+ * `GET /v1/projects` listing exactly the projects in its scope; one reached tender and connected as
+ * `postgres`. So a token here is not necessarily account-wide, and its reach is readable in one
+ * call — `GET /v1/projects` returns what it covers and nothing else.
+ *
+ * That is a CORRECTION of what this file said when it was written, which was that such a token has
+ * full authority over every project in the account. That was inherited from the port's source and
+ * was not re-checked; it is the kind of claim that reads as background rather than as something to
+ * verify. It matters in both directions: a scoped token is a smaller blast radius than the warning
+ * implied, and — the half that bit — a token can be scoped to the WRONG project and then fail with
+ * a permissions message that says nothing about scope.
+ *
+ * Nothing else this repo holds is comparable even so: `NEXT_PUBLIC_SUPABASE_ANON_KEY` is public by
+ * design and subject to RLS, and `SUPABASE_SERVICE_ROLE_KEY` authenticates to the project's own API
+ * — PostgREST and GoTrue — which is why it cannot run DDL and is not an alternative to this. The
+ * containment around the token — the refusals below, `.env.example`, the `.env*` gitignore rule and
+ * the repo-wide scan in `test/migrate-live-scope.test.ts` — is as much of #114 as the feature is.
  *
  * PORTED, NOT INVENTED. The design is Taskr's #185, and what is worth inheriting is one ordering
  * decision — the echo round trip comes first — plus three measured platform traps a fresh
@@ -196,8 +208,9 @@ export function requireAccessToken(token) {
         "ACCESS TOKEN — not the anon key, and not the service-role key. Mint one at\n" +
         `${TOKEN_PAGE} and put it in \`.env.local\`:\n\n` +
         `    ${TOKEN_VAR}=<the token>\n\n` +
-        "It has authority over every project in the account. `.env.example` says what\n" +
-        "that means and how to revoke it.\n\n" +
+        "It is scoped by PROJECT and by PERMISSION: it must cover this project and allow\n" +
+        "writes. `GET /v1/projects` lists exactly what a token covers. `.env.example`\n" +
+        "says what that means and how to revoke it.\n\n" +
         "Nothing was sent and nothing was changed.",
     );
   }
@@ -239,19 +252,50 @@ export function queryUrl(ref, root = MANAGEMENT_API_ROOT) {
 /**
  * Run SQL against a project through the Management API.
  *
+ * `readOnly` is sent explicitly and DEFAULTS TO TRUE, both deliberately. The endpoint accepts a
+ * `read_only` boolean (it is in the published OpenAPI schema for `V1RunQueryBody`) and omitting it
+ * leaves the behaviour to a vendor default nobody here chose — the class cairn calls
+ * a-default-is-not-a-decision. Defaulting to `true` means a caller who forgets gets a refusal
+ * rather than an unintended write: the failure is loud and costs a re-run.
+ *
+ * *Measured 2026-08-31 against the live project, on two tokens of different scope*, and the pair
+ * is the point — either row alone supports a wrong general claim:
+ *
+ *   token                      omitted                  read_only: true            read_only: false
+ *   ------------------------   ----------------------   ------------------------   ----------------------
+ *   scoped read-only           supabase_read_only_user  supabase_read_only_user    supabase_read_only_user
+ *   scoped with write access   postgres, txn off        supabase_read_only_user    postgres, txn off
+ *
+ * So the flag is load-bearing on a credential that CAN write, and inert on one that cannot. The
+ * first row was measured first and written up as "this flag changes nothing" — true of that token
+ * and false of the endpoint, which is a measurement generalised past its subject. Both halves
+ * matter here: `read_only: false` is what makes the apply possible at all, and passing it is still
+ * NOT evidence that a connection can write, because a read-only credential ignores it silently.
+ *
+ * The omitted column is why the default is `true` rather than absent: with a write-capable token,
+ * omitting the flag connects as `postgres` with the transaction OPEN FOR WRITING. So an echo stage
+ * that forgot to ask for read-only would inspect the payload over a fully writable connection.
+ *
  * Returns `{ ok, status, rows, error }` rather than throwing on an HTTP failure, so the caller
  * decides what a given status means — the same reason `check-live-core.mjs` classifies by WHO
  * ANSWERED rather than by status code. An absent answer must never read as a clean one, so a
  * transport failure comes back with `ok: false` and `rows: null`, never as an empty result set
  * (cairn: an-absent-result-reads-as-a-clean-one-2026-08-11).
  */
-export async function runQuery({ ref, token, sql, fetchImpl = fetch, root = MANAGEMENT_API_ROOT }) {
+export async function runQuery({
+  ref,
+  token,
+  sql,
+  readOnly = true,
+  fetchImpl = fetch,
+  root = MANAGEMENT_API_ROOT,
+}) {
   let response;
   try {
     response = await fetchImpl(queryUrl(ref, root), {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query: sql }),
+      body: JSON.stringify({ query: sql, read_only: readOnly }),
     });
   } catch (error) {
     return {
@@ -304,6 +348,36 @@ export async function runQuery({ ref, token, sql, fetchImpl = fetch, root = MANA
     rows: Array.isArray(parsed) ? parsed : [],
     error: null,
   };
+}
+
+/**
+ * Is this failure the connection refusing to write, rather than the SQL being wrong?
+ *
+ * Postgres raises `25006` — `read_only_sql_transaction` — for any write attempted on a read-only
+ * connection, whatever the statement. It arrives through the Management API as an ordinary 400
+ * with the message embedded, so without this it is indistinguishable from a migration whose SQL is
+ * simply wrong, and the caller's refusal blames the FILE.
+ *
+ * That is not hypothetical: it is what this command did on its first real run. `0015` applied
+ * cleanly to a local stack, arrived at the live project with a matching md5, and was refused —
+ * and the message said *"the fault is in the file rather than in transit"*, which is false in both
+ * halves. A refusal that names the wrong subject is worse than a bare failure, because it is
+ * followed.
+ *
+ * MATCHES EITHER THE SQLSTATE OR THE WORDING, and that redundancy nearly hid a defect in itself.
+ * The five-character SQLSTATE is the contract; the prose around it belongs to the vendor and can
+ * be reworded without notice, so both are matched. This line was first authored through a quoted
+ * `python - <<'PY'` heredoc, where a doubled backslash COLLAPSES in transport rather than escaping
+ * (cairn: windows-shell-hazards hazard 18) — `\\b` reached Python as `\b`, Python read that as a
+ * literal BACKSPACE, and the file received `/<0x08>25006<0x08>|read-only transaction/`. A valid
+ * regex whose first alternative can never match.
+ *
+ * It produced no failure, because the second alternative matched the real message perfectly. What
+ * found it was the test asserting the OTHER route — so: **a matcher with two ways to succeed hides
+ * the death of either one**, and each alternative needs its own case.
+ */
+export function isReadOnlyRefusal(error) {
+  return /\b25006\b|read-only transaction/i.test(String(error ?? ""));
 }
 
 // -------------------------------------------------------------------------------------------

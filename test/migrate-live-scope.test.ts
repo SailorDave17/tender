@@ -78,13 +78,21 @@ describe("the access token never reaches version control or a browser (AC 11)", 
     expect(trackedHits(TOKEN_VAR).filter((path) => path.startsWith("src/"))).toEqual([]);
   });
 
-  it("`.env.example` carries the NAME and no value, and says how wide the token is", () => {
+  it("`.env.example` carries the NAME and no value, and says what the token must cover", () => {
     // Read from DISK, not from the index (`git show :.env.example`). The index is whatever was
     // last staged, so an assertion against it passes on a stale copy while the working tree — the
     // thing a person opens and copies — says something else.
     const sample = readFileSync(resolve(ROOT, ".env.example"), "utf8");
     expect(sample).toMatch(new RegExp(`^${TOKEN_VAR}=$`, "m"));
-    expect(sample).toMatch(/EVERY PROJECT IN THE ACCOUNT/);
+
+    // This asserted `/EVERY PROJECT IN THE ACCOUNT/` until 2026-08-31, when three tokens measured
+    // against the live project showed that claim to be false: a personal access token is scoped by
+    // project and by permission. The assertion is kept, re-pointed at what a reader actually needs
+    // — that the token must COVER THIS PROJECT and ALLOW WRITES — because those are the two ways it
+    // was wrong in practice, each with a failure that names neither.
+    expect(sample).toMatch(/SCOPED BY PROJECT AND BY PERMISSION/);
+    expect(sample).toMatch(/403/); // the wrong-project failure
+    expect(sample).toMatch(/25006/); // the read-only failure
   });
 
   it("`.env*` is gitignored, so the file holding the real value cannot be committed", () => {

@@ -7,6 +7,7 @@ import {
   compareEcho,
   dollarTagAt,
   echoQuery,
+  isReadOnlyRefusal,
   localBytes,
   localChars,
   localDigest,
@@ -128,6 +129,35 @@ describe("the echo payload is embedded safely (AC 7)", () => {
     expect(q).toContain("select length(body) as chars");
     // The payload sits inside the dollar-quoted literal, so it is data rather than code.
     expect(q).toContain("$tender_echo$drop table club;$tender_echo$::text");
+  });
+});
+
+describe("a write refused by the CONNECTION is told apart from wrong SQL", () => {
+  // Measured on this command's first real run against the live project. Postgres raises 25006 for
+  // any write on a read-only connection, whatever the statement, and it arrives through the
+  // Management API as an ordinary 400 — so without this classifier it is indistinguishable from a
+  // migration whose SQL is wrong, and the refusal blames the file. It did.
+  it("recognises the real message the live project returned", () => {
+    expect(
+      isReadOnlyRefusal(
+        "[400] Failed to run sql query: ERROR:  25006: cannot execute REVOKE in a read-only transaction",
+      ),
+    ).toBe(true);
+  });
+
+  it("recognises it by EITHER the SQLSTATE or the wording, since only one is a contract", () => {
+    // The five-character SQLSTATE is the stable half; the prose around it is the vendor's and can
+    // be reworded without notice. Matching either means a rewording does not silently send the
+    // reader back to the message that blames the file.
+    expect(isReadOnlyRefusal("ERROR: 25006: something else entirely")).toBe(true);
+    expect(isReadOnlyRefusal("cannot execute CREATE TABLE in a read-only transaction")).toBe(true);
+  });
+
+  it("does NOT fire on ordinary bad SQL — the branch it exists to keep separate", () => {
+    expect(isReadOnlyRefusal('[400] relation "nope" does not exist')).toBe(false);
+    expect(isReadOnlyRefusal("[401] Invalid authentication credentials")).toBe(false);
+    expect(isReadOnlyRefusal("")).toBe(false);
+    expect(isReadOnlyRefusal(null)).toBe(false);
   });
 });
 
@@ -359,7 +389,21 @@ describe("runQuery reports a failure and never returns an empty result set for o
     expect(seen.url).toBe(queryUrl(GOOD_REF));
     expect(seen.init?.method).toBe("POST");
     expect((seen.init?.headers as Record<string, string>).Authorization).toBe("Bearer sbp_x");
-    expect(JSON.parse(String(seen.init?.body))).toEqual({ query: "select 1;" });
+    // `read_only` defaults to TRUE and is always sent. Omitting it would leave the behaviour to a
+    // vendor default nobody here chose; defaulting to true means a caller who forgets gets a
+    // refusal rather than an unintended write.
+    expect(JSON.parse(String(seen.init?.body))).toEqual({ query: "select 1;", read_only: true });
+  });
+
+  it("read_only is sent as given, so each stage states its own intent", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchImpl = asFetch(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return jsonResponse([]);
+    });
+    await runQuery({ ...args, readOnly: true, fetchImpl });
+    await runQuery({ ...args, readOnly: false, fetchImpl });
+    expect(bodies.map((b) => b.read_only)).toEqual([true, false]);
   });
 
   it("a transport failure comes back ok:false with rows NULL — never as an empty result set", async () => {

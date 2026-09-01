@@ -197,6 +197,24 @@ describe("the echo comes first, and a mangled payload is never applied (AC 7)", 
     return { fetchImpl, bodies };
   };
 
+  it("the echo asks for a READ-ONLY transaction and the apply asks for a writable one", async () => {
+    // Each stage states its own intent rather than inheriting a vendor default. The echo's claim
+    // is that it inspects without applying, and until this flag existed that rested entirely on
+    // `echoQuery` producing a SELECT — a property a later edit could lose with nothing to say so.
+    //
+    // What this does NOT prove, and the code says so too: on a credential that connects as
+    // `supabase_read_only_user` the flag changes nothing in either direction. Sending it is
+    // correctness, not a capability.
+    const flags: unknown[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      flags.push(body.read_only);
+      return { ok: true, status: 200, text: async () => JSON.stringify(flags.length === 1 ? [intact] : []) };
+    }) as unknown as typeof fetch;
+    await applyMigration({ ref: "r", token: "t", sql, fetchImpl });
+    expect(flags).toEqual([true, false]);
+  });
+
   it("an intact payload is applied, and the apply carries the RAW sql", async () => {
     const { fetchImpl, bodies } = wire([intact]);
     const result = await applyMigration({ ref: "r", token: "t", sql, fetchImpl });

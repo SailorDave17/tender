@@ -115,12 +115,18 @@ at all. Note that `npm run` claims a `--dry-run` of its own, so both `-- --dry-r
 rehearsal, and an unknown flag is refused rather than ignored.
 
 It needs `SUPABASE_ACCESS_TOKEN` in `.env.local` — a **personal access token** from the account
-page, not a project key. It has authority over **every project in the account**, which is wider
-than anything else in `.env.local`, so `.env.example` says how to revoke it and
-`test/migrate-live-scope.test.ts` refuses the value or the name reaching a place it should not.
-The service-role key is not an alternative: it authenticates to this project's own API and cannot
-run DDL. Deciding to apply is still the owner's; this changes who can carry it out, and whether
-the result is verifiable.
+page, not a project key. It is **scoped by project and by permission**, and it must cover *this*
+project and allow writes. *Measured 2026-08-31 across three tokens*: one scoped to another project
+answered `403` to every tender endpoint; one scoped here but read-only read fine and answered
+`25006` to every write; only the third could apply anything. `GET /v1/projects` returns exactly the
+projects a token covers, which is the one call that tells the three apart — and a 403 from this API
+says *privileges*, never *scope*, so the message does not point at the cause.
+
+It is still the widest credential in `.env.local`, so `.env.example` says how to revoke it and
+`test/migrate-live-scope.test.ts` refuses the name reaching a place it should not. The service-role
+key is not an alternative: it authenticates to this project's own API and cannot run DDL. Deciding
+to apply is still the owner's; this changes who can carry it out, and whether the result is
+verifiable.
 
 ## Branches and deploys
 

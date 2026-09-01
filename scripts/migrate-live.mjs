@@ -40,6 +40,7 @@ import {
   Refusal,
   compareEcho,
   echoQuery,
+  isReadOnlyRefusal,
   localBytes,
   localChars,
   localDigest,
@@ -50,6 +51,8 @@ import {
   resolveSupabaseUrl,
   runQuery,
   splitStatements,
+  TOKEN_PAGE,
+  TOKEN_VAR,
 } from "./management-api.mjs";
 
 /** The one directory a file may come from. */
@@ -188,7 +191,13 @@ export function planLines({ ref, path, sql }) {
  * injected `fetch` and no live project.
  */
 export async function applyMigration({ ref, token, sql, fetchImpl }) {
-  const echo = await runQuery({ ref, token, sql: echoQuery(sql), fetchImpl });
+  // `readOnly: true` on the echo is not decoration. The stage's whole claim is that it inspects
+  // without applying, and until now that rested on the SQL being a SELECT — a property a later
+  // edit to `echoQuery` could quietly lose. Asking the platform to enforce it makes the
+  // harmlessness a property of the REQUEST rather than of an argument somebody has to get right
+  // (cairn: postgrest-probing-a-live-project — prefer the probe whose harmlessness cannot be
+  // undone by getting an argument wrong).
+  const echo = await runQuery({ ref, token, sql: echoQuery(sql), readOnly: true, fetchImpl });
   if (!echo.ok) {
     return { ok: false, stage: "echo", error: echo.error, applied: false };
   }
@@ -199,7 +208,7 @@ export async function applyMigration({ ref, token, sql, fetchImpl }) {
     return { ok: false, stage: "echo", problems, received, applied: false };
   }
 
-  const apply = await runQuery({ ref, token, sql, fetchImpl });
+  const apply = await runQuery({ ref, token, sql, readOnly: false, fetchImpl });
   if (!apply.ok) {
     // Deliberately says the payload was fine. Without that, a migration whose SQL is simply wrong
     // reads as a transport problem, and somebody goes looking at the wire instead of at the file.
@@ -275,6 +284,27 @@ export async function main(argv, env, out = console, readEnv = readEnvLocal) {
   }
   if (!result.ok && result.stage === "echo") {
     refuse(`The echo round trip failed, so nothing was applied.\n\n${result.error}`);
+  }
+  // The credential case FIRST, because the generic message below is wrong about it in both halves.
+  // *Measured on this command's first real run*: `0015` arrived with a matching md5 and was refused
+  // with 25006, and the message blamed the FILE — which had nothing wrong with it — and implied
+  // transit, which the echo stage had just proven fine. A refusal naming the wrong subject is worse
+  // than a bare failure, because it is followed.
+  if (!result.ok && isReadOnlyRefusal(result.error)) {
+    refuse(
+      "REFUSED BY THE CONNECTION, NOT BY THE FILE.\n\n" +
+        `${result.error}\n\n` +
+        "The payload arrived intact — the echo stage compared it against the file on disk and they\n" +
+        "matched — and Postgres then refused to WRITE. It raises 25006 for any write on a read-only\n" +
+        "connection, whatever the statement, so this says nothing at all about the SQL.\n\n" +
+        `The cause is the credential in ${TOKEN_VAR}. *Measured 2026-08-31*: a personal access\n` +
+        "token that connects as `supabase_read_only_user` answers 25006 to every write and 201 to\n" +
+        "every read, and the API's own `read_only` flag changes nothing in either direction — so\n" +
+        "passing `read_only: false` is NOT evidence that a connection can write.\n\n" +
+        `Check what this token is allowed to do:  ${TOKEN_PAGE}\n` +
+        "Confirm the role it connects as:        select current_user;\n\n" +
+        "Nothing was applied.",
+    );
   }
   if (!result.ok) {
     refuse(
