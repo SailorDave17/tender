@@ -103,7 +103,7 @@ export type FreshDbOptions = {
  *
  * *Measured 2026-08-25* on this machine (24 cores, 64 GB, Node 24), `freshDb()` wall time over
  * 42 calls per condition — three consecutive `npm test` runs, the twelve pglite files there
- * were THEN starting in parallel (fifteen by 2026-08-31; this line records the conditions of a
+ * were THEN starting in parallel (sixteen by 2026-08-31; this line records the conditions of a
  * past measurement, so it is deliberately not updated as the repo grows), timings appended per
  * call from inside the function:
  *

@@ -13,20 +13,22 @@ import { FRESH_DB_BUDGET_MS, freshDb, withBudget } from "./pglite";
  *
  * The thing being guarded is not a behaviour of the product; it is a property of the instrument
  * every other pglite file rests on, and its failure mode is a run that looks like a finding.
- * *Re-measured 2026-08-31 on #92's tree* by breaking `freshDb()` on purpose — once so it throws,
- * once so it never settles (a hang after the boot stage is noted, which is the wedged-WASM shape)
- * — and reading vitest's own JSON. Totals are left out on purpose; they move every time a test is
- * added, and these fields do not:
+ * *Re-measured 2026-08-31 on #92's tree, after #48 merged into it* by breaking `freshDb()` on
+ * purpose — once so it throws, once so it never settles (a hang after the boot stage is noted,
+ * which is the wedged-WASM shape) — and reading vitest's own JSON. Totals are left out on purpose;
+ * they move every time a test is added, and these fields do not:
  *
- *   healthy            0 failed /   0 pending /  0 suites failed / true  / exit 0 /  ~14 s
- *   broken, throws     5 failed / 189 pending / 23 suites failed / false / exit 1 /   ~3 s
- *   broken, never      4 failed / 189 pending / 23 suites failed / false / exit 1 /  ~81 s
+ *   healthy            0 failed /   0 pending /  0 suites failed / true  / exit 0 /  ~13 s
+ *   broken, throws     5 failed / 197 pending / 24 suites failed / false / exit 1 /   ~3 s
+ *   broken, never      4 failed / 197 pending / 24 suites failed / false / exit 1 /  ~81 s
  *   settles
  *
  * (#78 measured 4 / 3 failures against 156 pending and 19 suites on 2026-08-25. The failure
- * column gained the canary; the other columns moved because the repo gained test files.)
+ * column gained the canary; the other columns moved because the repo gained test files — #48's
+ * `anon-grants.test.ts` landed while this story was open and moved them again, from 189/23, which
+ * is why the pending and suite columns are the ones to re-derive rather than to trust.)
  *
- * **Read the two numbers in the right order.** Fifteen files call `freshDb()` in `beforeAll`
+ * **Read the two numbers in the right order.** Sixteen files call `freshDb()` in `beforeAll`
  * (*measured 2026-08-31* — that count drifts with the repo and nothing here depends on it; the
  * property does not drift), and they contribute **nothing** to `numFailedTests` in either arm —
  * vitest reports a `beforeAll` failure as its tests SKIPPED. Before #92, every failure in that
@@ -41,18 +43,30 @@ import { FRESH_DB_BUDGET_MS, freshDb, withBudget } from "./pglite";
  * rule**: it is the signal that depends on no particular test existing, and a named canary does
  * not retire it — the canary says WHAT happened, the pending count says THAT something did.
  *
- * *What the canary costs, measured 2026-08-31 over three runs each side, because it is not free:*
+ * *What the canary costs, measured 2026-08-31 over three runs WITH it and three WITHOUT, on the
+ * merged tree, because it is not free:*
  *
- *   whole suite            13355 / 13660 / 13831 ms  ->  14235 / 14598 / 14630 ms   (+~0.9 s)
- *   this file alone         8384 /  8426 /  8912 ms  ->   9820 / 10202 / 10444 ms   (+~1.5 s)
+ *   whole suite      13206 / 14008 / 15199 ms  ->  13216 / 13606 / 14201 ms   (ranges OVERLAP)
+ *   this file alone   8864 /  9197 /  9583 ms  ->  10311 / 10945 / 11127 ms   (+~1.5 s)
  *
- * The ranges do not overlap on either row, so the cost is real rather than noise. It is also far
- * less than the ~5.3 s an idle boot takes, and the per-test durations say why: the canary boots in
- * 5790–7129 ms and `names each migration` — the SECOND boot in the same worker — fell from
- * 8341–8844 ms to 3267–3983 ms, because the WASM compile is amortised across a worker. So the
- * marginal cost of a boot is not the cost of the first one. On `ubuntu-latest` a full real
- * `freshDb()` in a test body measured 5819 ms (#78, CI run 32874204521); that is the number to
- * compare a future CI regression against.
+ * Read those two rows differently. The file's ranges do not overlap, so ~1.5 s is a real cost. The
+ * suite's DO overlap, so at suite level the canary is not distinguishable from run-to-run variance
+ * — the file is not the critical path, and a boot added off the critical path is close to free.
+ *
+ * Both are far less than the ~9 s a boot takes in this file, and the controlled comparison says
+ * why: `names each migration` is the same test in both arms, and it runs in **8815–9512 ms** with
+ * no canary ahead of it and **3691–4176 ms** with one, while the canary itself takes 6100–7219 ms.
+ * So a boot roughly halves the cost of the NEXT boot in the same worker, and the marginal cost of
+ * a boot is not the cost of the first one.
+ *
+ * The obvious explanation is that the WASM compile is cached per worker — but that is a HYPOTHESIS
+ * and `ubuntu-latest` does not support it: on CI run 33454766960 the canary took **3296 ms** and
+ * `names each migration` took **5016 ms**, the opposite order, on a runner with far fewer cores.
+ * So the halving is measured on this machine and its cause is not established; contention between
+ * sixteen simultaneous boots would explain the local numbers just as well. Do not price a future
+ * change on the mechanism. On `ubuntu-latest` a full real `freshDb()` in a test body measured
+ * 5819 ms (#78, CI run 32874204521) and 3296–5016 ms here; those are the numbers to compare a
+ * future CI regression against.
  *
  * The hang case also priced the backstop: with `hookTimeout: 60_000` and nothing else, a
  * `freshDb()` that never settles took **182 s** against a healthy run's 12 s, and printed nothing
@@ -66,7 +80,7 @@ describe("the pglite harness", () => {
   // Story #92. The one test in the repo whose NAME is the deliverable.
   //
   // Everything else in this file guards the budget; this guards the boot itself, and it exists
-  // because the signal a dead harness produces was previously INCIDENTAL. Fifteen files call
+  // because the signal a dead harness produces was previously INCIDENTAL. Sixteen files call
   // `freshDb()` in `beforeAll`, and vitest reports a `beforeAll` failure as its tests SKIPPED,
   // so those files contribute nothing to `numFailedTests`. Every failure in that column came
   // from the handful of tests that happen to call `freshDb()` in a test BODY for unrelated
