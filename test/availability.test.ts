@@ -7,10 +7,11 @@ import { as, freshDb } from "./pglite";
  * person_contact. Story #18 AC 1: a crew inserting an availability row for another person_id is
  * refused, and a third user can read the row.
  *
- * As in person.test.ts, every deny is against `authenticated` (the harness grants anon nothing
- * Supabase would, so an anon case could not fail; that side is #48's), and every deny sits
- * beside a positive control on the same mechanism so a `0`/`[]` read means refused rather than
- * query-wrong.
+ * As in person.test.ts, every deny is against `authenticated`, and every deny sits beside a
+ * positive control on the same mechanism so a `0`/`[]` read means refused rather than
+ * query-wrong. The anon side is covered once, as a sweep over the whole schema, in
+ * test/anon-grants.test.ts — since story #48 the harness reproduces the platform's default
+ * grants, so it is a case that can fail rather than one that could not.
  */
 
 const ANN = "11111111-1111-4111-8111-111111111111"; // rated, hull-specific

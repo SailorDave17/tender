@@ -1,0 +1,139 @@
+-- 0015 — take away the privileges nobody asked for: everything `anon` holds, and the whole-table
+-- grants `authenticated` holds on `club` (story #48).
+--
+-- **Paste after 0014**, in numeric order and LAST of the set. Every statement acts on objects the
+-- earlier files create and this file creates nothing, so pasting it early leaves the tables and
+-- functions that came after it untouched by the sweep — the `alter default privileges` lines
+-- below would still cover them, but the sweep would not, and the two are not the same guard.
+-- Re-pasting it later is harmless: every statement here is idempotent.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHAT IS WRONG
+-- ---------------------------------------------------------------------------------------------
+--
+-- Supabase ships, on every project:
+--
+--   alter default privileges in schema public grant all on tables    to postgres, anon, authenticated, service_role;
+--   alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
+--   alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
+--
+-- so every table and function a migration creates is granted to `anon` before that migration's
+-- own `grant ... to authenticated` runs. No file here asked for it and no file here records it.
+--
+-- Nothing was exposed by it, because RLS is enabled on every table and `anon` has no policy —
+-- and that is exactly the defect. RLS was the SOLE defence. One `disable row level security`, or
+-- one policy written `to public` instead of `to authenticated`, turns a read-only table into a
+-- world-writable one with no grant standing in the way.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHAT WAS ACTUALLY OPEN — measured 2026-08-30 against the live project, read-only GETs only
+-- ---------------------------------------------------------------------------------------------
+--
+--   GET /rest/v1/club?select=*&limit=0                   200 []                      anon READS it
+--   GET /rest/v1/rpc/answer_counts?post_ids={<nil>}      200 []                      anon RUNS it
+--   GET /rest/v1/rpc/accept_answer?post_id=…&person_id=… 401 42501 "not signed in"   anon RUNS it
+--   GET /rest/v1/rpc/current_invite_code                 401 42501 "permission denied for function …"
+--
+-- Every other table and every other client-called function already answered 42501, because every
+-- migration from 0002 on revokes its own table from `anon, authenticated`. `club` is the one
+-- table that never got that line, and `0001`'s neighbouring comment — "No insert/update/delete
+-- policy exists on purpose" — is true about policies and silent about grants.
+--
+-- Read the third line twice. A privilege refusal and a function's own `raise` both arrive as
+-- 42501, so the answer proving `anon` MAY execute `accept_answer` is indistinguishable, at that
+-- layer, from the answer proving it may not. The catalog is where that question is settled;
+-- `test/anon-grants.test.ts` is where it is asked.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHY `from public, anon` AND NOT `from anon`
+-- ---------------------------------------------------------------------------------------------
+--
+-- Two different grants make a function executable by `anon`, and revoking one leaves the other.
+-- Postgres itself grants EXECUTE on every new function to PUBLIC, and `anon` is a member of
+-- PUBLIC like every role. Four of the files here already revoke their own functions from
+-- `public` by name; three functions never got that line, and their ACL says so —
+--
+--   can_answer(uuid)   is_admin()   owns_boat(uuid)      proacl carries `=X/postgres`
+--
+-- *Measured in the pglite harness 2026-08-30*: with `revoke execute on all functions in schema
+-- public from anon` alone, `has_function_privilege('anon', …, 'execute')` stays **true** for all
+-- three. The statement reads correct, applies cleanly, and closes nothing. `from public, anon`
+-- takes both grants and returns false for all eleven functions in the schema, while every
+-- function `authenticated` needs keeps its explicit grant (all eight measured still true).
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHY `authenticated` IS HERE TOO, AND WHY THE PRIVILEGES ARE NAMED ONE BY ONE
+-- ---------------------------------------------------------------------------------------------
+--
+-- The same platform default hands `authenticated` the same seven privileges on every table.
+-- Every migration from 0002 on revokes them; `club` is the one table that does not, so on the
+-- live project `authenticated` holds INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER on
+-- it — six privileges nobody asked for, on the row carrying `invite_code` and `admin_email`,
+-- gated by nothing but the absence of a write policy. Same defect, same table, one line away, so
+-- it is closed here rather than left for a story that would have to re-open this same file.
+-- (SELECT is already absent: 0002 revokes it and re-grants five columns.)
+--
+-- The privileges are named rather than written `all` on purpose. A table-level `revoke all`
+-- also strips the matching COLUMN grants, so `revoke all on public.club from authenticated`
+-- would silently take away 0002's `grant select (id, name, brand_disc, brand_mark, created_at)`
+-- and blank every screen (cairn: supabase-rls-column-grants-2026-08-06). Naming the six leaves
+-- SELECT — and therefore the column grants — untouched; `test/person.test.ts` holds that column
+-- list, so the mistake would be caught, but it should not be made.
+--
+-- `anon` takes `all` safely: it holds no column grant anywhere in the schema, in any file.
+--
+-- ---------------------------------------------------------------------------------------------
+-- WHAT CHANGES FOR EVERY LATER MIGRATION — AND THE HALF THAT CANNOT BE FIXED HERE
+-- ---------------------------------------------------------------------------------------------
+--
+-- The `alter default privileges` lines are the half that covers what does not exist yet. The
+-- sweep above is a snapshot of today's schema; without them the table 0016 creates would arrive
+-- granted to `anon` exactly as `club` did, and nothing would say so. They alter the defaults of
+-- the role that RUNS this file — `postgres` in the SQL editor, which is also the role that
+-- creates every object in every migration here.
+--
+-- For TABLES and SEQUENCES they work. *Measured in the harness (Postgres 17) 2026-08-30*: with
+-- the platform default reproduced and this file applied, a table and a sequence created
+-- afterwards read `has_table_privilege('anon', …, 'select')` = false and
+-- `has_sequence_privilege('anon', …, 'usage')` = false, while `authenticated` still inherits
+-- both — which is the control proving the reproduced default was in force and this file is what
+-- removed `anon` from it.
+--
+-- FOR FUNCTIONS THEY DO NOT, AND NO SPELLING OF THEM DOES. Postgres grants EXECUTE on every new
+-- function to PUBLIC as a built-in default, and `pg_default_acl` records only what has been
+-- *added* to that default — so there is no PUBLIC entry to take away, and the revoke stores
+-- nothing. *Measured 2026-08-30*, six arms, each creating a function and reading `proacl`:
+--
+--   nothing set                                            =X/postgres   anon may execute: true
+--   revoke execute on functions from public, alone         =X/postgres   anon may execute: true
+--   Supabase's grant, then revoke from anon, then public   =X/postgres   anon may execute: true
+--   … revoking from public first, then anon                =X/postgres   anon may execute: true
+--   … revoke ALL on functions from public, anon            =X/postgres   anon may execute: true
+--   … spelled `for role postgres`                          =X/postgres   anon may execute: true
+--
+-- So the line is not written below, because a statement that measurably does nothing is worse
+-- than an absent one: it reads as cover. `revoke all on functions from anon` IS written — it
+-- removes the platform's by-name grant, which is one of the two paths — but on its own it leaves
+-- PUBLIC's, so it is a narrowing and not a fix.
+--
+-- What actually protects a function created after this file is the thing that already existed
+-- and was forgotten three times: **its own migration must say `revoke all on function … from
+-- public, anon`**. Four of the eight functions here carry that line; `can_answer`, `is_admin` and
+-- `owns_boat` did not, which is how `anon` came to be able to execute them with no file saying
+-- so. The guard is `test/anon-grants.test.ts`, which asserts that NO function in `public` is
+-- executable by `anon` and names the ones that are — so the next migration that forgets is red
+-- before it is pasted, rather than found by a probe two months later.
+
+-- Sweep: every table, sequence and function that exists today.
+revoke all on all tables in schema public from anon;
+revoke all on all sequences in schema public from anon;
+revoke execute on all functions in schema public from public, anon;
+
+-- `authenticated` on `club`: the six the platform granted, never SELECT (see above).
+revoke insert, update, delete, truncate, references, trigger on public.club from authenticated;
+
+-- The defaults: what a LATER migration's table or sequence inherits. Effective for both; for
+-- functions see the section above — `anon` loses the by-name grant and keeps PUBLIC's.
+alter default privileges in schema public revoke all on tables from anon;
+alter default privileges in schema public revoke all on sequences from anon;
+alter default privileges in schema public revoke all on functions from anon;
