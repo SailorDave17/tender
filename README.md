@@ -164,6 +164,12 @@ production over a connection that could change it.
 - `release` is Vercel's production branch. **Merging into `develop` deploys nothing**; promoting
   `develop` → `release` is the deploy, and it is the owner's — after any new migration has been
   pasted into the live project.
+- `main` is the **backup branch**: a known-good working version to fall back to if `release`
+  breaks and cannot be fixed in place. It is promoted **from `release`** by a pull request the
+  owner merges — from the branch production actually ran, so the backup is by construction a
+  state that has been live. It is never a base for new work, and a `main` that has moved is the
+  backup being taken rather than drift. *(Owner directive 2026-09-01; supersedes ADR 005's
+  "retired at scaffold" consequence.)*
 - `githooks/pre-push` refuses direct pushes to `develop`, `main`, `master` and (via
   `githooks/owner-only`) `release`. Enable it once per clone: `git config core.hooksPath githooks`.
   It runs `githooks/checks` before any other push.
