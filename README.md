@@ -391,6 +391,51 @@ over whatever arrived.
    **iPhones only offer push to an installed web app.** A crew who has not added Tender to their
    home screen will see the button and be refused by the browser; `/profile` says so in as many
    words. That is Apple's rule, not a bug, and it is why #28 shipped before this.
+2c. **The ladder clock** (#26). Nothing calls `/api/ladder/tick` until this step is done, and a
+   ladder that never steps down is silent rather than broken — no error, no email, a board that
+   simply stays on rung 1. Five things, in this order:
+
+   1. **Enable `pg_net`** — dashboard, Database → Extensions. *Measured 2026-09-01*: `pg_cron`
+      is already installed on the live project (1.6.4, left behind by #12's probe) and `pg_net`
+      is **not** (available at 0.20.4, never created). `0017` refuses to apply while that is
+      true, deliberately: with a guard on `pg_cron` alone it would schedule a job that calls
+      into a schema that does not exist, and step 5 below would still read correct.
+   2. **Create the two Vault secrets** — Project Settings → Vault, or in the SQL editor. The
+      names are fixed; `0017` reads them by name at every tick, so rotating either one later is
+      an update to these rows and no migration at all.
+
+      ```sql
+      select vault.create_secret('https://tender.madcowsailing.com/api/ladder/tick', 'ladder_tick_url');
+      select vault.create_secret('<the same value as CRON_SECRET>', 'ladder_tick_secret');
+      ```
+
+   3. **Apply `0017`** — `npm run migrate:live supabase/migrations/0017_ladder_tick_schedule.sql`,
+      or paste it. Either way it goes after `0016`.
+   4. **Set `CRON_SECRET`** — any long random string (`openssl rand -base64 32`), the same value
+      as `ladder_tick_secret` above, in `.env.local` and in Vercel's environment. It is an
+      eighth server-only name beside the seven in steps 1, 2 and 2b. **Unset refuses every
+      call** (`src/auth/bearer.ts`), so a deployment that never got it is closed rather than
+      open — and the symptom is a uniform 401 rather than a partial success. Vercel documents
+      that it sends `Authorization: Bearer $CRON_SECRET` on its own cron invocations when that
+      variable is set, which is why one name serves both clocks; #27's AC 5 is where that is
+      measured rather than believed.
+   5. **Confirm the job exists, and that it RUNS.** Two reads, not one:
+
+      ```sql
+      select jobname, schedule, active from cron.job;                    -- ladder-tick, */15 * * * *
+      select status, return_message, end_time
+        from cron.job_run_details order by start_time desc limit 5;      -- succeeded, within 15 min
+      ```
+
+      The first alone is the reassuring half. A job can be listed, active and correct while every
+      run fails — that is the whole reason step 1 comes first — and `tick_run` (`0012`), which
+      `/admin` renders as *last tick N min ago*, is the readout that does not depend on either
+      query being run by hand.
+
+   The daily half needs nothing here: `vercel.json` carries it, and Vercel picks it up on the next
+   production deployment. Hobby allows one invocation a day at ±59 min, which is why `0 12 * * *`
+   is a sweep rather than the clock — pg_cron is the clock, and this is what still fires if
+   pg_cron wedges (ADR 004).
 
 3. **Vercel**: import the repo, set the production branch to `release`, add the environment
    variables, turn on Deployment Protection → Standard Protection (previews carry the production
