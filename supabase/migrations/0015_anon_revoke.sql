@@ -65,13 +65,25 @@
 -- WHY `authenticated` IS HERE TOO, AND WHY THE PRIVILEGES ARE NAMED ONE BY ONE
 -- ---------------------------------------------------------------------------------------------
 --
--- The same platform default hands `authenticated` the same seven privileges on every table.
+-- The same platform default hands `authenticated` every table privilege the server defines — on
+-- PostgreSQL 17 and 18 that is EIGHT, and this paragraph said seven until #116 counted them
+-- (2026-08-31), which is the same off-by-one as the statement below and for the same reason.
 -- Every migration from 0002 on revokes them; `club` is the one table that does not, so on the
--- live project `authenticated` holds INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER on
--- it — six privileges nobody asked for, on the row carrying `invite_code` and `admin_email`,
--- gated by nothing but the absence of a write policy. Same defect, same table, one line away, so
--- it is closed here rather than left for a story that would have to re-open this same file.
+-- live project `authenticated` holds INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER and
+-- MAINTAIN on it — seven privileges nobody asked for, on the row carrying `invite_code` and
+-- `admin_email`, gated by nothing but the absence of a write policy. Same defect, same table, one
+-- line away, so it is closed here rather than left for a story that would have to re-open this
+-- same file. Six of the seven are closed here; MAINTAIN is 0016's.
 -- (SELECT is already absent: 0002 revokes it and re-grants five columns.)
+--
+-- THAT LIST IS ONE SHORT, AND 0016 IS THE REST OF IT (story #116). The six below were the whole
+-- non-SELECT set before PostgreSQL 17, which added MAINTAIN. *Measured 2026-08-31* against the
+-- live project (PostgreSQL 17.6), `authenticated` still held it — `club authenticated=m/postgres`,
+-- and no other table in the schema, because every other table revokes with `all`. Nothing here is
+-- wrong: the enumeration was complete when it was written and the SERVER moved underneath it. Read
+-- the six as "the non-SELECT set as of PostgreSQL 16", not as "the non-SELECT set", and see 0016
+-- for which version each claim was measured on and why the enumeration cannot simply be widened
+-- to `all`.
 --
 -- The privileges are named rather than written `all` on purpose. A table-level `revoke all`
 -- also strips the matching COLUMN grants, so `revoke all on public.club from authenticated`
@@ -92,7 +104,9 @@
 -- the role that RUNS this file — `postgres` in the SQL editor, which is also the role that
 -- creates every object in every migration here.
 --
--- For TABLES and SEQUENCES they work. *Measured in the harness (Postgres 17) 2026-08-30*: with
+-- For TABLES and SEQUENCES they work. *Measured in the harness (PostgreSQL 18.3 — this said 17
+-- until #116 read `server_version` rather than assuming it; pglite has been pinned at 0.5.7 since
+-- the scaffold, so it was 18 on the day below too) 2026-08-30*: with
 -- the platform default reproduced and this file applied, a table and a sequence created
 -- afterwards read `has_table_privilege('anon', …, 'select')` = false and
 -- `has_sequence_privilege('anon', …, 'usage')` = false, while `authenticated` still inherits
@@ -129,7 +143,9 @@ revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
 revoke execute on all functions in schema public from public, anon;
 
--- `authenticated` on `club`: the six the platform granted, never SELECT (see above).
+-- `authenticated` on `club`: six of the seven the platform granted, never SELECT (see above).
+-- The seventh is MAINTAIN and it is 0016's — adding it here instead would leave the live project,
+-- where this file is already applied, still holding it.
 revoke insert, update, delete, truncate, references, trigger on public.club from authenticated;
 
 -- The defaults: what a LATER migration's table or sequence inherits. Effective for both; for

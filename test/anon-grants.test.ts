@@ -3,7 +3,8 @@ import type { PGlite } from "@electric-sql/pglite";
 import { freshDb } from "./pglite";
 
 /**
- * 0015 — what `anon` may do, and what `authenticated` may do to `club` (story #48).
+ * 0015 — what `anon` may do, and what `authenticated` may do to `club` (story #48), and 0016 —
+ * the one privilege 0015's enumerated list went one short on (story #116).
  *
  * These assertions are only worth anything because `test/pglite.ts` now reproduces Supabase's
  * default privileges for `anon` and `authenticated` before applying the migrations. Without that,
@@ -129,11 +130,17 @@ describe("0015 — authenticated on club", () => {
     expect(r.rows).toEqual([]);
   });
 
-  it("keeps 0002's five column SELECT grants — the reason 0015 names privileges instead of ALL", async () => {
+  it("keeps 0002's five column SELECT grants — the reason 0015 and 0016 name privileges instead of ALL", async () => {
     // `revoke all on public.club from authenticated` would have stripped these silently, and the
     // club name and theme are on every screen (cairn: supabase-rls-column-grants-2026-08-06).
     // test/person.test.ts holds the same list across three tables; this is the local guard on the
     // one decision 0015 makes.
+    //
+    // 0016 makes it a second time and this assertion covers both (#116 AC 2). Its whole content is
+    // one more privilege on the same enumerated revoke, so the "simplification" that would break it
+    // is the same one — `revoke all on public.club from authenticated`, which reads like a tidy-up
+    // and takes the five columns below with it. `test/person.test.ts:255` holds the other half of
+    // that criterion: `invite_code` is still refused to a signed-in person with 42501.
     const r = await db.query<{ column_name: string }>(
       `select column_name from information_schema.column_privileges
         where grantee = 'authenticated' and table_schema = 'public' and table_name = 'club'
@@ -147,6 +154,101 @@ describe("0015 — authenticated on club", () => {
       "id",
       "name",
     ]);
+  });
+});
+
+describe("0016 — MAINTAIN, the privilege 0015's list predates (story #116)", () => {
+  it("gives neither anon nor authenticated MAINTAIN on ANY table, and the query can see a holder", async () => {
+    // #116 AC 1. The narrow claim is about `club` — the one table revoked privilege by privilege
+    // rather than with `all`, so the one table where a privilege added by a later Postgres could
+    // survive the sweep. The wider claim is the sweep, and the sweep is the half with a future: a
+    // migration written next year that enumerates instead of using `revoke all` is red here before
+    // it is pasted, which is how this defect would have been caught two months earlier.
+    const tables = await db.query<{ tablename: string }>(
+      `select tablename from pg_tables where schemaname = 'public' order by tablename`,
+    );
+    expect(tables.rows.length).toBeGreaterThan(10); // read a schema, not an empty one
+
+    const offenders: string[] = [];
+    for (const { tablename } of tables.rows) {
+      const r = await db.query<{ anon: boolean; auth: boolean }>(
+        `select has_table_privilege('anon', 'public.${tablename}', 'maintain') as anon,
+                has_table_privilege('authenticated', 'public.${tablename}', 'maintain') as auth`,
+      );
+      if (r.rows[0].anon) offenders.push(`anon on ${tablename}`);
+      if (r.rows[0].auth) offenders.push(`authenticated on ${tablename}`);
+    }
+
+    // The control, and it is not optional: every assertion above is an ABSENCE, and this file's
+    // own docstring records why an absence here is worthless on its own.
+    //
+    // There is exactly ONE silent way for `offenders` to be empty without 0016 doing anything, and
+    // it is that the harness never granted MAINTAIN in the first place — in which case the revoke
+    // takes nothing and this test passes whatever the migration says. So the control creates a
+    // table HERE, which inherits the platform default `test/pglite.ts` reproduces: `authenticated`
+    // holding MAINTAIN on it proves the default is granting it at this moment, and `club` lacking
+    // it is therefore 0016's revoke rather than an absence that was always there. *Measured*:
+    // reproducing the pre-17 default instead reddens this test and nothing else.
+    //
+    // The other failure this looked like it needed a control for turns out to be LOUD, so it does
+    // not need one. A privilege name the server does not know does not read as false — it raises
+    // `unrecognized privilege type` and the test errors (*measured 2026-09-01*: `bogus_privilege`
+    // and `vacuum` both throw, `maintain` returns a boolean). So a PG16 harness could not have
+    // passed this quietly, which is worth knowing precisely because a green sweep on a server with
+    // no such privilege is the shape one would otherwise write a control against.
+    //
+    // Reading `current_user` here instead — the first version of this control — would have proved
+    // only that the name is understood, which is the half that cannot fail silently anyway. It
+    // would have left the one real vacuity untouched.
+    try {
+      await db.exec(`create table public.__maintain_control_t (id int);`);
+      const control = await db.query<{ inherited: boolean }>(
+        `select has_table_privilege('authenticated', 'public.__maintain_control_t', 'maintain') as inherited`,
+      );
+      expect(control.rows[0].inherited).toBe(true);
+    } finally {
+      await db.exec(`drop table if exists public.__maintain_control_t;`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("names every whole-table privilege this server has, so the NEXT one Postgres adds is red here", async () => {
+    // #116's real subject, held by a test rather than by a sentence: an enumerated privilege list
+    // is a claim about a server version. 0015's was complete when it was written and went one short
+    // underneath it with no edit to any file and no noun to grep, because the SERVER moved.
+    //
+    // So this derives the set from the server instead of trusting the migration or the comment: it
+    // grants `all` on a probe table to a role holding nothing and reads the ACL back apart. Going
+    // RED here is not a defect — it means Postgres has added a privilege, and the answer is a
+    // migration naming it on `club` exactly as 0016 names MAINTAIN, because `club` is the one table
+    // that cannot use `revoke all` (the column grants above). Update this list in the same commit.
+    try {
+      await db.exec(`create table public.__priv_probe_t (id int);
+                     create role __priv_probe_r nologin;
+                     grant all on public.__priv_probe_t to __priv_probe_r;`);
+      const r = await db.query<{ privilege_type: string }>(
+        `select a.privilege_type from pg_class c, aclexplode(c.relacl) a
+          where c.oid = 'public.__priv_probe_t'::regclass
+            and a.grantee = '__priv_probe_r'::regrole
+          order by a.privilege_type`,
+      );
+      // *Measured 2026-09-01*: PostgreSQL 18.3 in the harness, and 17.6 on the live project, both
+      // expand `all` on a table to exactly these eight. 0015 names six of them, SELECT is left out
+      // deliberately so the column grants survive, and MAINTAIN is the remainder that 0016 takes.
+      expect(r.rows.map((x) => x.privilege_type)).toEqual([
+        "DELETE",
+        "INSERT",
+        "MAINTAIN",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE",
+        "UPDATE",
+      ]);
+    } finally {
+      await db.exec(`drop table if exists public.__priv_probe_t;
+                     drop role if exists __priv_probe_r;`);
+    }
   });
 });
 
