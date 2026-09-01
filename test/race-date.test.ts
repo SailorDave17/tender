@@ -6,8 +6,10 @@ import { as, freshDb } from "./pglite";
  * 0004 — race_date and is_admin(). Story #17 AC 1: a signed-in non-admin reads published rows
  * only and can write nothing; an admin can insert, update and delete.
  *
- * As in person.test.ts, every deny is against `authenticated`: the harness grants anon nothing
- * Supabase would, so an anon case here could not fail (that side is #48's).
+ * As in person.test.ts, every deny is against `authenticated`. The anon side is covered once,
+ * as a sweep over the whole schema, in test/anon-grants.test.ts — since story #48 the harness
+ * reproduces the platform's default grants, so it is a case that can fail rather than one that
+ * could not.
  */
 
 const ADMIN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

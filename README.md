@@ -84,9 +84,17 @@ comments included, so a docblock quoting it in full silently declares it a secon
 real line can then be deleted with nothing going red (measured on #100).
 
 **The RLS harness** (`test/pglite.ts`) applies `supabase/migrations/*.sql` to an in-memory
-Postgres and runs SQL as `anon` or `authenticated`. It creates those roles itself and is therefore
-blind to any grant the live project has that the migrations lack — `npm run check:live` is the
-instrument for that, and it probes with `limit=0` so it can never write.
+Postgres and runs SQL as `anon`, `authenticated` or `service_role`. Since #48 it reproduces
+Supabase's default privileges for the first two before applying anything, so a "this role is shut
+out" assertion is load-bearing rather than passing on a harness that never granted the role
+anything. It deliberately does **not** reproduce them for `service_role`, which is what makes a
+missing `grant … to service_role` redden here (that is why 0014 exists); the reasoning and the
+measured cost of each choice are in that file's docstring.
+
+What it still cannot see is a grant the live project holds that no migration makes and no default
+explains — a hand `grant` in the SQL editor. `npm run check:live` is the instrument for that. It
+probes with `limit=0` and by GET so it can never write, and since #48 it reports, per table and
+per function, whether the public anon key could still reach it — failing the run if any could.
 
 ## Branches and deploys
 
@@ -102,7 +110,12 @@ instrument for that, and it probes with `limit=0` so it can never write.
 
 1. **Create the Supabase project** (Free; region near Ohio). Paste every `supabase/migrations/*.sql`
    in the SQL editor — numeric order, except **0003 after 0004** (its functions call `is_admin()`,
-   which 0004 creates). Then paste the **club row**, which no migration seeds and without which
+   which 0004 creates). **0015 must be last**, which numeric order already gives you: it creates
+   nothing and only takes privileges away from what the earlier files created, so a table pasted
+   after it keeps the platform's default grant to `anon` and the sweep never saw it. Until it is
+   pasted, `npm run check:live` exits 1 and names what `anon` can still reach — on the live
+   project as of 2026-08-30 that is `club`, `answer_counts()` and `accept_answer()`. Then paste
+   the **club row**, which no migration seeds and without which
    `/api/join` answers a bare 500 and nobody can sign in (measured 2026-08-23 on the live project,
    whose `club` table was empty):
 
