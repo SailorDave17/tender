@@ -2,6 +2,7 @@ import "server-only";
 import { poolForDate } from "@/board/post-view";
 import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { KIND_ANSWER, type AnswerPost, type AnswerStore } from "./answer";
 import { KIND_RUNG_EMAIL, emailDayStart, type LogEntry, type Pending, type PendingPush, type RungPost, type RungStore } from "./rung";
 
 /**
@@ -169,6 +170,100 @@ export function supabaseRungStore(): RungStore {
     async deleteSubscription(id) {
       const { error } = await admin.from("push_subscription").delete().eq("id", id);
       if (error) fail("delete subscription", error);
+    },
+  };
+}
+
+/**
+ * The AnswerStore over the live database, as the service role (story #24). Same division of
+ * labour as supabaseRungStore() above: every rule is in notifyAnswer(), this only reads and
+ * writes. The one read the rung store does not make — counting `answer` rows — is what 0014's
+ * `grant select on public.answer to service_role` exists for.
+ */
+export function supabaseAnswerStore(): AnswerStore {
+  const admin = supabaseAdmin();
+  return {
+    async post(postId): Promise<AnswerPost | null> {
+      const { data, error } = await admin
+        .from("post")
+        .select("id, race_date_id, minimum, current_rung, closed_at, boat:boat_id (name, class, owner_id), race_date:race_date_id (starts_at, title)")
+        .eq("id", postId)
+        .maybeSingle();
+      if (error) fail("read post for answer", error);
+      if (!data) return null;
+      const boat = (Array.isArray(data.boat) ? data.boat[0] : data.boat) as { name: string; class: string; owner_id: string };
+      const date = (Array.isArray(data.race_date) ? data.race_date[0] : data.race_date) as { starts_at: string; title: string };
+      return {
+        id: data.id,
+        raceDateId: data.race_date_id,
+        boatClass: boat.class,
+        boatName: boat.name,
+        minimum: data.minimum,
+        startsAt: date.starts_at,
+        dateTitle: date.title,
+        currentRung: data.current_rung,
+        closedAt: data.closed_at,
+        skipperId: boat.owner_id,
+      };
+    },
+
+    async liveAnswers(postId) {
+      const { count, error } = await admin
+        .from("answer")
+        .select("post_id", { count: "exact", head: true })
+        .eq("post_id", postId)
+        .is("withdrawn_at", null);
+      if (error) fail("count answers", error);
+      return count ?? 0;
+    },
+
+    async lastAnswerEmailAt(postId) {
+      // Successful sends only (error null): a refused send must not start a quiet window.
+      const { data, error } = await admin
+        .from("notification_log")
+        .select("sent_at")
+        .eq("kind", KIND_ANSWER)
+        .eq("channel", "email")
+        .eq("post_id", postId)
+        .is("error", null)
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) fail("read last answer email", error);
+      return data ? new Date(data.sent_at) : null;
+    },
+
+    async email(personId) {
+      const { data, error } = await admin.from("person_contact").select("email").eq("person_id", personId).maybeSingle();
+      if (error) fail("read skipper contact", error);
+      return data?.email ?? null;
+    },
+
+    async pushTargets(personId) {
+      const { data, error } = await admin
+        .from("push_subscription")
+        .select("id, endpoint, p256dh, auth")
+        .eq("person_id", personId);
+      if (error) fail("read skipper subscriptions", error);
+      return data ?? [];
+    },
+
+    async deleteSubscription(id) {
+      const { error } = await admin.from("push_subscription").delete().eq("id", id);
+      if (error) fail("delete subscription", error);
+    },
+
+    async log(entry: LogEntry) {
+      const { error } = await admin.from("notification_log").insert({
+        kind: entry.kind,
+        channel: entry.channel,
+        person_id: entry.personId,
+        to_email: entry.toEmail,
+        post_id: entry.postId,
+        provider_id: entry.providerId,
+        error: entry.error,
+      });
+      if (error) fail("log", error);
     },
   };
 }

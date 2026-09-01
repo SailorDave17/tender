@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_NEXT, safeNext } from "./next";
 
-describe("safeNext — the redirect after the magic link never leaves this origin (AC 4)", () => {
+describe("safeNext — the redirect after a callback never leaves this origin (AC 4)", () => {
   it.each([
     ["https://evil.example/phish", "absolute URL"],
     ["//evil.example/phish", "protocol-relative"],

@@ -6,10 +6,12 @@ import { as, freshDb } from "./pglite";
  * 0002 — person, person_contact, and the narrowed club grant.
  *
  * Every deny case here is against `authenticated`, the role the migration grants something to.
- * There is deliberately no "anon cannot read person" case: the harness reproduces none of
- * Supabase's default grants (test/pglite.ts), so such a test passes whether or not the
- * migration's `revoke … from anon` exists — a test that cannot fail proves nothing. The anon
- * side is #48's, together with the harness change that would make it testable.
+ * There is deliberately no "anon cannot read person" case HERE, and the reason changed on
+ * 2026-08-30. It used to be that such a test could not fail: the harness reproduced none of
+ * Supabase's default grants, so it passed whether or not the migration's `revoke … from anon`
+ * existed. Since story #48 the harness DOES reproduce them for anon and authenticated, so the
+ * anon side is testable — and it is tested once, as a sweep over every table in the schema, in
+ * test/anon-grants.test.ts. A per-table copy here would add nothing the sweep does not catch.
  */
 
 const ALICE = "11111111-1111-4111-8111-111111111111";

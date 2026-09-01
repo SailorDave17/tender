@@ -28,7 +28,7 @@ carries the non-goals and the constraints a story must not violate.
 | Data layer | Supabase Postgres via supabase-js, RLS, SQL migrations in `supabase/migrations/` | [003](docs/adr/003-supabase-js-rls-sql-migrations.md) |
 | Hosting & scheduler | Vercel Hobby + Supabase Free; the ladder clock is pg_cron | [004](docs/adr/004-vercel-hobby-supabase-free-pg-cron-clock.md) |
 | CI/CD & branches | GitHub Actions; `develop` (default) + `release` (production) + feature PRs | [005](docs/adr/005-branch-model-and-ci.md) |
-| Testing | Vitest for the engine, pglite for RLS, Playwright smoke later | [006](docs/adr/006-testing-strategy.md) |
+| Testing | Vitest for the engine, pglite for RLS, jsdom for a click, Playwright smoke later | [006](docs/adr/006-testing-strategy.md), [008](docs/adr/008-interactive-component-tests-jsdom.md) |
 | Notifications — the bet | Web push from an installed PWA + email to the current rung (Resend) | [007](docs/adr/007-notification-channel-the-bet.md) |
 
 ## Working on it
@@ -36,10 +36,12 @@ carries the non-goals and the constraints a story must not violate.
 ```
 npm ci
 npm run dev        # http://localhost:3000
-npm test           # vitest: the engine (src/engine) and the RLS harness (test/)
+npm test           # vitest: the engine (src/engine), the RLS harness (test/), the components
 npm run lint
 npm run typecheck
 npm run check:live # read-only probe of the live Supabase project; needs .env.local
+npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
+npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
 ```
 
@@ -72,10 +74,89 @@ proxy runs in the Edge runtime, where they are inlined rather than read at runti
 them and `.env.local` supplies the live project instead, so every local session is refused and
 /board redirects to /join with the cookie sitting right there (measured 2026-08-25 on #28).
 
+**Component tests come in two kinds, and the split is deliberate.** Most `.test.tsx` files
+render with `renderToStaticMarkup` and assert the HTML a member is served — no effect runs and
+no event can be dispatched, which is enough for anything decided at render time. The two files
+that assert what happens after a **click** (`src/auth/PasswordFields.test.tsx`,
+`src/app/join/JoinForm.test.tsx`, both #100) opt into jsdom with a `// @vitest-environment`
+docblock on their first line. It is per file on purpose: `vitest.config.ts` stays
+`environment: "node"`, whose shape `test/harness-budget.test.ts` asserts for #78. Each of those
+files declares the environment exactly ONCE — vitest reads that directive anywhere in a file,
+comments included, so a docblock quoting it in full silently declares it a second time and the
+real line can then be deleted with nothing going red (measured on #100).
+
 **The RLS harness** (`test/pglite.ts`) applies `supabase/migrations/*.sql` to an in-memory
-Postgres and runs SQL as `anon` or `authenticated`. It creates those roles itself and is therefore
-blind to any grant the live project has that the migrations lack — `npm run check:live` is the
-instrument for that, and it probes with `limit=0` so it can never write.
+Postgres and runs SQL as `anon`, `authenticated` or `service_role`. Since #48 it reproduces
+Supabase's default privileges for the first two before applying anything, so a "this role is shut
+out" assertion is load-bearing rather than passing on a harness that never granted the role
+anything. It deliberately does **not** reproduce them for `service_role`, which is what makes a
+missing `grant … to service_role` redden here (that is why 0014 exists); the reasoning and the
+measured cost of each choice are in that file's docstring.
+
+What it still cannot see is a grant the live project holds that no migration makes and no default
+explains — a hand `grant` in the SQL editor. `npm run check:live` is the instrument for that. It
+probes with `limit=0` and by GET so it can never write, and since #48 it reports, per table and
+per function, whether the public anon key could still reach it — failing the run if any could.
+
+**Applying a migration** is `npm run migrate:live <file>` (#114), and it does one thing a paste
+cannot: it proves the payload arrived. It embeds the file in a dollar-quoted literal, asks
+*Postgres* for the length, byte count and md5 of what it received, compares those against the file
+on disk, and refuses if they disagree — **before** applying anything. A file compared against
+itself would prove nothing, and on this machine a clipboard really does re-encode a file: the
+characters at risk are the ones inside `comment on … is '…'` literals, which persist into the
+database as schema documentation. Every migration here carries some — `test/migrate-live.test.ts`
+asserts 0015's byte count exceeds its character count, so the hazard stays reachable rather than
+being a number in prose that ages.
+
+It takes a **file** from `supabase/migrations/` and never SQL. That narrowing is the point: a
+general "run this against production" command is what the token makes easy and what was
+deliberately not built. `-- --dry-run` prints the plan and sends nothing, and needs no credential
+at all. Note that `npm run` claims a `--dry-run` of its own, so both `-- --dry-run` and
+`--dry-run` are honoured — a silently dropped flag here is a real apply somebody thinks is a
+rehearsal, and an unknown flag is refused rather than ignored.
+
+It needs `SUPABASE_ACCESS_TOKEN` in `.env.local` — a **personal access token** from the account
+page, not a project key. It is **scoped by project and by permission**, and it must cover *this*
+project and allow writes. *Measured 2026-08-31 across three tokens*: one scoped to another project
+answered `403` to every tender endpoint; one scoped here but read-only read fine and answered
+`25006` to every write; only the third could apply anything. `GET /v1/projects` returns exactly the
+projects a token covers, which is the one call that tells the three apart — and a 403 from this API
+says *privileges*, never *scope*, so the message does not point at the cause.
+
+It is still the widest credential in `.env.local`, so `.env.example` says how to revoke it and
+`test/migrate-live-scope.test.ts` refuses the name reaching a place it should not. The service-role
+key is not an alternative: it authenticates to this project's own API and cannot run DDL. Deciding
+to apply is still the owner's; this changes who can carry it out, and whether the result is
+verifiable.
+
+**Asking whether the migrations are in place** is `npm run verify:migrations` (#117), and it is a
+different question from `check:live`'s. `check:live` probes as a client, over PostgREST, with the
+anon key, so it can see tables and functions and nothing else — which leaves it blind to most of
+what this repo's recent migrations do. It reads the same number either side of pasting `0011`
+(three check constraints), `0014` (one grant), `0015` (revokes and default privileges) or `0009`'s
+two triggers. This reads `pg_catalog` with the management token instead, so a grant, a constraint,
+a trigger, an index and a row-level-security flag are all in view. Neither command can answer the
+other's question and neither replaces the other.
+
+Its expectations are **parsed out of `supabase/migrations/*.sql`**, never listed in the script.
+That is the whole design rather than a convenience: a hand-written expectation has the same author
+as the migration, on the same day, from the same understanding, so it certifies agreement rather
+than presence — and agrees with itself in exactly the case the command exists for, which is the
+migration somebody wrote and forgot to paste. Adding a migration needs no edit to the command; a
+statement in a shape nobody has written before is **refused** rather than skipped, so a kind it
+cannot read can never be silently unchecked.
+
+Two things it deliberately does not claim. It never says a migration was *applied* — a revoke of a
+privilege nobody held and an update matching no rows both leave the database in the asserted state
+without the file ever running, so every verdict is about state, and the run prints that in as many
+words. And it names the statements nothing can testify to rather than counting them as passes:
+today that is three backfills in `0011`, a seed insert in `0005`, and `0015`'s sequence sweep,
+which has no sequence to sweep because no file here creates one.
+
+Every query goes with `read_only: true`, so the *platform* enforces that this command cannot
+write. That matters because omitting the flag connects a write-capable token as `postgres` with the
+transaction open for writing: without it, a command whose whole purpose is to look would inspect
+production over a connection that could change it.
 
 ## Branches and deploys
 
@@ -91,7 +172,12 @@ instrument for that, and it probes with `limit=0` so it can never write.
 
 1. **Create the Supabase project** (Free; region near Ohio). Paste every `supabase/migrations/*.sql`
    in the SQL editor — numeric order, except **0003 after 0004** (its functions call `is_admin()`,
-   which 0004 creates). Then paste the **club row**, which no migration seeds and without which
+   which 0004 creates). **0015 must be last**, which numeric order already gives you: it creates
+   nothing and only takes privileges away from what the earlier files created, so a table pasted
+   after it keeps the platform's default grant to `anon` and the sweep never saw it. Until it is
+   pasted, `npm run check:live` exits 1 and names what `anon` can still reach — on the live
+   project as of 2026-08-30 that is `club`, `answer_counts()` and `accept_answer()`. Then paste
+   the **club row**, which no migration seeds and without which
    `/api/join` answers a bare 500 and nobody can sign in (measured 2026-08-23 on the live project,
    whose `club` table was empty):
 
@@ -110,6 +196,12 @@ instrument for that, and it probes with `limit=0` so it can never write.
    update public.club set admin_email = 'you@example.org' returning admin_email;
    select display_name, is_admin from public.person where is_admin;  -- your row, once signed in
    ```
+
+   **A paste is no longer the only route.** With `SUPABASE_ACCESS_TOKEN` in `.env.local`, a
+   session can run `npm run migrate:live supabase/migrations/<file>.sql`, which verifies the
+   payload the database received before applying it — see *Applying a migration* above. The
+   ordering rules in this step still hold whichever route is used, because they are facts about
+   the migrations rather than about the SQL editor. Deciding to apply remains the owner's.
 
    Put the URL, the anon key **and the service-role key** (`SUPABASE_SERVICE_ROLE_KEY`,
    server-only: the invite gate reads `club.invite_code` and creates auth users with it) in
@@ -148,10 +240,18 @@ instrument for that, and it probes with `limit=0` so it can never write.
    typed the right invite code. It then self-healed, because the delete cleared the address, so
    the second attempt worked and there was nothing left to reproduce.
 
-   Since #85 the gate stamps its own attestation onto an unattested existing user before sending,
-   so the first attempt works. An already-attested user is left untouched, and a wrong code or an
-   unticked box still reaches neither the lookup nor the write. Nothing to do here, and **no
-   auth user needs deleting by hand any more**.
+   Since #85 the gate stamps its own attestation onto an unattested existing user and carries on,
+   so the first attempt works. A wrong code or an unticked box still reaches neither the lookup
+   nor the write. Nothing to do here, and **no auth user needs deleting by hand any more**.
+
+   Two things in that paragraph changed with #99, which removed the emailed link. There is no
+   "sent the link anyway" any more, because there is no link: a sign-up creates the account,
+   mints the person row and signs the member in on the spot. And an already-**attested** user is
+   no longer left untouched and told nothing - it is somebody's account, so the sign-up answers
+   *"You already have an account here - sign in with your password"* and puts them on the Sign in
+   tab. That reveals the address is registered, deliberately: the caller has already typed this
+   season's invite code, and the old generic sentence stopped being honest the moment no link was
+   on its way to anybody.
 
    To clear the historical ones anyway — they are inert, this is tidiness rather than repair:
 
@@ -219,7 +319,10 @@ instrument for that, and it probes with `limit=0` so it can never write.
    `tender@tender.madcowsailing.com`, and without the key the notification step fails before
    any send — the post still stands, the failure goes to the function log, nobody is emailed
    (#65 is where a missing name becomes a startup error). Both kinds of mail share Resend Free's 100/day;
-   the app stops at 95 of its own sends and leaves the rest for magic links.
+   the app stops at 95 of its own sends and leaves the rest for password resets. (That headroom
+   was sized for magic links; #99 removed them, so what it now protects is the one screen that
+   still emails anything - Forgot my password. The number is unchanged and is a recorded default,
+   not a measurement.)
 2b. **Web push keys** (#29). Run **`npm run vapid:keys`** and put the pair it prints in
    `.env.local` and in Vercel's environment (Production **and** Preview):
    `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` — a sixth and seventh name beside the

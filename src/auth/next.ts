@@ -1,6 +1,7 @@
 /**
- * Where to send a person after the magic link lands. The `next` query parameter is attacker-
- * supplied (it rides in the emailed link), so anything that could leave this origin is replaced
+ * Where to send a person after a callback lands — a Google redirect, or the emailed reset link.
+ * The `next` query parameter is attacker-supplied (it rides in the URL), so anything that could
+ * leave this origin is replaced
  * by the board: absolute URLs, protocol-relative `//host`, backslash tricks browsers normalise
  * to `//`, bare schemes, and anything carrying control characters.
  */

@@ -18,7 +18,7 @@ describe("decideCallback — what the callback does with its query (#70 AC 7)", 
     ).toEqual({ kind: "back", reason: "cancelled" });
   });
 
-  it("an expired or used magic link is link-invalid, not a Google fault (GoTrue's PKCE shape)", () => {
+  it("an expired or used emailed link is link-invalid, not a Google fault (GoTrue's PKCE shape)", () => {
     expect(
       decideCallback({ error: "access_denied", error_code: "otp_expired", error_description: "Email link is invalid or has expired" }),
     ).toEqual({ kind: "back", reason: "link-invalid" });
@@ -56,7 +56,7 @@ describe("decideCallback — what the callback does with its query (#70 AC 7)", 
     expect(decideCallback({ error_code: "unexpected_failure" })).toEqual({ kind: "back", reason: "provider-error" });
   });
 
-  it("still answers missing-code for an empty query — a truncated magic link", () => {
+  it("still answers missing-code for an empty query — a truncated emailed link", () => {
     expect(decideCallback({})).toEqual({ kind: "back", reason: "missing-code" });
     expect(decideCallback({ code: "", error: null })).toEqual({ kind: "back", reason: "missing-code" });
   });

@@ -30,7 +30,7 @@
 -- live project: Supabase's default privileges grant execute on every new function to anon
 -- DIRECTLY (measured 2026-08-22 — anon ran answer_counts() and reached accept_answer()'s body
 -- over PostgREST, both of which 0007/0008 revoke from public only), and a revoke from public
--- does not touch a grant made to a role by name. Schema-wide that is #48's; here the two
+-- does not touch a grant made to a role by name. Schema-wide that is 0015's (story #48); here the two
 -- functions that return the invite code are closed to anon by this file whatever the platform
 -- granted. They would refuse anon anyway (is_admin() is false with no JWT), so this is a second
 -- wall, not the first.

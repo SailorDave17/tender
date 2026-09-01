@@ -3,29 +3,35 @@
  * effects, so every branch — a wrong password, a session with no membership behind it — is a unit
  * test with no cookies and no Supabase.
  *
- * The one thing this path does NOT share with the magic link and the Google redirect is
+ * The one thing this path does NOT share with the Google redirect and the reset link is
  * `/auth/callback`: `signInWithPassword` returns a session directly. So the terminal guard that
  * lives at the callback — no person row, no way in — has to be applied HERE too, or the callback
  * bypass would be a route in for a confirmed stray (signups are ON, so anyone can mint a
  * password account against any address). This module refuses a session whose user has no person
- * row and signs it back out (#82 AC 7). It does not CREATE the row — only the callback does, off
- * the attestation an email-gated user carries or the Google gate pass — so a member who set a
- * password at sign-up still has to open the emailed link once before password sign-in works,
- * which is exactly the order AC 1 states.
+ * row and signs it back out (#82 AC 7). It does not CREATE the row.
+ *
+ * #99 changed which population that refusal is about. Until then a member who set a password at
+ * sign-up had to open an emailed link once before password sign-in worked, because only the
+ * callback minted the row; the invite gate now mints it in the same submission, so a member is
+ * never in that state. What is left is a genuine stray — an anon-key account with a password and
+ * no invite behind it — plus the shrinking set who signed up before #99 and never opened the link
+ * it emailed them. NOT_A_MEMBER is written for both.
  */
 
 export const PASSWORD_MIN = 8;
 
-/** The one message a success on the Forgot screen returns — shared with the magic-link arm. */
+/** Every failed sign-in answers this, whatever failed, so no address is confirmed or denied. */
 export const WRONG_CREDENTIALS = "That email and password do not match. Check them and try again.";
 
 /**
- * Shown to a session that authenticated but has no membership behind it: a confirmed stray, or a
- * member who set a password at sign-up and has not yet opened the emailed link. Names the way
- * forward for the second, larger group without revealing which of the two they are.
+ * Shown to a session that authenticated but has no membership behind it: a confirmed stray, or -
+ * since #99, the only other way to be in this state — somebody who signed up BEFORE #99 and never
+ * opened the link it emailed them. Names the way forward for the second group without revealing
+ * which of the two they are, and that way forward is Forgot my password: the reset link goes
+ * through /auth/callback, where `ensurePerson` mints the row their sign-up never finished.
  */
 export const NOT_A_MEMBER =
-  "That account is not linked to a member here. If you just signed up, open the link we emailed you to finish. Otherwise ask the club for an invite.";
+  "That account is not linked to a member here. If you signed up before and never finished, use Forgot my password and the emailed link will complete your account. Otherwise ask the club for this season's invite code.";
 
 export type PasswordCheck = { ok: true } | { ok: false; message: string };
 
@@ -108,8 +114,9 @@ export async function passwordSignIn(
     return { status: 401, body: { message: WRONG_CREDENTIALS } };
   }
 
-  // The session is real, but a session is not a membership. Only the callback ever mints a person
-  // row; a user that reaches here without one is a stray this bypass must not admit (AC 7).
+  // The session is real, but a session is not a membership. `ensurePerson` is the only thing that
+  // ever mints a person row, and this route is not one of its callers; a user that reaches here
+  // without one is a stray this bypass must not admit (AC 7).
   if (!(await deps.hasPerson(result.userId))) {
     await deps.signOut();
     return { status: 403, body: { message: NOT_A_MEMBER } };

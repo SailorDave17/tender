@@ -1,8 +1,8 @@
 import type { PassPayload } from "./pass";
 
 /**
- * After a magic link or an OAuth code is exchanged, make sure the person exists in the app's own
- * tables — or, if the auth user should never have existed, remove it.
+ * Make sure the person exists in the app's own tables — or, if the auth user should never have
+ * existed, remove it.
  *
  * 0002 grants no client role an insert on person or person_contact — the row is created here,
  * by the service role, from what the invite gate put in the auth user's metadata. Idempotent:
@@ -12,7 +12,14 @@ import type { PassPayload } from "./pass";
  * metadata, so the invite gate hands the browser a signed gate pass instead (src/auth/pass.ts).
  * With a valid pass the attestation is written onto the user and the rows are minted; without
  * one the auth user is deleted — with *Allow new users to sign up* ON, this is the layer that
- * refuses an uninvited account. This stays the only writer of `person`.
+ * refuses an uninvited account.
+ *
+ * **This stays the only writer of `person`, and since #99 it has two callers.** /auth/callback
+ * calls it after exchanging a PKCE code — a reset link, or a Google redirect. The invite gate
+ * (src/auth/join.ts) calls it directly, with no round trip at all: what authorises that is the
+ * submission it is holding, which proved this season's invite code and ticked 18+, the same two
+ * facts an emailed link used to carry back. It passes the metadata it has just written, so the
+ * delete branch below is unreachable from the gate by construction.
  */
 
 /**

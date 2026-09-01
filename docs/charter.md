@@ -48,14 +48,19 @@ season. Known blind spot: matches it caused that closed by text.
   the ladder's three rungs below, which are a different scale.
 - **Admin** — the owner, a minimal role: adds race dates (or imports them), invites people, sets
   the club theme, rotates the invite code, reads the failure metric.
-- **Identity**: email + password or Google (#82, 2026-08-25 — returning members sign in with
-  their email and password, or with Google; new members sign up with the invite code and finish
-  either by choosing a password and opening the emailed link, or with Google, which needs no
-  password. The magic link is no longer on the sign-in screen: it moved to a Forgot-my-password
-  screen carrying both arms — *email me a sign-in link* and *reset my password* — which is how a
-  member with no password, anyone from before #82, still gets in. A password on its own is not a
-  first way in: the person row is created only at `/auth/callback`, so a member who set one at
-  sign-up still opens the emailed link once. Supersedes #70's email-alone sign-in, 2026-08-23.)
+- **Identity**: email + password or Google (#82, 2026-08-25; **magic link removed entirely by
+  #99, 2026-08-26** — returning members sign in with their email and password, or with Google;
+  new members sign up with the invite code and finish **on that screen**, choosing a password and
+  landing on the board in the same submission, or with Google, which needs no password. There is
+  no emailed sign-in link on any path. A password IS now a first way in, and that reverses what
+  this bullet said until #99: the person row was created only at `/auth/callback`, so a member who
+  set one at sign-up had to open an emailed link once before it worked. The invite gate mints the
+  row itself now, on the authority of the same submission that proved this season's code and
+  ticked 18+ — which is exactly the authority `ensurePerson` has always acted on. Reversed
+  deliberately and recorded here so it does not later read as an erosion somebody restores.
+  Forgot my password is the one screen that still emails anything, and it is the way in for a
+  member with no password — anyone from before #82, every Google-only account — because resetting
+  sets a first one. Supersedes #70's email-alone sign-in, 2026-08-23.)
   Email is required (it is the login); phone is optional and is exchanged only on a
   closed match. **One person is one account, and may carry more than one way into it** (#74,
   2026-08-24): a member whose Google address differs from the one they joined with links it from
@@ -106,7 +111,7 @@ season. Known blind spot: matches it caused that closed by text.
 |---|---|---|---|
 | `.ics` import of the race calendar (one-off) | admin | ClubSpot has no public API found (*measured* 2026-08-21); `.ics` is the realistic form. **ClubSpot is not a competing crew board here**: the club does not use one, or is not willing to (*reported* 2026-08-22, the club's ClubSpot administrator via the owner, #10) | a bad file seeds wrong dates — admin reviews before publish |
 | `.ics` export on match | app | none | attachment missing — match still stands |
-| Resend (email: magic links, rung notifications) | owner account | **100/day, 3,000/month** on Free (*measured* 2026-08-21) | cap hit → magic links fail; rule: email the current rung only |
+| Resend (email: password resets, rung notifications) | owner account | **100/day, 3,000/month** on Free (*measured* 2026-08-21) | cap hit → password resets fail; rule: email the current rung only. *Since #99 (2026-08-26) identity mail is resets only — a sign-up sends nothing at all, so the cap is almost entirely the notifications' now.* |
 | Browser push services (VAPID web push) | Apple/Google/Mozilla | iOS requires Home Screen install (*measured*, iOS 16.4+) | silent non-delivery; email is the fallback |
 | Supabase Cron (pg_cron) for the ladder clock | project | **works on Free** — enabled and fired every minute for nine minutes on the live project (*measured* 2026-08-22, #12; ADR 004 records the kill condition as not fired). The docs still do not state plan availability; the measurement is the source | the named fallback (lazy relaxation on board read + Vercel's daily sweep) stays unbuilt unless the project is ever moved |
 
@@ -151,7 +156,7 @@ standalone-on-burgee's-choices (pre-decides the research), burgee module (extern
 | Data layer | Supabase Postgres via supabase-js, RLS, SQL migrations in-repo | adr/003 |
 | Hosting & scheduler | Vercel Hobby + Supabase Free; ladder clock as pg_cron | adr/004 |
 | CI/CD & branch model | GitHub Actions; `develop` (default) + `release` (production) + feature PRs | adr/005 |
-| Testing strategy | Vitest (engine), pglite (RLS), Playwright smoke later; scaffold test = rung selector | adr/006 |
+| Testing strategy | Vitest (engine), pglite (RLS), jsdom (a click), Playwright smoke later; scaffold test = rung selector | adr/006, adr/008 |
 | Notification channel — **the bet** | Web push from an installed PWA + email to the current rung via Resend | adr/007 |
 
 ## Security & compliance
@@ -281,7 +286,7 @@ charter_handoff:
     - "PWA install rate in the first cohort (bet trigger: < 50% after two weeks) — needs a live cohort"
     - "web push delivered to an installed PWA on a real iPhone — needs an iPhone"
     - "pg_cron enabled on the real Supabase Free project — needs the project to exist"
-    - "magic-link email delivered from tender.madcowsailing.com — needs the DNS records in the Cloudflare zone"
+    - "password-reset email delivered from tender.madcowsailing.com — needs the DNS records in the Cloudflare zone (this read *magic-link email* until #99 removed that mechanism, 2026-08-26; the DNS records and the check are unchanged)"
   signature_moment: "mechanism: none"
   budget_ceiling_monthly: 0 USD
 ```
