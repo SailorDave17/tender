@@ -31,11 +31,12 @@ import { join, relative } from "node:path";
 const SRC = join(process.cwd(), "src");
 
 /**
- * The six ways a caller can cause a send. `notifyRung`/`notifyRungLive` run the ladder and
+ * The eight ways a caller can cause a send. `notifyRung`/`notifyRungLive` run the ladder and
  * then send; `dispatchPending`/`dispatchPendingLive` send what the tick has already queued;
- * `notifyAnswer`/`notifyAnswerLive` tell a post's skipper that crew answered (story #24).
+ * `notifyAnswer`/`notifyAnswerLive` tell a post's skipper that crew answered (story #24);
+ * `notifyMatch`/`notifyMatchLive` email both parties when a match forms (story #33).
  */
-const SENDERS = ["notifyRung", "notifyRungLive", "dispatchPending", "dispatchPendingLive", "notifyAnswer", "notifyAnswerLive"];
+const SENDERS = ["notifyRung", "notifyRungLive", "dispatchPending", "dispatchPendingLive", "notifyAnswer", "notifyAnswerLive", "notifyMatch", "notifyMatchLive"];
 
 async function sourceFiles(): Promise<{ path: string; text: string }[]> {
   const out: { path: string; text: string }[] = [];

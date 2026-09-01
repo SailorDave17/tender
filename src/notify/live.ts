@@ -3,8 +3,9 @@ import { headers } from "next/headers";
 import { resendTransport } from "@/email/send";
 import { webPushTransport, type PushTransport } from "@/push/send";
 import { notifyAnswer, type AnswerNotifyResult } from "./answer";
+import { notifyMatch, type MatchNotifyResult } from "./match";
 import { dispatchPending, notifyRung, type NotifyResult, type RungPost } from "./rung";
-import { supabaseAnswerStore, supabaseRungStore } from "./store";
+import { supabaseAnswerStore, supabaseMatchStore, supabaseRungStore } from "./store";
 
 /**
  * notifyRung() with the live dependencies, for the two Server Actions that call it (post
@@ -76,6 +77,27 @@ export async function notifyAnswerLive(postId: string): Promise<AnswerNotifyResu
     });
   } catch (e) {
     console.error(`notifyAnswer(${postId}) failed:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * notifyMatch() with the live dependencies, for the accept Server Action (story #33). Same
+ * swallow as the two above and for the same reason: accept_answer() has already written the
+ * match and closed the post, and an email that could not be attempted must not undo that or
+ * show the skipper an error about an inbox — the match page shows both parties the contact
+ * regardless (AC 2). No push transport: the match email is email-only on purpose (match.ts).
+ */
+export async function notifyMatchLive(postId: string): Promise<MatchNotifyResult | null> {
+  try {
+    return await notifyMatch(postId, {
+      store: supabaseMatchStore(),
+      transport: resendTransport(),
+      now: new Date(),
+      siteUrl: await siteUrl(),
+    });
+  } catch (e) {
+    console.error(`notifyMatch(${postId}) failed:`, e instanceof Error ? e.message : e);
     return null;
   }
 }
