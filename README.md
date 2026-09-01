@@ -158,6 +158,44 @@ write. That matters because omitting the flag connects a write-capable token as 
 transaction open for writing: without it, a command whose whole purpose is to look would inspect
 production over a connection that could change it.
 
+### The half of `0015` this project cannot reach (#118)
+
+`0015` revokes `anon` from the default privileges on `public`, and it worked. `ALTER DEFAULT
+PRIVILEGES` with no `FOR ROLE` alters the **current role's** defaults and nothing else, though, and
+this project has two roles holding default ACLs on that schema. *Read 2026-09-01, read-only, from
+`pg_default_acl`*:
+
+| `defaclrole` | tables | sequences | functions |
+|---|---|---|---|
+| `postgres` | postgres, authenticated, service_role | postgres, authenticated, service_role | postgres, authenticated, service_role |
+| `supabase_admin` | postgres, **anon**, authenticated, service_role | postgres, **anon**, authenticated, service_role | postgres, **anon**, authenticated, service_role |
+
+So `0015` cleared `anon` from all three of `postgres`'s rows, sequences included, and could never
+have touched `supabase_admin`'s. *(The issue that found this recorded the `postgres`/sequences row
+as absent — "nothing to revoke, so nothing was stored". Measured, the row is there and reads like
+its two neighbours. Whether that cell was a mis-reading or the row was written since is not
+knowable from here; the reading above is the one that was taken.)*
+
+**Nothing this repo can apply will narrow the `supabase_admin` rows.** *Measured the same day*:
+`pg_has_role('postgres', 'supabase_admin', 'member')` is `false`, `usage` likewise, and `postgres`
+is not a superuser on a Supabase project — so `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin …`
+is refused whatever credential this project holds. Closing it is an owner or Supabase-support
+action, not a migration. It is recorded rather than fixed, deliberately: a statement that
+measurably does nothing is worse than an absent one, because it reads as cover.
+
+It is **inert while it is inert**, which is not the same as safe. A default ACL governs only the
+objects its own role goes on to create, and every object in `public` here is created by the
+migrations, which run as `postgres`. A platform-installed extension landing in `public` is the
+realistic way that stops being true — and the exposure would then be silent, since `0015`'s sweep
+covers what existed when it ran.
+
+That is why `verify:migrations` now asserts the premise as well as the statement: every table,
+sequence and function in `public` must be owned by the role that owns the tables the migrations
+created. It fails on an empty population rather than passing, so a reading of "nothing has the
+wrong owner" cannot come from having read nothing. The table above is a dated observation and will
+age; **the check is the part that stays current**, and a red on it means the sweep is owed a re-run
+over whatever arrived.
+
 ## Branches and deploys
 
 - `develop` is the default and integration branch. Feature branches → PR → `develop`.

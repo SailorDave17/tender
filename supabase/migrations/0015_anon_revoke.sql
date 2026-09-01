@@ -130,6 +130,18 @@
 -- removes the platform's by-name grant, which is one of the two paths — but on its own it leaves
 -- PUBLIC's, so it is a narrowing and not a fix.
 --
+-- AND THERE IS A SECOND ROLE, WHOSE DEFAULTS THESE LINES ALSO CANNOT REACH (#118). `ALTER
+-- DEFAULT PRIVILEGES` with no `FOR ROLE` alters the CURRENT role's defaults, and this project
+-- carries default ACLs on `public` owned by `supabase_admin` as well as by `postgres` — and
+-- those still grant `anon`, on all three object classes. *Measured 2026-09-01, live, read-only*:
+-- `postgres`'s three rows lost `anon` exactly as this file intends; `supabase_admin`'s three did
+-- not, and `pg_has_role('postgres', 'supabase_admin', 'member')` is false, so no migration this
+-- repo can apply will narrow them. They govern only objects `supabase_admin` itself creates in
+-- `public`, of which there are none today — a platform-installed extension being the realistic
+-- way that changes. `npm run verify:migrations` asserts that premise on every run rather than
+-- leaving it assumed; README's "The half of `0015` this project cannot reach" carries the
+-- reading and what closing it would take.
+--
 -- What actually protects a function created after this file is the thing that already existed
 -- and was forgotten three times: **its own migration must say `revoke all on function … from
 -- public, anon`**. Four of the eight functions here carry that line; `can_answer`, `is_admin` and
