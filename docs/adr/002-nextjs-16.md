@@ -6,6 +6,8 @@
 ## Context
 A phone-first PWA with server-side routes for magic-link auth, Supabase access and push dispatch, deployed to Vercel Hobby (ADR 004). Novelty is spent on the engine and the bet (ADR 007), not here.
 
+*2026-08-26 (#99): the magic link is gone — sign-up finishes in a session and the only identity mail left is a password reset. The wording above is kept as written because it records what was decided in phase 6 on the information of the day; server-side auth routes are still what the framework was chosen for, so the decision is untouched by the change.*
+
 ## Options considered
 - **Next.js 16** — v16.3.2 released 2026-08-21 (*measured*, GitHub releases API). Vercel-native; Taskr and burgee run on it, so the house knows its traps. PWA + web push is a manifest and a service worker, framework-agnostic.
 - **SvelteKit 2** — 2.70.3, 2026-08-18 (*measured*). Smaller bundles and a clean PWA story, fast on an old Android. Zero house notes; a second framework to hold in one head; Supabase's SSR docs are React-first.

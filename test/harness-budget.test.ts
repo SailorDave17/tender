@@ -8,29 +8,65 @@ import { FRESH_DB_BUDGET_MS, freshDb, withBudget } from "./pglite";
  * Story #78 — the pglite harness must fail LOUDLY when it cannot start, and the repair for the
  * flake must be one remedy rather than two.
  *
+ * Story #92 — and one test whose NAME says the harness could not start, so a reader does not
+ * have to infer it from tests named for stage labels and migration prefixes.
+ *
  * The thing being guarded is not a behaviour of the product; it is a property of the instrument
  * every other pglite file rests on, and its failure mode is a run that looks like a finding.
- * *Measured 2026-08-25* by breaking `freshDb()` on purpose — once so it throws, once so it never
- * settles — and reading vitest's own JSON. Totals are left out on purpose; they move every time a
- * test is added, and these fields do not:
+ * *Re-measured 2026-08-31 on #92's tree, after #48 merged into it* by breaking `freshDb()` on
+ * purpose — once so it throws, once so it never settles (a hang after the boot stage is noted,
+ * which is the wedged-WASM shape) — and reading vitest's own JSON. Totals are left out on purpose;
+ * they move every time a test is added, and these fields do not:
  *
- *   healthy            0 failed /   0 pending /  0 suites failed / true  / exit 0 /  ~11 s
- *   broken, throws     4 failed / 156 pending / 19 suites failed / false / exit 1 /    3 s
- *   broken, never      3 failed / 156 pending / 19 suites failed / false / exit 1 /   82 s
+ *   healthy            0 failed /   0 pending /  0 suites failed / true  / exit 0 /  ~13 s
+ *   broken, throws     5 failed / 197 pending / 24 suites failed / false / exit 1 /   ~3 s
+ *   broken, never      4 failed / 197 pending / 24 suites failed / false / exit 1 /  ~81 s
  *   settles
  *
- * **Read the two numbers in the right order.** The twelve pglite files call `freshDb()` in
- * `beforeAll`, and they contribute **nothing** to `numFailedTests` in either arm — vitest reports
- * a `beforeAll` failure as its tests SKIPPED. Every failure in that column comes from the handful
- * of tests that call `freshDb()` inside a test BODY, where a failure is an ordinary failure. So
- * `numFailedTests` moving is a side effect of how a few tests happen to be written, not a
- * property of the harness; take those away and a dead harness reads as zero failures.
+ * (#78 measured 4 / 3 failures against 156 pending and 19 suites on 2026-08-25. The failure
+ * column gained the canary; the other columns moved because the repo gained test files — #48's
+ * `anon-grants.test.ts` landed while this story was open and moved them again, from 189/23, which
+ * is why the pending and suite columns are the ones to re-derive rather than to trust.)
+ *
+ * **Read the two numbers in the right order.** Sixteen files call `freshDb()` in `beforeAll`
+ * (*measured 2026-08-31* — that count drifts with the repo and nothing here depends on it; the
+ * property does not drift), and they contribute **nothing** to `numFailedTests` in either arm —
+ * vitest reports a `beforeAll` failure as its tests SKIPPED. Before #92, every failure in that
+ * column came from four tests that call `freshDb()` inside a test BODY for unrelated reasons, so
+ * `numFailedTests` moving was a side effect of how a few tests happen to be written rather than a
+ * property of the harness — rewrite those four and a dead harness reads as zero failures again.
+ * The canary at the top of this file is the fifth, and the only one that is there on purpose.
  *
  * What is reliable is the rest of the row — `numPendingTests`, `numFailedTestSuites`, `success`
  * and the exit code — which move in both arms regardless. That is why cairn's tender overlay
- * refuses a run with `numPendingTests > 0` before reading any count off it, and why #78 AC 5
- * keeps that rule whatever the timeout becomes: a timeout changes when the harness gives up,
- * never how vitest accounts for it. #92 tracks giving that signal a home of its own.
+ * refuses a run with `numPendingTests > 0` before reading any count off it. **#92 AC 4 KEEPS that
+ * rule**: it is the signal that depends on no particular test existing, and a named canary does
+ * not retire it — the canary says WHAT happened, the pending count says THAT something did.
+ *
+ * *What the canary costs, measured 2026-08-31 over three runs WITH it and three WITHOUT, on the
+ * merged tree, because it is not free:*
+ *
+ *   whole suite      13206 / 14008 / 15199 ms  ->  13216 / 13606 / 14201 ms   (ranges OVERLAP)
+ *   this file alone   8864 /  9197 /  9583 ms  ->  10311 / 10945 / 11127 ms   (+~1.5 s)
+ *
+ * Read those two rows differently. The file's ranges do not overlap, so ~1.5 s is a real cost. The
+ * suite's DO overlap, so at suite level the canary is not distinguishable from run-to-run variance
+ * — the file is not the critical path, and a boot added off the critical path is close to free.
+ *
+ * Both are far less than the ~9 s a boot takes in this file, and the controlled comparison says
+ * why: `names each migration` is the same test in both arms, and it runs in **8815–9512 ms** with
+ * no canary ahead of it and **3691–4176 ms** with one, while the canary itself takes 6100–7219 ms.
+ * So a boot roughly halves the cost of the NEXT boot in the same worker, and the marginal cost of
+ * a boot is not the cost of the first one.
+ *
+ * The obvious explanation is that the WASM compile is cached per worker — but that is a HYPOTHESIS
+ * and `ubuntu-latest` does not support it: on CI run 33454766960 the canary took **3296 ms** and
+ * `names each migration` took **5016 ms**, the opposite order, on a runner with far fewer cores.
+ * So the halving is measured on this machine and its cause is not established; contention between
+ * sixteen simultaneous boots would explain the local numbers just as well. Do not price a future
+ * change on the mechanism. On `ubuntu-latest` a full real `freshDb()` in a test body measured
+ * 5819 ms (#78, CI run 32874204521) and 3296–5016 ms here; those are the numbers to compare a
+ * future CI regression against.
  *
  * The hang case also priced the backstop: with `hookTimeout: 60_000` and nothing else, a
  * `freshDb()` that never settles took **182 s** against a healthy run's 12 s, and printed nothing
@@ -39,6 +75,49 @@ import { FRESH_DB_BUDGET_MS, freshDb, withBudget } from "./pglite";
  */
 
 const config = vitestConfig as { test?: Record<string, unknown> };
+
+describe("the pglite harness", () => {
+  // Story #92. The one test in the repo whose NAME is the deliverable.
+  //
+  // Everything else in this file guards the budget; this guards the boot itself, and it exists
+  // because the signal a dead harness produces was previously INCIDENTAL. Sixteen files call
+  // `freshDb()` in `beforeAll`, and vitest reports a `beforeAll` failure as its tests SKIPPED,
+  // so those files contribute nothing to `numFailedTests`. Every failure in that column came
+  // from the handful of tests that happen to call `freshDb()` in a test BODY for unrelated
+  // reasons — two checking migration-prefix errors, two added by #78 about stage labels. A
+  // reader seeing `names each migration as it applies it` red learns that something about
+  // migrations broke. They do not learn that the database never started, and rewriting any of
+  // those four tests takes the signal away without anyone noticing.
+  //
+  // So this one is named for the purpose and asserts a successful boot and NOTHING else.
+  //
+  // It must assert the boot SUCCEEDED, not that a broken one is reported well. The
+  // `freshDb({ budgetMs: 1 })` case below is the counter-example and the reason that is spelled
+  // out: it asserts a REJECTION, so it passes against a harness that never settles (*measured*
+  // — it does redden against one that throws, which raises a different error, so it is half a
+  // signal while reading like a whole one).
+  //
+  // `select 1` and no more, on purpose. It cannot redden for a schema, policy or grant reason,
+  // so a red here has exactly one meaning. Anything richer would make this test a second copy
+  // of whatever it queried, and would put it back in the class it exists to leave.
+  //
+  // FIRST in the file deliberately: the `budgetMs: 1` case below ABANDONS a database that goes
+  // on booting (see `withBudget`'s stated limits in test/pglite.ts), and the one test that must
+  // never cry wolf should not run alongside that orphan.
+  it("boots: if this test is red the harness could not start, and the other pglite files' tests are SKIPPED rather than failed", async () => {
+    const db = await freshDb();
+    try {
+      // Not `expect(db).toBeTruthy()`: `freshDb()` either resolves with a PGlite or rejects, so
+      // that assertion could not fail and the `await` would be doing all the work. Asking the
+      // database a question it can only answer once it is actually up is the weakest claim that
+      // is still a claim.
+      const { rows } = await db.query<{ ok: number }>("select 1 as ok");
+      expect(rows[0]?.ok, "the harness resolved but the database does not answer").toBe(1);
+    } finally {
+      await db.close();
+    }
+  });
+});
 
 describe("the freshDb budget reports what stalled", () => {
   it("names the stage that was in flight when it expired", async () => {

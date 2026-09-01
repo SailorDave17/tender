@@ -9,10 +9,10 @@ import { as, freshDb } from "./pglite";
  * unchanged.
  *
  * Every deny is against `authenticated` with a positive control on the same mechanism beside
- * it. The anon case is on the functions' execute grant, which is Postgres's own and so visible
- * to pglite — and which 0003 revokes from anon BY NAME, because on the live project anon holds
- * execute on every new function directly (measured 2026-08-22; the pglite harness grants
- * nothing, so this file cannot see that grant — only that the revoke line exists and holds).
+ * it. The anon case is on the functions' execute grant, and 0003 revokes it from anon BY NAME
+ * because on the live project anon holds execute on every new function directly (measured
+ * 2026-08-22). Since story #48 the harness reproduces that by-name grant, so the two anon denies
+ * below are load-bearing rather than vacuous: they fail if 0003's revoke is removed.
  *
  * The fixture is shared down the file and the code's value is carried forward between tests:
  * a deny that fails to refuse would rotate the code and every later read reddens with it.

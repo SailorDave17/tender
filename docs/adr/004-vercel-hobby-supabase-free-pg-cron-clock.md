@@ -9,6 +9,8 @@ Budget ceiling $0/month (*reported*). The engine must step a post down a rung at
 ## Options considered (billing/docs pages fetched 2026-08-21, all *measured*)
 - **Vercel Hobby + Supabase Free, clock in the database** — Vercel cron on Hobby is *once per day, ±59 min precision* (docs last updated 2026-07-15), useless for the clock, so the clock runs as pg_cron inside Postgres ("every second to once a year"). Cliffs: Hobby is non-commercial personal use only (a club pilot qualifies); Supabase Free pauses after 7 idle days; Supabase Cron's plan availability is **not stated** on either docs page read. The stack Taskr and burgee run, with the house's deepest notes.
 - **Cloudflare Workers + Pages + D1, Cron Triggers** — free, never pauses, 5 cron triggers with no frequency floor, 100k requests/day, 10 ms CPU. madcowsailing already deploys to Cloudflare. No built-in auth or realtime: magic links and the match thread are hand-built; no house Cloudflare-auth notes.
+
+  *2026-08-26 (#99): the magic link was removed from the app. This line is kept exactly as written — it is a counterfactual about a road not taken, describing what a Cloudflare build would have had to hand-roll in 2026-08, and nothing about the app changing can make a statement about the rejected option false.*
 - **Vercel Hobby + Neon Free + an external cron pinger** — Neon auto-suspends after 5 min and auto-resumes; no inactivity pause stated. The clock becomes a third-party ping service with nobody's SLA; auth hand-built.
 
 ## Decision

@@ -4,7 +4,12 @@ import {
   CONTROL_FUNCTION,
   CONTROL_TABLE,
   PRESENT,
+  REACHABLE,
+  SHUT_OUT,
+  UNKNOWN,
   UNPROVEN,
+  anonFunctionReach,
+  anonTableReach,
   classify,
   classifyFunction,
   functionProbeUrl,
@@ -53,6 +58,13 @@ describe("the vocabulary itself", () => {
     // one test that decides what they are.
     expect([PRESENT, ABSENT, UNPROVEN]).toEqual(["PRESENT", "ABSENT", "UNPROVEN"]);
     expect(CONTROL_TABLE).toBe("__tender_absent_probe");
+  });
+
+  it("pins the anon-reach tags, which are a different question from the presence tags", () => {
+    // Story #48. `UNKNOWN` and `UNPROVEN` are deliberately different words for deliberately
+    // different failures: nothing established about a PRIVILEGE, versus nothing established about
+    // a RELATION. A run can know a table exists and know nothing about what anon may do with it.
+    expect([REACHABLE, SHUT_OUT, UNKNOWN]).toEqual(["REACHABLE", "SHUT-OUT", "UNKNOWN"]);
   });
 });
 
@@ -116,6 +128,31 @@ describe("classify — who answered", () => {
     });
     expect(v.verdict).toBe(UNPROVEN);
     expect(v.reason).toBe("key-rejected");
+  });
+});
+
+describe("anonTableReach — what the anon key may DO, story #48", () => {
+  it("reads a 200 as REACHABLE — the grant is there, whatever RLS then returned", () => {
+    // The whole point of the story: `200 []` is what the caller saw on `club` for two months,
+    // and it is what a wide-open table and a properly-shadowed one both look like.
+    const r = anonTableReach({ status: 200, body: "[]" });
+    expect(r.reach).toBe(REACHABLE);
+    expect(r.detail).toMatch(/SELECT/);
+  });
+
+  it("reads 42501 as SHUT-OUT — only the refusal proves the grant is gone", () => {
+    expect(anonTableReach({ status: 401, body: PG_REFUSED }).reach).toBe(SHUT_OUT);
+  });
+
+  it("reads an absent table as UNKNOWN, never as shut out", () => {
+    // A table that is not there refuses nobody. Reporting it as SHUT-OUT would let a missing
+    // migration read as a closed grant.
+    expect(anonTableReach({ status: 404, body: PGRST_MISSING }).reach).toBe(UNKNOWN);
+  });
+
+  it("reads a rejected key as UNKNOWN — the gateway never asked Postgres about a privilege", () => {
+    expect(anonTableReach({ status: 401, body: GATEWAY_BAD_KEY }).reach).toBe(UNKNOWN);
+    expect(anonTableReach({ status: 0, body: "transport failure: fetch failed" }).reach).toBe(UNKNOWN);
   });
 });
 
@@ -320,6 +357,17 @@ const PG_FN_REFUSED = JSON.stringify({
 });
 /** Postgres: the body ran and raised its own error. */
 const PG_RAISED = JSON.stringify({ code: "P0001", details: null, hint: null, message: "no household matches that code" });
+/**
+ * The one that makes `anonFunctionReach` more than a code comparison: `accept_answer` raising
+ * `insufficient_privilege` ITSELF, which is `anon` having executed it. Copied verbatim from the
+ * live project 2026-08-30 — same code, same status, opposite meaning to PG_FN_REFUSED above.
+ */
+const PG_FN_OWN_RAISE = JSON.stringify({
+  code: "42501",
+  details: null,
+  hint: null,
+  message: "not signed in",
+});
 
 describe("classifyFunction — who answered", () => {
   it("reads PGRST202 as ABSENT", () => {
@@ -373,6 +421,43 @@ describe("classifyFunction — who answered", () => {
 
   it("reads a transport failure as UNPROVEN", () => {
     expect(classifyFunction({ status: 0, body: "transport failure: fetch failed" }).verdict).toBe(UNPROVEN);
+  });
+});
+
+describe("anonFunctionReach — the 42501 that means the opposite, story #48", () => {
+  it("reads Postgres's own EXECUTE refusal as SHUT-OUT", () => {
+    expect(anonFunctionReach({ status: 401, body: PG_FN_REFUSED }).reach).toBe(SHUT_OUT);
+  });
+
+  it("reads the SAME code with the function's own message as REACHABLE", () => {
+    // These two fixtures differ in the message and in nothing else — same 42501, same 401 — and
+    // they are the difference between anon being shut out and anon running the function. This is
+    // the assertion that would fail first if the classifier went back to reading only the code.
+    const r = anonFunctionReach({ status: 401, body: PG_FN_OWN_RAISE });
+    expect(r.reach).toBe(REACHABLE);
+    expect(r.detail).toMatch(/42501/);
+  });
+
+  it("reads 25006 as REACHABLE — Postgres only stops a write the body had already started", () => {
+    expect(anonFunctionReach({ status: 405, body: PG_READ_ONLY }).reach).toBe(REACHABLE);
+  });
+
+  it("reads any other SQLSTATE, and a 2xx, as REACHABLE", () => {
+    expect(anonFunctionReach({ status: 400, body: PG_RAISED }).reach).toBe(REACHABLE);
+    expect(anonFunctionReach({ status: 200, body: "[]" }).reach).toBe(REACHABLE);
+  });
+
+  it("fails loud, not quiet, if Postgres ever changes the wording", () => {
+    // The message match is the weak part of the module. It is arranged so that an unrecognised
+    // privilege refusal reads as REACHABLE — a false alarm somebody investigates — rather than as
+    // SHUT-OUT, which nobody ever looks at again.
+    const translated = JSON.stringify({ code: "42501", message: "Zugriff verweigert für Funktion f" });
+    expect(anonFunctionReach({ status: 401, body: translated }).reach).toBe(REACHABLE);
+  });
+
+  it("reads an absent function and a rejected key as UNKNOWN", () => {
+    expect(anonFunctionReach({ status: 404, body: PGRST_NO_FUNCTION }).reach).toBe(UNKNOWN);
+    expect(anonFunctionReach({ status: 401, body: GATEWAY_BAD_KEY }).reach).toBe(UNKNOWN);
   });
 });
 
@@ -441,14 +526,16 @@ describe("runCheck — the function family", () => {
     const { probe } = stubProbe(TABLES_OK);
     const { probeFunction, asked } = stubFunctionProbe({
       [CONTROL_FUNCTION]: { status: 404, body: PGRST_NO_FUNCTION },
-      rotate_invite_code: { status: 405, body: PG_READ_ONLY },
+      // Both shut out. Since #48 a healthy run cannot contain a 25006 here: that answer means
+      // anon executed the function, which is a finding rather than a pass — see the reach tests.
+      rotate_invite_code: { status: 401, body: PG_FN_REFUSED },
       accept_answer: { status: 401, body: PG_FN_REFUSED },
     });
     const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction, functions: [ROTATE, ACCEPT] });
     expect(asked).toEqual([`${CONTROL_FUNCTION}()`, "rotate_invite_code()", "accept_answer(post_id,person_id)"]);
     expect(code).toBe(0);
     expect(lines.join("\n")).toMatch(/ok {4}__tender_absent_fn\(\): ABSENT/);
-    expect(lines.join("\n")).toMatch(/ok {4}rotate_invite_code\(\): PRESENT \(ran and was stopped/);
+    expect(lines.join("\n")).toMatch(/ok {4}rotate_invite_code\(\): PRESENT \(refused by Postgres/);
     expect(lines.join("\n")).toMatch(/2\/2 functions present/);
   });
 
@@ -503,5 +590,73 @@ describe("runCheck — the function family", () => {
     const { code, lines } = await runCheck({ probe, tables: ["club"], functions: [ROTATE] });
     expect(code).toBe(2);
     expect(lines.join("\n")).toMatch(/no function probe/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The anon-reach verdict (story #48). These are the ONLY positive controls this half of the
+// module will ever get: once 0015 is pasted, nothing on the live project is REACHABLE, so the
+// branch that finds a hole runs on no healthy day and against no real project
+// (cairn: satisfying-a-negative-claim-destroys-its-instrument-2026-08-26).
+// ---------------------------------------------------------------------------------------------
+
+describe("runCheck — anon reach", () => {
+  it("reports a count over everything it probed, and passes when nothing is reachable", async () => {
+    const { probe } = stubProbe(TABLES_OK);
+    const { probeFunction } = stubFunctionProbe({
+      [CONTROL_FUNCTION]: { status: 404, body: PGRST_NO_FUNCTION },
+      rotate_invite_code: { status: 401, body: PG_FN_REFUSED },
+    });
+    const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction, functions: [ROTATE] });
+    expect(code).toBe(0);
+    // "0 of 2", not "0" — a bare none is what a run that probed nothing would also say.
+    expect(lines.join("\n")).toMatch(/anon reach — 0 of 2 probed subjects still reachable/);
+    expect(lines.some((l) => l.startsWith("FAIL  anon reach"))).toBe(false);
+  });
+
+  it("fails the run on a table anon can read, and names it — though it is PRESENT either way", async () => {
+    // The pre-0015 live project, exactly: `club` answering 200 [] while every other table
+    // answered 42501. Before this, that run exited 0 and said "14/14 present".
+    const { probe } = stubProbe({
+      [CONTROL_TABLE]: { status: 404, body: PGRST_MISSING },
+      club: { status: 200, body: "[]" },
+    });
+    const { code, lines } = await runCheck({ probe, tables: ["club"] });
+    expect(code).toBe(1);
+    expect(lines.join("\n")).toMatch(/ok {4}club: PRESENT .* \| anon REACHABLE/);
+    expect(lines.join("\n")).toMatch(/FAIL {2}anon reach: table club/);
+    expect(lines.join("\n")).toMatch(/anon reach — 1 of 1 probed subjects still reachable/);
+    expect(lines.join("\n")).toMatch(/0015 has not been pasted/);
+  });
+
+  it("fails the run on a function anon can execute, and names it", async () => {
+    // `answer_counts` answering 200 [] to the anon key, and `accept_answer` raising its own
+    // 42501 — the two live readings 0015 was written for, in one run.
+    const { probe } = stubProbe(TABLES_OK);
+    const { probeFunction } = stubFunctionProbe({
+      [CONTROL_FUNCTION]: { status: 404, body: PGRST_NO_FUNCTION },
+      rotate_invite_code: { status: 200, body: "[]" },
+      accept_answer: { status: 401, body: PG_FN_OWN_RAISE },
+    });
+    const { code, lines } = await runCheck({ probe, tables: ["club"], probeFunction, functions: [ROTATE, ACCEPT] });
+    expect(code).toBe(1);
+    expect(lines.join("\n")).toMatch(/2\/2 functions present/); // both exist — that is not the finding
+    expect(lines.join("\n")).toMatch(/FAIL {2}anon reach: function rotate_invite_code\(\)/);
+    expect(lines.join("\n")).toMatch(/FAIL {2}anon reach: function accept_answer\(\)/);
+    expect(lines.join("\n")).toMatch(/anon reach — 2 of 3 probed subjects still reachable/);
+  });
+
+  it("does not count an absent relation as shut out", async () => {
+    // An ABSENT table already fails the run on presence. What it must not do is quietly improve
+    // the reach reading: a missing migration is not a closed grant.
+    const { probe } = stubProbe({
+      [CONTROL_TABLE]: { status: 404, body: PGRST_MISSING },
+      club: { status: 404, body: PGRST_MISSING },
+    });
+    const { code, lines } = await runCheck({ probe, tables: ["club"] });
+    expect(code).toBe(1);
+    expect(lines.join("\n")).toMatch(/anon reach — 0 of 1 probed subjects still reachable/);
+    expect(lines.some((l) => l.startsWith("FAIL  anon reach"))).toBe(false);
+    expect(lines.join("\n")).toMatch(/FAIL {2}club: ABSENT/);
   });
 });

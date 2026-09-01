@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { explainResetError } from "@/auth/password";
+import { PasswordFields } from "@/auth/PasswordFields";
+import { PASSWORD_MIN, explainResetError } from "@/auth/password";
 import { supabaseServer } from "@/lib/supabase/server";
 import { setNewPassword } from "./actions";
 
@@ -33,17 +34,21 @@ export default async function ResetPasswordPage({
       <h1>Set a new password</h1>
       <p>Choose a new password for your account. You are signed in from your reset link.</p>
       <form action={setNewPassword} style={{ display: "grid", gap: "0.75rem" }}>
-        <label>
-          New password
-          <input name="password" type="password" required autoComplete="new-password" minLength={8} />
-        </label>
-        <label>
-          Confirm new password
-          <input name="confirm" type="password" required autoComplete="new-password" minLength={8} />
-        </label>
+        {/*
+          The same two boxes the Sign up tab uses (#100), so the show/hide toggles and the confirm
+          box exist in one place rather than two. This page stays a Server Component: a client
+          component drops in as a child, and the decision stays in `setNewPassword`, which is the
+          only thing on this path that calls `checkNewPassword`.
+        */}
+        <PasswordFields
+          passwordName="password"
+          confirmName="confirm"
+          minLength={PASSWORD_MIN}
+          required
+          error={error ? explainResetError(error) : undefined}
+        />
         <button type="submit">Save new password</button>
       </form>
-      {error && <p role="alert">{explainResetError(error)}</p>}
     </main>
   );
 }

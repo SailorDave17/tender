@@ -2,10 +2,41 @@
  * The pglite harness: applies supabase/migrations/*.sql to an in-memory Postgres and exposes a
  * way to run SQL as a Supabase role.
  *
- * Known blindness, stated rather than discovered (cairn: a-stubbed-default-cannot-report-the-
- * platform-moved-2026-08-13): this harness creates the `anon`, `authenticated` and `service_role` roles itself
- * and grants nothing Supabase would not, but it cannot see a grant the live project has and the
- * migrations lack. `npm run check:live` is the instrument for the live project.
+ * WHAT IT REPRODUCES OF THE PLATFORM, AND WHAT IT DELIBERATELY DOES NOT (story #48).
+ *
+ * Supabase's projects carry `alter default privileges in schema public grant all on
+ * tables/functions/sequences to postgres, anon, authenticated, service_role`, so an object a
+ * migration creates is granted to all four roles before that migration's own `grant` runs. No
+ * file in this repo says so, which is the class cairn calls a-stubbed-default-cannot-report-the-
+ * platform-moved-2026-08-13: a stub NARROWER than the platform makes every "this role is shut
+ * out" assertion pass without the migration doing anything.
+ *
+ * *Measured 2026-08-30*, on a suite that was 718/718 green, by reproducing the default here and
+ * changing nothing else:
+ *
+ *   reproduced for            reds   what they were
+ *   anon                        3    club readable by anon; answer_counts() and accept_answer()
+ *                                    executable by anon — all three real, all three matching a
+ *                                    read-only probe of the LIVE project the same day
+ *   anon + authenticated        8    the 3 above, plus 5 assertions about `club`, where
+ *                                    `authenticated` held six whole-table privileges no file
+ *                                    granted (INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER)
+ *   + service_role             13    the 8 above, plus 5 that are NOT findings — see below
+ *
+ * So the first two are reproduced below and `service_role` is not, and that asymmetry is a
+ * decision rather than an oversight. `service_role` is created `bypassrls` as Supabase's is, and
+ * granted nothing, so a `service_role` case measures the migration's own grants and nothing else
+ * — which is why 0014 exists at all (a server-side read of `answer` that no file granted, found
+ * because the harness refused it where the hosted project's inherited ALL would have hidden it).
+ * Reproducing the default for `service_role` destroys that instrument: 4 of those 5 extra reds
+ * are assertions of the form "the grant is 0014's, not inherited" losing their subject, and the
+ * 5th is a row those assertions stopped refusing (cairn:
+ * satisfying-a-negative-claim-destroys-its-instrument-2026-08-26).
+ *
+ * The residual blindness, stated rather than discovered: this harness still cannot see a grant
+ * the live project holds that no migration makes and no default explains — one made by hand in
+ * the SQL editor, say. `npm run check:live` is the instrument for that, and since #48 it reports
+ * what `anon` could actually reach rather than only whether the relation exists.
  */
 import { PGlite } from "@electric-sql/pglite";
 import { readdir, readFile } from "node:fs/promises";
@@ -71,8 +102,10 @@ export type FreshDbOptions = {
  * round one.
  *
  * *Measured 2026-08-25* on this machine (24 cores, 64 GB, Node 24), `freshDb()` wall time over
- * 42 calls per condition — three consecutive `npm test` runs, the twelve pglite files starting
- * in parallel, timings appended per call from inside the function:
+ * 42 calls per condition — three consecutive `npm test` runs, the twelve pglite files there
+ * were THEN starting in parallel (sixteen by 2026-08-31; this line records the conditions of a
+ * past measurement, so it is deliberately not updated as the repo grows), timings appended per
+ * call from inside the function:
  *
  *   condition                    min    p50    p90     max
  *   idle                        1479   5323   6119    6232
@@ -136,8 +169,9 @@ export async function withBudget<T>(
           `freshDb() gave up after ${Date.now() - startedAt}ms while ${inFlight}. This is the ` +
             `HARNESS failing to start, not a failure of the code under test. The budget is ` +
             `FRESH_DB_BUDGET_MS in test/pglite.ts (${budgetMs}ms); see the measurement recorded ` +
-            `there before raising it, and note that vitest reports a beforeAll failure as SKIPPED ` +
-            `tests, so numFailedTests stays 0 — read numPendingTests and numFailedTestSuites.`,
+            `there before raising it. Note that vitest reports a beforeAll failure as SKIPPED ` +
+            `tests, so most of the pglite suite reads as pending rather than failed — read ` +
+            `numPendingTests and numFailedTestSuites, never the pass count.`,
         ),
       );
     }, budgetMs);
@@ -174,6 +208,12 @@ export async function freshDb(options: FreshDbOptions = {}): Promise<PGlite> {
       create function auth.uid() returns uuid language sql stable as
         $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
       grant usage on schema auth to anon, authenticated;
+      -- Supabase's default privileges, for the two roles where reproducing them buys an
+      -- instrument rather than destroying one. See the module docstring for the measurement and
+      -- for why service_role is deliberately absent from these three lines.
+      alter default privileges in schema public grant all on tables to anon, authenticated;
+      alter default privileges in schema public grant all on sequences to anon, authenticated;
+      alter default privileges in schema public grant all on functions to anon, authenticated;
     `);
     const stopAfter = options.through === undefined ? null : await fileFor(options.through);
     const files = await migrationFiles();

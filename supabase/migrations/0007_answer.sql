@@ -97,7 +97,13 @@ create policy answer_update_self on public.answer
 -- caller already holds — read under post's own policy — rather than enumerating posts, so it
 -- reveals nothing about a post the caller could not see; a post id that does not exist, or
 -- has no answers, is simply absent from the result. Execute is revoked from PUBLIC (Postgres
--- grants it by default) so anon cannot call it at all, and granted to authenticated only.
+-- grants it by default) and granted to authenticated only.
+--
+-- CORRECTED 2026-08-30 (story #48): this line read "so anon cannot call it at all", and that was
+-- FALSE on the live project from the day it was written. Revoking from PUBLIC does not touch the
+-- grant Supabase's default privileges make to anon BY NAME, and *measured* over PostgREST, the
+-- anon key ran this function and got `200 []`. 0015 is what closes it, by revoking from
+-- `public, anon`; test/anon-grants.test.ts holds every function in the schema against that.
 -- ---------------------------------------------------------------------------------------------
 
 create function public.answer_counts(post_ids uuid[])
