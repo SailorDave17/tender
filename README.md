@@ -41,6 +41,7 @@ npm run lint
 npm run typecheck
 npm run check:live # read-only probe of the live Supabase project; needs .env.local
 npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
+npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
 ```
 
@@ -127,6 +128,35 @@ It is still the widest credential in `.env.local`, so `.env.example` says how to
 key is not an alternative: it authenticates to this project's own API and cannot run DDL. Deciding
 to apply is still the owner's; this changes who can carry it out, and whether the result is
 verifiable.
+
+**Asking whether the migrations are in place** is `npm run verify:migrations` (#117), and it is a
+different question from `check:live`'s. `check:live` probes as a client, over PostgREST, with the
+anon key, so it can see tables and functions and nothing else — which leaves it blind to most of
+what this repo's recent migrations do. It reads the same number either side of pasting `0011`
+(three check constraints), `0014` (one grant), `0015` (revokes and default privileges) or `0009`'s
+two triggers. This reads `pg_catalog` with the management token instead, so a grant, a constraint,
+a trigger, an index and a row-level-security flag are all in view. Neither command can answer the
+other's question and neither replaces the other.
+
+Its expectations are **parsed out of `supabase/migrations/*.sql`**, never listed in the script.
+That is the whole design rather than a convenience: a hand-written expectation has the same author
+as the migration, on the same day, from the same understanding, so it certifies agreement rather
+than presence — and agrees with itself in exactly the case the command exists for, which is the
+migration somebody wrote and forgot to paste. Adding a migration needs no edit to the command; a
+statement in a shape nobody has written before is **refused** rather than skipped, so a kind it
+cannot read can never be silently unchecked.
+
+Two things it deliberately does not claim. It never says a migration was *applied* — a revoke of a
+privilege nobody held and an update matching no rows both leave the database in the asserted state
+without the file ever running, so every verdict is about state, and the run prints that in as many
+words. And it names the statements nothing can testify to rather than counting them as passes:
+today that is three backfills in `0011`, a seed insert in `0005`, and `0015`'s sequence sweep,
+which has no sequence to sweep because no file here creates one.
+
+Every query goes with `read_only: true`, so the *platform* enforces that this command cannot
+write. That matters because omitting the flag connects a write-capable token as `postgres` with the
+transaction open for writing: without it, a command whose whole purpose is to look would inspect
+production over a connection that could change it.
 
 ## Branches and deploys
 

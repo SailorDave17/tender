@@ -11,6 +11,7 @@
     "test": "vitest",
     "check:live": "node --env-file-if-exists=.env.local scripts/check-live.mjs",
     "migrate:live": "node --env-file-if-exists=.env.local scripts/migrate-live.mjs",
+    "verify:migrations": "node --env-file-if-exists=.env.local scripts/verify-migrations.mjs",
     "vapid:keys": "node scripts/vapid-keys.mjs",
     "icons": "node scripts/render-icons.mjs"
   },
