@@ -16,7 +16,7 @@ export default defineConfig({
     // THIS REPAIR GIVES THE HOOK MORE TIME. It does not reduce how many pglite instances start
     // at once: there is deliberately no `pool`, `poolOptions`, `maxWorkers`, `maxThreads` or
     // `fileParallelism` key anywhere in this file, so file parallelism is vitest's default and
-    // the twelve pglite files still start together. `test/harness-budget.test.ts` asserts that
+    // the pglite files still start together. `test/harness-budget.test.ts` asserts that
     // absence, so the "not both" half is enforced rather than promised — the two remedies trade
     // against each other (a raised timeout hides a real hang, a narrowed pool taxes every run,
     // including the healthy ones), and doing both would leave neither cost attributable.

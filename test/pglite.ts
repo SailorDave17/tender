@@ -102,8 +102,10 @@ export type FreshDbOptions = {
  * round one.
  *
  * *Measured 2026-08-25* on this machine (24 cores, 64 GB, Node 24), `freshDb()` wall time over
- * 42 calls per condition — three consecutive `npm test` runs, the twelve pglite files starting
- * in parallel, timings appended per call from inside the function:
+ * 42 calls per condition — three consecutive `npm test` runs, the twelve pglite files there
+ * were THEN starting in parallel (sixteen by 2026-08-31; this line records the conditions of a
+ * past measurement, so it is deliberately not updated as the repo grows), timings appended per
+ * call from inside the function:
  *
  *   condition                    min    p50    p90     max
  *   idle                        1479   5323   6119    6232
@@ -167,8 +169,9 @@ export async function withBudget<T>(
           `freshDb() gave up after ${Date.now() - startedAt}ms while ${inFlight}. This is the ` +
             `HARNESS failing to start, not a failure of the code under test. The budget is ` +
             `FRESH_DB_BUDGET_MS in test/pglite.ts (${budgetMs}ms); see the measurement recorded ` +
-            `there before raising it, and note that vitest reports a beforeAll failure as SKIPPED ` +
-            `tests, so numFailedTests stays 0 — read numPendingTests and numFailedTestSuites.`,
+            `there before raising it. Note that vitest reports a beforeAll failure as SKIPPED ` +
+            `tests, so most of the pglite suite reads as pending rather than failed — read ` +
+            `numPendingTests and numFailedTestSuites, never the pass count.`,
         ),
       );
     }, budgetMs);
