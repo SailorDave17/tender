@@ -589,6 +589,8 @@ export function foldExpectations(parsed) {
   const tableAcl = new Map();
   /** (role, function) -> { baseline, set, file } */
   const functionAcl = new Map();
+  /** schema -> { file, statement, objects: Set } for every `alter default privileges` seen. */
+  const defaultPrivilegeScopes = new Map();
   const knownTables = [];
   const knownFunctions = [];
 
@@ -854,6 +856,13 @@ export function foldExpectations(parsed) {
           });
           return;
         }
+        // The same statement's OTHER claim — see `schema-owner` below. Recorded here rather than
+        // asserted here because the object classes come from every such statement in the corpus
+        // and the reference table is only certainly known once the whole fold has run.
+        const scope = defaultPrivilegeScopes.get(op.schema) ?? { ...where, objects: new Set() };
+        scope.objects.add(op.objects);
+        defaultPrivilegeScopes.set(op.schema, scope);
+
         put(`defacl:${op.role}:${op.objects}:${op.schema}`, {
           ...where,
           kind: "default-privilege",
@@ -904,6 +913,61 @@ export function foldExpectations(parsed) {
       fn,
       nargs,
       expected,
+    });
+  }
+
+  /**
+   * The premise an `alter default privileges` statement rests on, asserted rather than assumed
+   * (#118).
+   *
+   * `ALTER DEFAULT PRIVILEGES` with no `FOR ROLE` alters the CURRENT role's defaults and nothing
+   * else, and a default ACL governs only the objects its own role goes on to create. So `0015`'s
+   * three lines reach exactly the objects created by the role that ran them, and the expectation
+   * above is scoped to that role for exactly that reason — it reads `pg_default_acl` for the owner
+   * of a table these files created, because that is the role a later migration will create its
+   * table as.
+   *
+   * That scoping is right, and it is right BECAUSE every object in the schema has that owner. On
+   * this project a second role — `supabase_admin` — owns default ACLs on `public` that still grant
+   * `anon`, and `postgres` is not a member of it (*measured 2026-09-01*: `pg_has_role('postgres',
+   * 'supabase_admin', 'member')` is false, and `postgres` is not a superuser), so no migration
+   * this repo can apply will ever narrow them. They are inert only while nothing in `public` is
+   * owned by that role — a platform-installed extension being the realistic way that stops being
+   * true. Nothing announced the difference, which is what this expectation is for.
+   *
+   * It is NOT an expectation no migration owns, which the story that found this deliberately ruled
+   * out. It says nothing about `supabase_admin`'s defaults, which no file here asserts and none
+   * could discharge; it says that the reach of a statement `0015` DOES make is what `0015` takes
+   * it to be. A red here is actionable in the ordinary way — the new object needs the same sweep
+   * the file already performs over the objects that existed when it was written.
+   *
+   * It FAILS ON AN EMPTY SCHEMA rather than passing. A "no object has the wrong owner" reading
+   * over nothing is true and vacuous, and a check whose healthy answer is an absence is exactly
+   * where that goes unnoticed (cairn: a-control-can-choose-the-design-2026-08-25). The count is
+   * therefore part of the assertion, and the reference table is itself in the counted set, so a
+   * reading of zero means the catalog read is wrong rather than the schema empty.
+   */
+  for (const [schema, scope] of defaultPrivilegeScopes) {
+    const reference = knownTables[0];
+    if (!reference) {
+      unobservable.push({
+        file: scope.file,
+        statement: scope.statement,
+        note: "these files create no table, so there is no object owner to compare the schema's objects against",
+      });
+      continue;
+    }
+    const objects = [...scope.objects].sort();
+    put(`schemaowner:${schema}`, {
+      file: scope.file,
+      statement: `(the premise of every alter default privileges in schema ${schema})`,
+      kind: "schema-owner",
+      subject:
+        `every ${objects.join(", ")} in ${schema} is owned by the role that owns ${reference}, ` +
+        "so a default privilege scoped to that role governs all of them",
+      schema,
+      objects,
+      reference,
     });
   }
 
@@ -1086,6 +1150,44 @@ export function factSql(fact) {
                    else not exists (select 1 ${rows} and split_part(acl::text, '=', 1) = ${literal(fact.role)})
               end)`,
         detail: `(select coalesce(string_agg(distinct split_part(acl::text, '=', 1), ', '), '(no default privilege set)') ${rows})`,
+      };
+    }
+    case "schema-owner": {
+      // The object classes come from the statements themselves, never from a list here: `on
+      // tables` governs tables, views, materialised views, foreign tables and partitioned tables;
+      // `on sequences` governs sequences; `on functions` governs functions, procedures and
+      // aggregates. Indexes and TOAST relations are excluded because no default privilege has ever
+      // governed one and an index's owner follows its table's, so including them would add rows
+      // that cannot disagree.
+      const relkinds = [];
+      if (fact.objects.includes("tables")) relkinds.push("r", "p", "v", "m", "f");
+      if (fact.objects.includes("sequences")) relkinds.push("S");
+      const owner = `(select c.relowner from pg_class c where c.oid = to_regclass(${literal(fact.reference)}))`;
+      const parts = [];
+      if (relkinds.length) {
+        parts.push(
+          `select c.relowner as owner, c.relname as name
+             from pg_class c join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = ${literal(fact.schema)}
+              and c.relkind = any (array[${relkinds.map((k) => literal(k)).join(", ")}])`,
+        );
+      }
+      if (fact.objects.includes("functions")) {
+        parts.push(
+          `select p.proowner as owner, p.proname as name
+             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = ${literal(fact.schema)}`,
+        );
+      }
+      const governed = `from (${parts.join("\nunion all\n")}) t`;
+      return {
+        // The count is half the assertion, not a sanity check bolted on: `count(*) filter (...) = 0`
+        // alone is TRUE over an empty schema, which is the answer a broken catalog read gives.
+        ok: `(case when ${owner} is null then null
+                   else (select count(*) > 0 and count(*) filter (where t.owner <> ${owner}) = 0 ${governed})
+              end)`,
+        detail: `(select count(*)::text || ' objects, owned by: ' ||
+                         coalesce(string_agg(distinct t.owner::regrole::text, ', '), '(none)') ${governed})`,
       };
     }
     default:
