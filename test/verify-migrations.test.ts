@@ -428,6 +428,40 @@ describe("foldExpectations", () => {
   });
 
   /**
+   * #118 — that the premise of `alter default privileges` is ASSERTED at all.
+   *
+   * The catalog reads below prove this expectation can produce both answers. Nothing there would
+   * notice it ceasing to be EMITTED: a fold that quietly dropped it leaves every other expectation
+   * holding and the corpus test green on a smaller number, which is the shape cairn calls
+   * a-guard-can-be-correct-and-still-not-be-invoked. So the emission is asserted here, on the real
+   * corpus, with the object classes checked against the statements that produced them rather than
+   * against a list — `0015` names all three, and a file naming only one must yield only that one.
+   */
+  it("asserts the premise of every alter default privileges, over the classes those statements name", async () => {
+    const folded = fold(await corpus());
+    const premise = folded.facts.filter((f) => f.kind === "schema-owner");
+    expect(premise).toHaveLength(1);
+    expect(premise[0].schema).toBe("public");
+    expect(premise[0].objects).toEqual(["functions", "sequences", "tables"]);
+    expect(premise[0].reference).toBe("public.club");
+
+    const narrower = fold([
+      {
+        file: "0001.sql",
+        sql: "create table public.t (a int); alter default privileges in schema public revoke all on tables from anon;",
+      },
+    ]);
+    const one = narrower.facts.filter((f) => f.kind === "schema-owner");
+    expect(one).toHaveLength(1);
+    expect(one[0].objects).toEqual(["tables"]);
+
+    // And no such statement means no such premise — an expectation asserted on a corpus that never
+    // scopes a default privilege would be one no migration owns, which #118's own notes rule out.
+    const none = fold([{ file: "0001.sql", sql: "create table public.t (a int);" }]);
+    expect(none.facts.filter((f) => f.kind === "schema-owner")).toEqual([]);
+  });
+
+  /**
    * AC 2 — the expectations are DERIVED, not listed.
    *
    * Asserting that directly is awkward: a grep of the command's source for this schema's table
@@ -743,6 +777,79 @@ describe("against the pglite harness", () => {
     const rows = Object.fromEntries(answer.rows.map((r) => [r.key, r.ok]));
     expect(rows["probe:held"]).toBe(true);
     expect(rows["probe:not-held"]).toBe(false);
+  });
+
+  /**
+   * #118 — the premise reading, proven able to say NO in each of the three ways it can.
+   *
+   * The healthy answer here is an absence, which is the position a check quietly stops doing
+   * anything from. So nothing below asserts only that a clean schema passes: each arm CREATES the
+   * condition the reading exists to catch and requires the answer to move.
+   *
+   *   a table owned by another role      — the tables half of the population
+   *   a function owned by another role   — the functions half, which no table probe can reach
+   *   a schema with none of them         — the count clause, whose absence turns "nothing has the
+   *                                        wrong owner" into a true statement about nothing
+   *
+   * The probes are created and dropped inside a `finally`. A leak is loud rather than silent: the
+   * whole-corpus test in this block shares this database and would fail on the next run.
+   */
+  it("reads the alter-default-privileges premise as held, and as broken by a foreign-owned object", async () => {
+    const premise = {
+      key: "probe:premise",
+      kind: "schema-owner",
+      schema: "public",
+      objects: ["functions", "sequences", "tables"],
+      reference: "public.club",
+      file: "probe",
+      subject: "every object in public is owned by the role that owns public.club",
+    };
+
+    const read = async (fact: Record<string, unknown>) => {
+      const [sql] = expectationQueries([fact]);
+      const answer = await runSql(sql);
+      expect(answer.ok, answer.error ?? "").toBe(true);
+      return answer.rows[0];
+    };
+
+    // Clean, and NOT vacuously: the detail carries the size of the population that was read, so a
+    // reading of true over nothing cannot be mistaken for this one.
+    const clean = await read(premise);
+    expect(clean.ok).toBe(true);
+    expect(String(clean.detail)).toMatch(/^\d+ objects, owned by: postgres$/);
+    expect(Number(String(clean.detail).split(" ")[0])).toBeGreaterThan(10);
+
+    try {
+      await db.exec(`create table public.__owner_probe (a int); alter table public.__owner_probe owner to anon;`);
+      const withTable = await read(premise);
+      expect(withTable.ok).toBe(false);
+      expect(String(withTable.detail)).toContain("anon");
+    } finally {
+      await db.exec(`drop table if exists public.__owner_probe;`);
+    }
+    expect((await read(premise)).ok).toBe(true);
+
+    try {
+      await db.exec(
+        `create function public.__owner_probe_fn() returns int language sql as $$ select 1 $$;
+         alter function public.__owner_probe_fn() owner to anon;`,
+      );
+      const withFunction = await read(premise);
+      expect(withFunction.ok).toBe(false);
+      expect(String(withFunction.detail)).toContain("anon");
+    } finally {
+      await db.exec(`drop function if exists public.__owner_probe_fn();`);
+    }
+    expect((await read(premise)).ok).toBe(true);
+
+    try {
+      await db.exec(`create schema __owner_probe_empty;`);
+      const empty = await read({ ...premise, key: "probe:premise-empty", schema: "__owner_probe_empty" });
+      expect(empty.ok).toBe(false);
+      expect(String(empty.detail)).toMatch(/^0 objects/);
+    } finally {
+      await db.exec(`drop schema if exists __owner_probe_empty cascade;`);
+    }
   });
 
   it("reads a table-level privilege the migrations revoked as absent, and its neighbour as present", async () => {
