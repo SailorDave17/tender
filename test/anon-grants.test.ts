@@ -180,17 +180,26 @@ describe("0016 — MAINTAIN, the privilege 0015's list predates (story #116)", (
     }
 
     // The control, and it is not optional: every assertion above is an ABSENCE, and this file's
-    // own docstring records why an absence here is worthless on its own. It has to answer TWO
-    // questions, because an empty `offenders` has two innocent explanations besides the migration
-    // working — this server may not know the privilege name at all (a PG16 harness answers exactly
-    // this, and answers green), and the harness may never have granted it, in which case 0016
-    // revokes nothing and the test is vacuous whatever the migration says.
+    // own docstring records why an absence here is worthless on its own.
     //
-    // A table created HERE settles both at once: it inherits the platform default `test/pglite.ts`
-    // reproduces, so `authenticated` holding MAINTAIN on it proves the name is understood AND that
-    // the default is granting it at this moment. `club` lacking it is then 0016's revoke rather
-    // than an absence that was there all along. Reading `current_user` instead would have proved
-    // only the first — the owner holds MAINTAIN by ownership, whatever the default does.
+    // There is exactly ONE silent way for `offenders` to be empty without 0016 doing anything, and
+    // it is that the harness never granted MAINTAIN in the first place — in which case the revoke
+    // takes nothing and this test passes whatever the migration says. So the control creates a
+    // table HERE, which inherits the platform default `test/pglite.ts` reproduces: `authenticated`
+    // holding MAINTAIN on it proves the default is granting it at this moment, and `club` lacking
+    // it is therefore 0016's revoke rather than an absence that was always there. *Measured*:
+    // reproducing the pre-17 default instead reddens this test and nothing else.
+    //
+    // The other failure this looked like it needed a control for turns out to be LOUD, so it does
+    // not need one. A privilege name the server does not know does not read as false — it raises
+    // `unrecognized privilege type` and the test errors (*measured 2026-09-01*: `bogus_privilege`
+    // and `vacuum` both throw, `maintain` returns a boolean). So a PG16 harness could not have
+    // passed this quietly, which is worth knowing precisely because a green sweep on a server with
+    // no such privilege is the shape one would otherwise write a control against.
+    //
+    // Reading `current_user` here instead — the first version of this control — would have proved
+    // only that the name is understood, which is the half that cannot fail silently anyway. It
+    // would have left the one real vacuity untouched.
     try {
       await db.exec(`create table public.__maintain_control_t (id int);`);
       const control = await db.query<{ inherited: boolean }>(
