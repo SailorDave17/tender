@@ -3,6 +3,7 @@ import { poolForDate } from "@/board/post-view";
 import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { KIND_ANSWER, type AnswerPost, type AnswerStore } from "./answer";
+import { KIND_MATCH, type MatchStore } from "./match";
 import { KIND_RUNG_EMAIL, emailDayStart, type LogEntry, type Pending, type PendingPush, type RungPost, type RungStore } from "./rung";
 
 /**
@@ -251,6 +252,86 @@ export function supabaseAnswerStore(): AnswerStore {
     async deleteSubscription(id) {
       const { error } = await admin.from("push_subscription").delete().eq("id", id);
       if (error) fail("delete subscription", error);
+    },
+
+    async log(entry: LogEntry) {
+      const { error } = await admin.from("notification_log").insert({
+        kind: entry.kind,
+        channel: entry.channel,
+        person_id: entry.personId,
+        to_email: entry.toEmail,
+        post_id: entry.postId,
+        provider_id: entry.providerId,
+        error: entry.error,
+      });
+      if (error) fail("log", error);
+    },
+  };
+}
+
+/**
+ * The MatchStore over the live database, as the service role (story #33). Same division of
+ * labour again: every rule is in notifyMatch(), this only reads and writes. The one read the
+ * earlier stores do not make — the match row's two parties — is what 0018's
+ * `grant select on public.match to service_role` exists for.
+ */
+export function supabaseMatchStore(): MatchStore {
+  const admin = supabaseAdmin();
+  return {
+    async post(postId): Promise<RungPost | null> {
+      const { data, error } = await admin
+        .from("post")
+        .select("id, race_date_id, minimum, current_rung, closed_at, boat:boat_id (name, class), race_date:race_date_id (starts_at, title)")
+        .eq("id", postId)
+        .maybeSingle();
+      if (error) fail("read post for match", error);
+      if (!data) return null;
+      const boat = (Array.isArray(data.boat) ? data.boat[0] : data.boat) as { name: string; class: string };
+      const date = (Array.isArray(data.race_date) ? data.race_date[0] : data.race_date) as { starts_at: string; title: string };
+      return {
+        id: data.id,
+        raceDateId: data.race_date_id,
+        boatClass: boat.class,
+        boatName: boat.name,
+        minimum: data.minimum,
+        startsAt: date.starts_at,
+        dateTitle: date.title,
+        currentRung: data.current_rung,
+        closedAt: data.closed_at,
+      };
+    },
+
+    async matchByPost(postId) {
+      const { data, error } = await admin.from("match").select("skipper_id, crew_id").eq("post_id", postId).maybeSingle();
+      if (error) fail("read match", error);
+      return data ? { skipperId: data.skipper_id, crewId: data.crew_id } : null;
+    },
+
+    async name(personId) {
+      const { data, error } = await admin.from("person").select("display_name").eq("id", personId).maybeSingle();
+      if (error) fail("read person name", error);
+      return data?.display_name ?? null;
+    },
+
+    async email(personId) {
+      const { data, error } = await admin.from("person_contact").select("email").eq("person_id", personId).maybeSingle();
+      if (error) fail("read match contact", error);
+      return data?.email ?? null;
+    },
+
+    async emailsSentToday(now) {
+      // All three attempt kinds, unlike supabaseRungStore()'s rung_email-only count: the cap is
+      // Resend's, which counts every send, so the widest count available is the honest one here.
+      // (The rung store's narrower count predates the answer and match kinds and is noted on
+      // #33 rather than changed by it.)
+      const { count, error } = await admin
+        .from("notification_log")
+        .select("id", { count: "exact", head: true })
+        .eq("channel", "email")
+        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH])
+        .gte("sent_at", emailDayStart(now).toISOString());
+      if (error) fail("count today's email for match", error);
+      return count ?? 0;
     },
 
     async log(entry: LogEntry) {

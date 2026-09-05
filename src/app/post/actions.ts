@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { answerState } from "@/post/answer-rules";
 import { UUID, parsePostForm } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
-import { notifyAnswerLive, notifyRungLive } from "@/notify/live";
+import { notifyAnswerLive, notifyMatchLive, notifyRungLive } from "@/notify/live";
 
 /**
  * A skipper's two writes on a post: post a need, close it. Both through the cookie-bound
@@ -160,6 +160,10 @@ export async function acceptAnswer(formData: FormData): Promise<void> {
   const client = await supabaseServer();
   const { error } = await client.rpc("accept_answer", { post_id: id, person_id: personId });
   if (error) redirect(`/post/${id}?error=${error.code === "23505" ? "matched" : "refused"}`);
+
+  // Both parties are emailed the moment the match forms (story #33). Runs after accept_answer()
+  // succeeded, as the service role, and a failure in it never undoes the match.
+  await notifyMatchLive(id);
 
   revalidatePath("/board");
   revalidatePath(`/post/${id}`);
