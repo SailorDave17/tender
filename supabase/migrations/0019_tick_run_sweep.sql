@@ -1,0 +1,34 @@
+-- 0019 — tick_run.sweep_at: when Vercel's daily sweep last called the tick (story #145).
+--
+-- **Paste after 0012**, which creates the table; in numeric order after 0018 is the expected
+-- path. It creates no table and no function, so the rule that 0015 and 0016 go last does not
+-- reach it: a column added to an existing table is covered by that table's grants and nothing
+-- else, and 0012 already took every one of them away from `anon`.
+--
+-- Paste it BEFORE promoting the `develop` that carries #145. From that deployment on, /admin
+-- selects `sweep_at` and the daily sweep writes it. Against a project without the column the
+-- read errors, and /admin then prints "never" for both clocks. The write fails the sweep with a 500.
+--
+-- WHY A SECOND STAMP. Both clocks write `last_at`: pg_cron every 15 minutes, Vercel's cron once
+-- a day. The table is one row by construction (0012), so the daily call is overwritten within
+-- 15 minutes and says nothing about who made it. The only place the two could be told apart was
+-- the Vercel function log, and Hobby keeps that for one hour. Every scheduled firing from
+-- 2026-09-02 to 2026-09-13 expired there unread (#130 AC 3). `net._http_response` holds only
+-- pg_cron's side, for about six hours. This column is the daily sweep's own record, readable
+-- days later.
+--
+-- WHO WRITES IT. The tick, and only when the request carries Vercel's `x-vercel-cron-schedule`
+-- header (`tickCaller` in src/engine/tick-handler.ts). pg_cron's POST sends no `sweep_at` key at
+-- all, and an upsert updates only the keys it is given, so the daily stamp stands through the
+-- quarter-hour ticks between sweeps. It lands in the same write as `last_at`, after the work,
+-- so a sweep that throws part-way leaves the previous stamp standing.
+--
+-- GRANTS: NONE NEW, ON PURPOSE. 0012's grants are table-level: select to `authenticated` behind
+-- `tick_run_read_admin`, and select/insert/update to `service_role`. A table-level grant covers a
+-- column added later. So an admin reads this column, the service role writes it, and no client
+-- role can write it, for the same reasons as `last_at`. `test/tick.test.ts` holds all three.
+--
+-- NULL MEANS NEVER. No default and no backfill: until the first sweep after this paste there is
+-- nothing to report, and /admin prints "never". That is the honest answer, and the loud one.
+
+alter table public.tick_run add column sweep_at timestamptz;

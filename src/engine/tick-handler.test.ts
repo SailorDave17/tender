@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Crew, Rung } from "./ladder";
-import { handleTick } from "./tick-handler";
+import { handleTick, tickCaller, VERCEL_CRON_HEADER, type TickRunRow } from "./tick-handler";
 import type { NewSuggestion, Suggested, TickPost, TickRepo } from "./tick";
 
 /**
@@ -15,6 +15,8 @@ import type { NewSuggestion, Suggested, TickPost, TickRepo } from "./tick";
 const SECRET = "cron-secret-for-the-tests";
 const NOW = new Date("2027-06-06T12:00:00Z");
 const RACE = new Date("2027-06-13T17:00:00Z");
+/** What Vercel sends as `x-vercel-cron-schedule` for `vercel.json`'s one cron. */
+const DAILY = "0 12 * * *";
 
 const post = (id: string): TickPost => ({
   id,
@@ -59,20 +61,25 @@ function setUp(over: { pool?: Crew[]; posts?: TickPost[] } = {}) {
   repo.posts = over.posts ?? [post("p1")];
   repo.pool = over.pool ?? [{ id: "a", rating: 2, hulls: ["Thistle"], available: true }];
   const dispatched: string[] = [];
-  const stamps: Date[] = [];
+  const stamps: TickRunRow[] = [];
   const deps = {
     secret: SECRET,
+    // pg_cron's POST, unless a test says otherwise: it carries no x-vercel-cron-schedule.
+    cronSchedule: null as string | null,
     repo,
     dispatch: async (p: TickPost) => {
       dispatched.push(p.id);
     },
-    recordRun: async (now: Date) => {
-      stamps.push(now);
+    recordRun: async (row: TickRunRow) => {
+      stamps.push(row);
     },
     now: NOW,
   };
   return { repo, dispatched, stamps, deps };
 }
+
+/** The row pg_cron's tick writes: `last_at` and nothing else, so the daily stamp is left alone. */
+const clockRow = { id: 1, last_at: NOW.toISOString() };
 
 describe("handleTick — the refusal", () => {
   for (const [name, header] of [
@@ -116,7 +123,7 @@ describe("handleTick — the run", () => {
     const res = await handleTick({ ...deps, authorization: `Bearer ${SECRET}` });
     expect(res.body).toEqual({ posts: 2, newSuggestions: 1 });
     expect(dispatched).toEqual(["p1"]);
-    expect(stamps).toEqual([NOW]);
+    expect(stamps).toEqual([clockRow]);
   });
 
   it("stamps a tick that found nothing to do — a quiet clock and a dead one must not look alike", async () => {
@@ -124,7 +131,7 @@ describe("handleTick — the run", () => {
     const res = await handleTick({ ...deps, authorization: `Bearer ${SECRET}` });
     expect(res.body).toEqual({ posts: 0, newSuggestions: 0 });
     expect(dispatched).toEqual([]);
-    expect(stamps).toEqual([NOW]);
+    expect(stamps).toEqual([clockRow]);
   });
 
   it("does not stamp a run that threw — the previous stamp stands and /admin goes on aging", async () => {
@@ -134,5 +141,69 @@ describe("handleTick — the run", () => {
     };
     await expect(handleTick({ ...deps, authorization: `Bearer ${SECRET}` })).rejects.toThrow("the database said no");
     expect(stamps).toEqual([]);
+  });
+});
+
+/**
+ * #145 AC 2. Two clocks call the same route, and only the daily one may move `sweep_at`. The caller
+ * is injected as the one header that decides it, exactly as the route hands it over.
+ */
+describe("handleTick — which clock called (#145)", () => {
+  it("Vercel's cron moves both the daily stamp and last_at", async () => {
+    const { stamps, deps } = setUp();
+    const res = await handleTick({ ...deps, authorization: `Bearer ${SECRET}`, cronSchedule: DAILY });
+    expect(res.status).toBe(200);
+    expect(stamps).toEqual([{ id: 1, last_at: NOW.toISOString(), sweep_at: NOW.toISOString() }]);
+  });
+
+  it("pg_cron moves only last_at, and sends no sweep_at key, so the daily stamp is left standing", async () => {
+    const { stamps, deps } = setUp();
+    await handleTick({ ...deps, authorization: `Bearer ${SECRET}`, cronSchedule: null });
+    expect(stamps).toEqual([clockRow]);
+    // Absent, not null: an upsert carrying `sweep_at: null` would ERASE the daily stamp.
+    expect(Object.keys(stamps[0])).not.toContain("sweep_at");
+  });
+
+  it("a refused call carrying Vercel's header moves neither stamp", async () => {
+    const { repo, stamps, deps } = setUp();
+    const res = await handleTick({ ...deps, authorization: "Bearer not-the-secret", cronSchedule: DAILY });
+    expect(res.status).toBe(401);
+    expect(repo.calls).toEqual([]);
+    expect(stamps).toEqual([]);
+  });
+
+  it("a sweep that threw part-way leaves the previous daily stamp standing too", async () => {
+    const { stamps, deps, repo } = setUp();
+    repo.openPosts = async () => {
+      throw new Error("the database said no");
+    };
+    await expect(
+      handleTick({ ...deps, authorization: `Bearer ${SECRET}`, cronSchedule: DAILY }),
+    ).rejects.toThrow("the database said no");
+    expect(stamps).toEqual([]);
+  });
+});
+
+/**
+ * #145 AC 3. The discriminator is the `x-vercel-cron-schedule` header, which Vercel documents on
+ * every cron invocation, and not the method or the user agent (owner decision 2026-09-13; the
+ * reasons are in tick-handler.ts). These name it, so a change of key is a visible change here.
+ */
+describe("tickCaller keys on the x-vercel-cron-schedule header", () => {
+  it("the header the route reads is x-vercel-cron-schedule", () => {
+    expect(VERCEL_CRON_HEADER).toBe("x-vercel-cron-schedule");
+  });
+
+  it("a request carrying it is Vercel's cron", () => {
+    expect(tickCaller(DAILY)).toBe("vercel-cron");
+  });
+
+  it("a request without it is not — pg_cron's POST, or anyone else holding the secret", () => {
+    expect(tickCaller(null)).toBe("other");
+  });
+
+  it("an empty or blank header is not Vercel's cron either", () => {
+    expect(tickCaller("")).toBe("other");
+    expect(tickCaller("   ")).toBe("other");
   });
 });
