@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseRungStore } from "@/notify/store";
 import type { RungStore } from "@/notify/rung";
 import type { Suggested, TickPost, TickRepo } from "./tick";
+import type { TickRunRow } from "./tick-handler";
 
 /**
  * The TickRepo over the live database, as the service role — the second of AC 1's two adapters
@@ -87,9 +88,13 @@ export function supabaseTickRepo(store: RungStore = supabaseRungStore()): TickRe
  *
  * Deliberately NOT swallowed: a tick that did its work and could not record it must not answer
  * 200, or the admin screen goes on reporting a healthy clock from the last stamp that landed.
+ *
+ * The row comes from `tickRunRow()` and carries `sweep_at` only when Vercel's cron called (#145,
+ * 0019). An upsert of ONE object updates only that object's keys (PostgREST's merge-duplicates,
+ * no `columns` parameter for a non-array), so a pg_cron tick leaves the daily stamp standing.
  */
-export async function recordTickRun(now: Date): Promise<void> {
+export async function recordTickRun(row: TickRunRow): Promise<void> {
   const admin = supabaseAdmin();
-  const { error } = await admin.from("tick_run").upsert({ id: 1, last_at: now.toISOString() }, { onConflict: "id" });
+  const { error } = await admin.from("tick_run").upsert(row, { onConflict: "id" });
   if (error) fail("record tick run", error);
 }

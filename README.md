@@ -437,6 +437,18 @@ over whatever arrived.
    is a sweep rather than the clock — pg_cron is the clock, and this is what still fires if
    pg_cron wedges (ADR 004).
 
+   **Is the daily sweep alive?** `/admin` prints *last daily sweep* beside the tick, with its UTC
+   time (#145). That stamp is `tick_run.sweep_at` (`0019`), and it moves only on a request carrying
+   Vercel's `x-vercel-cron-schedule` header, so pg_cron's quarter-hour ticks do not overwrite it.
+   The function log cannot answer the question for long: Hobby keeps it for one hour. **Apply
+   `0019` before promoting the `develop` that carries it.** Until then `/admin`'s read fails and
+   prints *never* for both clocks, and the daily sweep's own write fails it with a 500.
+   Confirm it after the first scheduled window:
+
+   ```sql
+   select last_at, sweep_at from public.tick_run;   -- sweep_at inside 12:00–13:00 UTC today
+   ```
+
 3. **Vercel**: import the repo, set the production branch to `release`, add the environment
    variables, turn on Deployment Protection → Standard Protection (previews carry the production
    Supabase host), add the domain `tender.madcowsailing.com` (CNAME per Vercel's per-project

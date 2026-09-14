@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { Message, Transport } from "@/email/send";
-import { handleTick } from "@/engine/tick-handler";
+import { handleTick, type TickRunRow } from "@/engine/tick-handler";
 import type { TickPost } from "@/engine/tick";
 import { dispatchPending } from "@/notify/rung";
 import { as, freshDb } from "./pglite";
@@ -128,24 +128,33 @@ async function svc(sql: string, params: unknown[] = []) {
 }
 
 /** One tick, exactly as the route runs one — the same handler, the same order, real SQL beneath. */
-async function tick(now: Date, opts: { authorization?: string | null; refuse?: string[] } = {}) {
+async function tick(
+  now: Date,
+  opts: { authorization?: string | null; cronSchedule?: string | null; refuse?: string[] } = {},
+) {
   const transport = new FakeTransport();
   for (const to of opts.refuse ?? []) transport.refuse.add(to);
   const store = pgliteDispatchStore(db);
   const response = await handleTick({
     authorization: opts.authorization === undefined ? `Bearer ${SECRET}` : opts.authorization,
+    cronSchedule: opts.cronSchedule ?? null,
     secret: SECRET,
     repo: pgliteTickRepo(db),
     dispatch: async (post: TickPost) => {
       await dispatchPending(post, { store, transport, now, siteUrl: SITE });
     },
     // What src/engine/tick-store.ts's recordTickRun() does, in this adapter's dialect: the
-    // upsert runs as the service role, so 0012's grants decide whether it lands.
-    recordRun: async (at: Date) => {
+    // upsert runs as the service role, so 0012's grants decide whether it lands. Built from the
+    // row's OWN keys, as PostgREST's merge-duplicates builds it from a single object's keys, so
+    // a key the handler leaves out is a column this statement does not touch (#145).
+    recordRun: async (row: TickRunRow) => {
+      const columns = Object.keys(row);
+      const updates = columns.filter((c) => c !== "id").map((c) => `${c} = excluded.${c}`);
       await svc(
-        `insert into public.tick_run (id, last_at) values (1, $1)
-           on conflict (id) do update set last_at = excluded.last_at`,
-        [at.toISOString()],
+        `insert into public.tick_run (${columns.join(", ")})
+           values (${columns.map((_, i) => `$${i + 1}`).join(", ")})
+           on conflict (id) do update set ${updates.join(", ")}`,
+        Object.values(row),
       );
     },
     now,
@@ -453,5 +462,87 @@ describe("AC 5 — tick_run records the run, and only an admin can read it", () 
     await expect(
       as(db, "authenticated", `insert into public.tick_run (id, last_at) values (1, now())`, SKIPPER),
     ).rejects.toThrow(/permission denied/);
+  });
+});
+
+/**
+ * #145. The daily sweep's own stamp, `sweep_at` (0019), through the same handler and real SQL. It
+ * runs after AC 5 above, so the one row exists and SKIPPER is already the admin. The ticks are on a
+ * day after every race, so they have nothing to act on and only the stamps can change.
+ */
+describe("#145 — sweep_at records Vercel's daily sweep, and pg_cron's tick leaves it standing", () => {
+  const SWEEP = new Date("2027-09-03T12:37:00Z"); // inside the 12:00–13:00 UTC Hobby window
+  const CLOCK = new Date("2027-09-03T12:45:00Z"); // pg_cron's next quarter-hour, eight minutes on
+
+  async function stamps() {
+    const r = await db.query<{ n: number; last_at: string; sweep_at: string | null }>(
+      `select count(*)::int as n, max(last_at)::text as last_at, max(sweep_at)::text as sweep_at from public.tick_run`,
+    );
+    const row = r.rows[0];
+    return {
+      rows: row.n,
+      lastAt: new Date(row.last_at).getTime(),
+      sweepAt: row.sweep_at === null ? null : new Date(row.sweep_at).getTime(),
+    };
+  }
+
+  it("the column exists and is empty before any sweep — the state right after 0019 is pasted", async () => {
+    const s = await stamps();
+    expect(s.rows).toBe(1); // the precondition: AC 5's row, stamped by the quarter-hour clock only
+    expect(s.sweepAt).toBeNull();
+  });
+
+  it("AC 2: Vercel's cron moves both stamps", async () => {
+    const { response } = await tick(SWEEP, { cronSchedule: "0 12 * * *" });
+    expect(response.status).toBe(200);
+    expect(await stamps()).toEqual({ rows: 1, lastAt: SWEEP.getTime(), sweepAt: SWEEP.getTime() });
+  });
+
+  it("AC 2: pg_cron's tick moves last_at and leaves the daily stamp where the sweep put it", async () => {
+    const { response } = await tick(CLOCK, { cronSchedule: null });
+    expect(response.status).toBe(200);
+    expect(await stamps()).toEqual({ rows: 1, lastAt: CLOCK.getTime(), sweepAt: SWEEP.getTime() });
+  });
+
+  it("AC 2: a refused call carrying Vercel's header moves neither", async () => {
+    const was = await stamps();
+    const { response } = await tick(new Date("2027-09-04T12:10:00Z"), {
+      authorization: "Bearer not-the-secret",
+      cronSchedule: "0 12 * * *",
+    });
+    expect(response.status).toBe(401);
+    expect(await stamps()).toEqual(was);
+  });
+
+  it("AC 1: an admin reads it; a signed-in crew reads nothing; anon is refused outright", async () => {
+    const admin = await as(db, "authenticated", `select sweep_at::text as sweep_at from public.tick_run`, SKIPPER);
+    expect(admin.rows).toHaveLength(1);
+    expect(new Date((admin.rows[0] as { sweep_at: string }).sweep_at).getTime()).toBe(SWEEP.getTime());
+    expect((await as(db, "authenticated", `select sweep_at from public.tick_run`, R1)).rows).toEqual([]);
+    await expect(as(db, "anon", `select sweep_at from public.tick_run`)).rejects.toThrow(/permission denied/);
+  });
+
+  it("AC 1: no client role may write it, and the service role can — read back, not assumed", async () => {
+    await expect(
+      as(db, "authenticated", `update public.tick_run set sweep_at = now() where id = 1`, SKIPPER),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      as(db, "authenticated", `insert into public.tick_run (id, last_at, sweep_at) values (1, now(), now())`, SKIPPER),
+    ).rejects.toThrow(/permission denied/);
+    await expect(as(db, "anon", `update public.tick_run set sweep_at = now() where id = 1`)).rejects.toThrow(
+      /permission denied/,
+    );
+    expect((await stamps()).sweepAt).toBe(SWEEP.getTime()); // and none of them moved it
+
+    // The positive control, on the same column: without it, the three refusals above would read
+    // the same for a grant that is missing for EVERY role. `returning` plus the count, because an
+    // update matching no row does not throw (overlay: a positive control must read the write back).
+    const LATER = new Date("2027-09-04T12:20:00Z");
+    const written = await svc(`update public.tick_run set sweep_at = $1 where id = 1 returning sweep_at::text as sweep_at`, [
+      LATER.toISOString(),
+    ]);
+    expect(written.affectedRows).toBe(1);
+    expect(new Date((written.rows[0] as { sweep_at: string }).sweep_at).getTime()).toBe(LATER.getTime());
+    expect((await stamps()).sweepAt).toBe(LATER.getTime());
   });
 });
