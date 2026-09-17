@@ -1,7 +1,7 @@
 -- 0015 — take away the privileges nobody asked for: everything `anon` holds, and the whole-table
 -- grants `authenticated` holds on `club` (story #48).
 --
--- **Paste after 0014**, in numeric order and LAST of the set. Every statement acts on objects the
+-- **Apply after 0014**, in numeric order and LAST of the set. Every statement acts on objects the
 -- earlier files create and this file creates nothing, so pasting it early leaves the tables and
 -- functions that came after it untouched by the sweep — the `alter default privileges` lines
 -- below would still cover them, but the sweep would not, and the two are not the same guard.
@@ -148,7 +148,7 @@
 -- `owns_boat` did not, which is how `anon` came to be able to execute them with no file saying
 -- so. The guard is `test/anon-grants.test.ts`, which asserts that NO function in `public` is
 -- executable by `anon` and names the ones that are — so the next migration that forgets is red
--- before it is pasted, rather than found by a probe two months later.
+-- before it is applied, rather than found by a probe two months later.
 
 -- Sweep: every table, sequence and function that exists today.
 revoke all on all tables in schema public from anon;

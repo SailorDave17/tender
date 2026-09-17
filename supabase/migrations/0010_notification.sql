@@ -1,7 +1,7 @@
 -- 0010 — the persisted rung, the suggestion ledger and the notification log (story #23).
 --
 -- Numbered 0010 rather than the filing plan's 0009, which #64 consumed (owner decision
--- 2026-08-23; #69 and #68 moved to 0011 and 0012 in the same action). **Paste after 0009**, in
+-- 2026-08-23; #69 and #68 moved to 0011 and 0012 in the same action). **Apply after 0009**, in
 -- numeric order: this file alters post (0006) and references person (0002).
 --
 --   post.current_rung   the rung the post is OPEN to, persisted and monotone. Until now the

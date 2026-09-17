@@ -1,7 +1,7 @@
 -- 0011 — the competence scale gains a fourth level: "can fly a spinnaker", between hike-and-trim
 -- and helm (story #69, owner decision 2026-08-23).
 --
--- Paste order: after 0010. Depends on 0005 (person.rating) and 0006 (boat.default_minimum,
+-- Apply order: after 0010. Depends on 0005 (person.rating) and 0006 (boat.default_minimum,
 -- post.minimum) — this file only widens what those three created.
 --
 -- The scale is an ORDINAL the engine compares with `<` (src/engine/ladder.ts), so the new level
@@ -43,7 +43,7 @@ alter table public.post
 
 -- ---------------------------------------------------------------------------------------------
 -- 2. Renumber the existing helms, now that 4 is legal. One statement each, and each is a no-op
---    on a project with no rows at 3 — which is what makes this safe to paste after the fact.
+--    on a project with no rows at 3 — which is what makes this safe to apply after the fact.
 -- ---------------------------------------------------------------------------------------------
 
 update public.person set rating          = 4 where rating          = 3;

@@ -1,6 +1,6 @@
 -- 0018 — service_role reads `match`, for the match-formed emails (story #33).
 --
--- Numbered by arrival: 0017 was on disk when this story started. **Paste after 0008**, which
+-- Numbered by arrival: 0017 was on disk when this story started. **Apply after 0008**, which
 -- creates the table; in numeric order after 0017 is fine and is the expected path.
 --
 -- notifyMatch() (src/notify/match.ts) reads the match row — who the skipper and the crew are —

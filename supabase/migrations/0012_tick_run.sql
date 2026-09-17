@@ -1,6 +1,6 @@
 -- 0012 — tick_run: when the ladder clock last ran (story #25).
 --
--- **Paste after 0011**, in numeric order. It reads is_admin() (0004), which every earlier paste
+-- **Apply after 0011**, in numeric order. It reads is_admin() (0004), which every earlier migration
 -- has already created.
 --
 -- NUMBERING. The filing plan gave this story no migration; 0012 is simply the next free number

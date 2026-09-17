@@ -1,10 +1,10 @@
 -- 0003 — rotate the invite code in one admin action (story #16).
 --
 -- Numbered per the filing plan and landing after 0004–0008, so the sequence on disk is now
--- complete but the paste order is not the numeric order. **Paste after 0004**: both functions
+-- complete but the apply order is not the numeric order. **Apply after 0004**: both functions
 -- below call is_admin() (0004) and read club (0001). Both are `language plpgsql`, whose body is
 -- resolved at CALL time and not at CREATE (a `language sql` body would have refused to be
--- created ahead of 0004 — measured on 0004 itself against 0002), so pasting this file before
+-- created ahead of 0004 — measured on 0004 itself against 0002), so applying this file before
 -- 0004 would succeed and leave two functions that raise 42883 on first use. The pglite harness
 -- applies files in name order, 0003 before 0004, and that is why it still works there: nothing
 -- calls either function until every file is in. The tests call both, so an unsatisfied

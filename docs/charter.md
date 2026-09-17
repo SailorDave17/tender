@@ -184,8 +184,10 @@ standalone-on-burgee's-choices (pre-decides the research), burgee module (extern
   ping needs occasional activity or a spring check.
 - **Domain**: **tender.madcowsailing.com** (owner decision) — $0 marginal on the existing
   Cloudflare zone; Resend sends from the subdomain.
-- **Operations**: the owner — merge PRs, promote `develop` → `release`, paste migrations, read
-  the metric monthly. Nobody is on call.
+- **Operations**: the owner — merge PRs, promote `develop` → `release`, decide when migrations are
+  applied, read the metric monthly. Nobody is on call. *(Updated 2026-09-17: this read “paste
+  migrations” until story #114 shipped `npm run migrate:live` on 2026-09-01 — a session applies the
+  file at the owner's go-ahead, so what is the owner's here is the decision, not the keystrokes.)*
 
 ## What must become true
 

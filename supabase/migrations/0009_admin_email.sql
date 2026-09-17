@@ -1,8 +1,8 @@
 -- 0009 — the club's configured admin becomes admin on sign-in (story #64).
 --
--- **Paste after 0008**, in numeric order: the trigger on person_contact needs 0002, and the one
+-- **Apply after 0008**, in numeric order: the trigger on person_contact needs 0002, and the one
 -- on club needs 0001. Both are `language plpgsql` and resolve their tables at call time, so a
--- paste out of order would succeed and fail at the first sign-in instead
+-- an apply out of order would succeed and fail at the first sign-in instead
 -- (cairn: a-dropped-table-does-not-drop-its-readers).
 --
 -- Why: PR #62 was promoted to `release` before any person.is_admin had been set, and nothing
