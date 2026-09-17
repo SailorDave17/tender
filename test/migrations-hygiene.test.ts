@@ -3,7 +3,11 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 import { EXPECTED_FUNCTIONS, EXPECTED_TABLES } from "../scripts/check-live-expected.mjs";
+import { MESSAGE_BODY_MAX } from "../src/post/thread-view";
 import { freshDb } from "./pglite";
+
+/** A uuid that matches no match and no person — so an insert reaches the FK and stops there. */
+const NIL_MATCH = "00000000-0000-4000-8000-000000000000";
 
 /**
  * Two facts about the migration set that are otherwise held by hand.
@@ -50,6 +54,43 @@ describe("check:live expects exactly the tables the migrations create", () => {
     const created = r.rows.map((x) => x.tablename);
     expect(created.length).toBeGreaterThan(0);
     expect([...EXPECTED_TABLES].sort()).toEqual(created);
+  });
+
+  // The message body cap (story #35) is one rule with three enforcement points — the textarea's
+  // maxLength, the server action's refusal, and 0020's check constraint, which is the only one a
+  // direct POST cannot bypass. They are held equal here because a cap that drifts apart reads as
+  // working from every surface a person can see (cairn:
+  // a-computable-claim-does-not-belong-in-prose).
+  it("MESSAGE_BODY_MAX equals the length 0020's check constraint actually enforces", async () => {
+    const ok = "x".repeat(MESSAGE_BODY_MAX);
+    const over = "x".repeat(MESSAGE_BODY_MAX + 1);
+    // Asked of the constraint itself rather than of the migration's text: a regex over the SQL
+    // would pass on a file whose literal was right and whose constraint was never created.
+    const check = await db.query<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def from pg_constraint
+        where conrelid = 'public.message'::regclass and contype = 'c'`,
+    );
+    expect(check.rows).toHaveLength(1);
+    expect(check.rows[0]?.def).toContain(String(MESSAGE_BODY_MAX));
+
+    // And measured, so the number in the definition is the number in force. Run as the table's
+    // OWNER (the harness superuser, no `set role`), because the subject here is the CHECK and
+    // nothing else: 0020 grants service_role select only — it is a reader, not a writer — so a
+    // `set role service_role` insert is refused for a reason that has nothing to do with length.
+    // That is not a flaw in the grant; message.test.ts asserts exactly that grant on purpose,
+    // and the first draft of this test tripped over it, which is the grant doing its job.
+    await expect(
+      db.query(`insert into public.message (match_id, author_id, body)
+                  values ('${NIL_MATCH}', '${NIL_MATCH}', '${over}')`),
+    ).rejects.toThrow(/violates check/i);
+    // The at-the-limit control has to fail on the FOREIGN KEY rather than the check, which is
+    // what proves the length was accepted: seeding a real match here would duplicate
+    // message.test.ts's fixture for no gain. Two different errors is the whole assertion — one
+    // shared `rejects.toThrow()` would pass with the check missing.
+    await expect(
+      db.query(`insert into public.message (match_id, author_id, body)
+                  values ('${NIL_MATCH}', '${NIL_MATCH}', '${ok}')`),
+    ).rejects.toThrow(/foreign key/i);
   });
 
   // Every .rpc("name", { args }) in a source text, with the argument NAMES it passes — the keys

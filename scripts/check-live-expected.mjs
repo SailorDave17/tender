@@ -14,6 +14,7 @@ export const EXPECTED_TABLES = [
   "boat_class",
   "club",
   "match",
+  "message",
   "notification_log",
   "person",
   "person_contact",

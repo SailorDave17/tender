@@ -4,8 +4,9 @@ import { resendTransport } from "@/email/send";
 import { webPushTransport, type PushTransport } from "@/push/send";
 import { notifyAnswer, type AnswerNotifyResult } from "./answer";
 import { notifyMatch, type MatchNotifyResult } from "./match";
+import { notifyMessage, type MessageNotifyResult } from "./message";
 import { dispatchPending, notifyRung, type NotifyResult, type RungPost } from "./rung";
-import { supabaseAnswerStore, supabaseMatchStore, supabaseRungStore } from "./store";
+import { supabaseAnswerStore, supabaseMatchStore, supabaseMessageStore, supabaseRungStore } from "./store";
 
 /**
  * notifyRung() with the live dependencies, for the two Server Actions that call it (post
@@ -98,6 +99,31 @@ export async function notifyMatchLive(postId: string): Promise<MatchNotifyResult
     });
   } catch (e) {
     console.error(`notifyMatch(${postId}) failed:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * notifyMessage() with the live dependencies, for the thread's send action (story #35). Same
+ * swallow as the three above and for the same reason: the message row is already written and is
+ * visible in the thread to both parties, and a notification that could not be attempted must not
+ * undo it or show the author an error about the other person's inbox.
+ *
+ * WITH the push transport, unlike notifyMatchLive: a message is perishable in the way a match is
+ * not — "which dock, what time" is worth a phone buzzing, and AC 3 asks for push where it is
+ * installed and email otherwise.
+ */
+export async function notifyMessageLive(messageId: string): Promise<MessageNotifyResult | null> {
+  try {
+    return await notifyMessage(messageId, {
+      store: supabaseMessageStore(),
+      transport: resendTransport(),
+      push: livePushTransport(),
+      now: new Date(),
+      siteUrl: await siteUrl(),
+    });
+  } catch (e) {
+    console.error(`notifyMessage(${messageId}) failed:`, e instanceof Error ? e.message : e);
     return null;
   }
 }
