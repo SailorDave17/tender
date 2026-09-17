@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
-import { lastTickLabel } from "@/engine/tick";
 import { supabaseServer } from "@/lib/supabase/server";
 import { rotateInviteCode } from "./actions";
+import { ClockPulse } from "./ClockPulse";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,8 @@ export const dynamic = "force-dynamic";
  * observation from inside the app — no email, no changed row — so without a stamp the clock's
  * death is silent for as long as nobody notices posts failing to widen. A missing row reads as
  * "never", which is the honest answer before the first tick and, after #26 wires the schedulers,
- * the loudest thing on the page.
+ * the loudest thing on the page. Since #145 the same row carries the daily sweep's own stamp
+ * (`sweep_at`, 0019), printed beside it by `ClockPulse`.
  */
 export default async function AdminPage({
   searchParams,
@@ -43,7 +44,7 @@ export default async function AdminPage({
   // 0012's one row, or none before the first tick. maybeSingle() so "never ticked" is a value
   // rather than an error — and note that a non-admin would read zero rows for a different
   // reason, which is why nothing but this admin-only page reads the table (0012's header).
-  const { data: tick } = await client.from("tick_run").select("last_at").maybeSingle();
+  const { data: tick } = await client.from("tick_run").select("last_at, sweep_at").maybeSingle();
   const { confirm, rotated, error } = await searchParams;
 
   return (
@@ -54,12 +55,11 @@ export default async function AdminPage({
       </p>
 
       <h2>Ladder clock</h2>
-      <p>
-        Last tick <strong data-last-tick>{lastTickLabel(tick ? new Date(tick.last_at) : null, new Date())}</strong>.
-        The clock widens an untaken post to amber 48 h before the race and to red at 24 h, and
-        emails the crew it reaches. It should run every 15 minutes; a number climbing past that
-        means it has stopped.
-      </p>
+      <ClockPulse
+        lastAt={tick ? new Date(tick.last_at) : null}
+        sweepAt={tick?.sweep_at ? new Date(tick.sweep_at) : null}
+        now={new Date()}
+      />
 
       <h2>Invite code</h2>
       <p>
