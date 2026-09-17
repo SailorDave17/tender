@@ -142,7 +142,7 @@ Its expectations are **parsed out of `supabase/migrations/*.sql`**, never listed
 That is the whole design rather than a convenience: a hand-written expectation has the same author
 as the migration, on the same day, from the same understanding, so it certifies agreement rather
 than presence — and agrees with itself in exactly the case the command exists for, which is the
-migration somebody wrote and forgot to paste. Adding a migration needs no edit to the command; a
+migration somebody wrote and forgot to apply. Adding a migration needs no edit to the command; a
 statement in a shape nobody has written before is **refused** rather than skipped, so a kind it
 cannot read can never be silently unchecked.
 
@@ -201,7 +201,7 @@ over whatever arrived.
 - `develop` is the default and integration branch. Feature branches → PR → `develop`.
 - `release` is Vercel's production branch. **Merging into `develop` deploys nothing**; promoting
   `develop` → `release` is the deploy, and it is the owner's — after any new migration has been
-  pasted into the live project.
+  applied to the live project (`npm run migrate:live <file>`; see *Applying a migration*).
 - `main` is the **backup branch**: a known-good working version to fall back to if `release`
   breaks and cannot be fixed in place. It is promoted **from `release`** by a pull request the
   owner merges — from the branch production actually ran, so the backup is by construction a
@@ -214,15 +214,18 @@ over whatever arrived.
 
 ## Owner runbook — the steps only the owner can do
 
-1. **Create the Supabase project** (Free; region near Ohio). Paste every `supabase/migrations/*.sql`
-   in the SQL editor — numeric order, except **0003 after 0004** (its functions call `is_admin()`,
+1. **Create the Supabase project** (Free; region near Ohio). Then apply every
+   `supabase/migrations/*.sql` — `npm run migrate:live <file>` per file once
+   `SUPABASE_ACCESS_TOKEN` is set in step 2, or the SQL editor before it is. Either route uses the
+   same order: numeric, except **0003 after 0004** (its functions call `is_admin()`,
    which 0004 creates). **The revoke files must be last** — 0015 and 0016 — which numeric order
    already gives you: they create nothing and only take privileges away from what the earlier
-   files created, so a table pasted after them keeps the platform's default grant to `anon` and
+   files created, so a table applied after them keeps the platform's default grant to `anon` and
    the sweep never saw it. Until 0015 is
-   pasted, `npm run check:live` exits 1 and names what `anon` can still reach — on the live
-   project as of 2026-08-30 that is `club`, `answer_counts()` and `accept_answer()`. Then paste
-   the **club row**, which no migration seeds and without which
+   applied, `npm run check:live` exits 1 and names what `anon` can still reach — on the live
+   project as of 2026-08-30 that is `club`, `answer_counts()` and `accept_answer()`. Then seed
+   the **club row** in the SQL editor — it is a row, not a migration, so `migrate:live` does not
+   take it — which no migration seeds and without which
    `/api/join` answers a bare 500 and nobody can sign in (measured 2026-08-23 on the live project,
    whose `club` table was empty):
 

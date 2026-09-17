@@ -1,8 +1,8 @@
 -- 0017 — the ladder clock: pg_cron calls /api/ladder/tick every 15 minutes (story #26).
 --
--- **Paste after 0016.** It creates nothing and reads no table this schema owns, so like 0015 and
--- 0016 it belongs at the end of the set and is safe to re-paste: `cron.schedule` is an UPSERT on
--- the job NAME, so a second paste replaces the schedule rather than adding a second job.
+-- **Apply after 0016.** It creates nothing and reads no table this schema owns, so like 0015 and
+-- 0016 it belongs at the end of the set and is safe to re-apply: `cron.schedule` is an UPSERT on
+-- the job NAME, so a second apply replaces the schedule rather than adding a second job.
 --
 -- NUMBERING. The filing plan gave this story `0010`, which #23 consumed on 2026-08-23, and 0011
 -- to 0016 have landed since. 0017 is the next free number on disk. Same rule as #23 → 0010 and
@@ -63,12 +63,12 @@
 -- the failure `0012`'s header names in as many words: a tick that never runs looks exactly like a
 -- tick that ran and found nothing to do, because both send no email and change no row.
 --
--- Refusing at PASTE time is the cheapest place to catch it. The exception below names the
+-- Refusing at APPLY time is the cheapest place to catch it. The exception below names the
 -- extension and the runbook step, so the person holding the SQL editor is told what to do rather
 -- than left with a job that lies. Enabling pg_net is a dashboard action (Database → Extensions),
 -- which is why this file asks for it rather than running `create extension` itself: applying a
 -- migration and granting the project a new capability are different decisions, and only the first
--- one is what a paste is understood to be.
+-- one is what applying a migration is understood to be.
 --
 -- ---------------------------------------------------------------------------------------------
 -- WHY THE URL AND THE SECRET ARE READ FROM VAULT AT RUN TIME
@@ -115,7 +115,7 @@ begin
   if not exists (select 1 from pg_extension where extname = 'pg_net') then
     raise exception
       'ladder-tick: pg_cron is installed but pg_net is not, so net.http_post cannot be called. '
-      'Enable pg_net first (dashboard: Database -> Extensions), then paste this file again. '
+      'Enable pg_net first (dashboard: Database -> Extensions), then apply this file again. '
       'Scheduling without it would list a job in cron.job that fails every 15 minutes.';
   end if;
 
@@ -123,7 +123,7 @@ begin
     raise exception
       'ladder-tick: pg_cron is installed but supabase_vault is not, so the request URL and the '
       'bearer secret cannot be read. Enable it, create the two secrets named in README.md step 1, '
-      'then paste this file again.';
+      'then apply this file again.';
   end if;
 
   -- Upsert by job NAME, so re-pasting this file replaces the schedule instead of adding a second

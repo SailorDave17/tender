@@ -1,9 +1,9 @@
 -- 0007 — a crew's answer to a post: "I can" (story #20).
 --
 -- Numbered per the filing plan (0003 is #16's invite-code rotation and may land after this
--- file). **Paste order: 0002, 0004, 0005, 0006, then this** — answer references post (0006)
+-- file). **Apply order: 0002, 0004, 0005, 0006, then this** — answer references post (0006)
 -- and person (0002), and can_answer() below is a `language sql` body, validated at CREATE
--- against post and availability (0005), so a missing prerequisite fails the paste with 42P01.
+-- against post and availability (0005), so a missing prerequisite fails the apply with 42P01.
 --
 --   answer   one row per person per post (the pair is the key). A row is the crew saying they
 --            can; withdrawn_at set is the crew taking it back. The row stays when withdrawn —

@@ -1,7 +1,7 @@
 -- 0006 — a skipper's boat and the need it posts against a race date (story #19).
 --
 -- Numbered per the filing plan (0003 is #16's invite-code rotation and may land after this
--- file). **Paste order: 0002, 0004, 0005, then this** — boat references person (0002) and
+-- file). **Apply order: 0002, 0004, 0005, then this** — boat references person (0002) and
 -- boat_class (0005), post references race_date (0004).
 --
 --   boat   owned by a person. Owning a boat is what makes someone a skipper — there is no flag

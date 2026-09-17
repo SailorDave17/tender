@@ -43,7 +43,7 @@ alter table public.person_contact enable row level security;
 -- Privileges. Supabase grants anon, authenticated and service_role ALL on every new public table
 -- through schema default privileges (measured on this project, tender #48), so a table that
 -- grants nothing is still world-readable to any key — until 0015 narrows that default, and on a
--- project where 0015 has not been pasted it is still true today. Revoke first, then grant by column.
+-- project where 0015 has not been applied it is still true today. Revoke first, then grant by column.
 --
 -- Column grants are the only mechanism that restricts COLUMNS; RLS restricts rows. A column
 -- withheld from the select grant makes `select('*')` fail loudly at the client, which is wanted:
@@ -89,7 +89,7 @@ create policy person_contact_read_self on public.person_contact
 --
 -- anon's default grants on club are deliberately not touched here — that is 0015 (story #48),
 -- which owns the schema-wide revoke and the harness change that made it testable. Until 0015 is
--- pasted, anon holds ALL on this table: club is the one table no migration revokes it from, and
+-- applied, anon holds ALL on this table: club is the one table no migration revokes it from, and
 -- `npm run check:live` reports it as REACHABLE.
 -- ---------------------------------------------------------------------------------------------
 

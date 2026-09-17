@@ -34,7 +34,7 @@
 
 /** The relation is there. */
 export const PRESENT = "PRESENT";
-/** The relation is not there — a migration has not been pasted. */
+/** The relation is not there — a migration has not been applied. */
 export const ABSENT = "ABSENT";
 /** Nothing was established. Never a pass. */
 export const UNPROVEN = "UNPROVEN";
@@ -219,7 +219,7 @@ export function classifyFunction({ status, body }) {
 //     a re-granted table carries SELECT too, and a partial grant could only come from a hand
 //     written `grant`, which lives in a migration. `test/anon-grants.test.ts` reads all four
 //     privileges out of the catalog, against a harness that now reproduces the platform default.
-//  2. Neither classifier can be exercised against the live project once the migration is pasted:
+//  2. Neither classifier can be exercised against the live project once the migration is applied:
 //     after `0015` nothing here is REACHABLE, so the branch that finds a hole never runs on a
 //     healthy day. Its positive controls are the fixture-driven tests in
 //     `test/check-live-core.test.ts`, and they are the only thing keeping it from being a
@@ -306,7 +306,7 @@ export function functionProbeUrl(baseUrl, name, args = {}) {
  * A probe over an injected fetch. This lives here rather than in the runner because a request that
  * never arrives is a VERDICT, not a crash: `fetch` rejects on DNS failure, a refused connection or
  * a dropped socket, and letting that propagate ends the run with a stack trace and exit 1 — the
- * same exit code as a genuinely absent table, which reads as "paste the migration" when the truth
+ * same exit code as a genuinely absent table, which reads as "apply the migration" when the truth
  * is that nothing was asked. A transport failure establishes nothing, so it is UNPROVEN, and the
  * run stops at 2. *Measured 2026-08-22*: before this, an unreachable host exited 1 with an
  * uncaught TypeError.
@@ -458,7 +458,7 @@ export async function runCheck({
   if (reachable.length) {
     lines.push(
       "check:live: the anon key holds privileges the migrations revoke. Either 0015 has not been " +
-        "pasted into this project, or the platform's default privileges have re-granted them on " +
+        "applied to this project, or the platform's default privileges have re-granted them on " +
         "something created since.",
     );
   }

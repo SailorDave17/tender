@@ -1,6 +1,6 @@
 -- 0013 — push subscriptions, the push half of the ledger, and the bet's instrument (story #29).
 --
--- **Paste after 0012**, in numeric order. It alters `suggestion` (0010) and references
+-- **Apply after 0012**, in numeric order. It alters `suggestion` (0010) and references
 -- `person` (0002), and its admin function calls `is_admin()` (0004).
 --
 -- NUMBERING. AC 1 asks for `0011`. That was taken by #69 before this story was picked up, and

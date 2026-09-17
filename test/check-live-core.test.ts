@@ -595,7 +595,7 @@ describe("runCheck — the function family", () => {
 
 // ---------------------------------------------------------------------------------------------
 // The anon-reach verdict (story #48). These are the ONLY positive controls this half of the
-// module will ever get: once 0015 is pasted, nothing on the live project is REACHABLE, so the
+// module will ever get: once 0015 is applied, nothing on the live project is REACHABLE, so the
 // branch that finds a hole runs on no healthy day and against no real project
 // (cairn: satisfying-a-negative-claim-destroys-its-instrument-2026-08-26).
 // ---------------------------------------------------------------------------------------------
@@ -626,7 +626,7 @@ describe("runCheck — anon reach", () => {
     expect(lines.join("\n")).toMatch(/ok {4}club: PRESENT .* \| anon REACHABLE/);
     expect(lines.join("\n")).toMatch(/FAIL {2}anon reach: table club/);
     expect(lines.join("\n")).toMatch(/anon reach — 1 of 1 probed subjects still reachable/);
-    expect(lines.join("\n")).toMatch(/0015 has not been pasted/);
+    expect(lines.join("\n")).toMatch(/0015 has not been applied/);
   });
 
   it("fails the run on a function anon can execute, and names it", async () => {

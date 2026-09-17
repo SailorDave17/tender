@@ -1,8 +1,8 @@
 -- 0016 — the one privilege 0015's list could not have named, because it did not exist when the
 -- list was written (story #116).
 --
--- **Paste after 0015.** It touches only `public.club`, which 0001 creates, and it creates nothing
--- itself — so, like 0015, it is safe to re-paste and it belongs at the end of the set. It is not a
+-- **Apply after 0015.** It touches only `public.club`, which 0001 creates, and it creates nothing
+-- itself — so, like 0015, it is safe to re-apply and it belongs at the end of the set. It is not a
 -- correction to 0015's reasoning; it is the same sweep, one privilege wider.
 --
 -- ---------------------------------------------------------------------------------------------
