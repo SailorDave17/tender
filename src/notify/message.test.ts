@@ -4,6 +4,7 @@ import { messagePush } from "@/push/payload";
 import type { PushOutcome, PushTarget, PushTransport } from "@/push/send";
 import {
   KIND_MESSAGE,
+  KIND_MESSAGE_NO_ADDRESS,
   KIND_MESSAGE_PUSH,
   KIND_MESSAGE_PUSH_GONE,
   KIND_MESSAGE_SUPPRESSED,
@@ -110,6 +111,17 @@ class MemoryStore implements MessageStore {
     let last: Date | null = null;
     this.logs.forEach((e, i) => {
       if (e.kind === KIND_MESSAGE && e.channel === "email" && e.personId === personId && e.error === null) {
+        last = this.stamps[i] ?? null;
+      }
+    });
+    return last;
+  }
+  // Every attempt, successful or refused — no error filter, and KIND_MESSAGE only so a
+  // no-address row never defers a retry that could now succeed.
+  async lastMessageAttemptAt(matchId: string, personId: string) {
+    let last: Date | null = null;
+    this.logs.forEach((e, i) => {
+      if (e.kind === KIND_MESSAGE && e.channel === "email" && e.personId === personId) {
         last = this.stamps[i] ?? null;
       }
     });
@@ -256,10 +268,17 @@ describe("notifyMessage — push is never suppressed (AC 3)", () => {
 });
 
 describe("notifyMessage — the ten-minute window (AC 4)", () => {
-  // The straddle: just inside and just past. Both edges are written as literals derived from
-  // the constant, which is fine HERE because the band test below is what holds the constant's
-  // value — a test may derive its observation window from the code under test, or test that
-  // window's value, but not both (cairn: prove-a-guard-test-can-fail, fifteenth outcome).
+  // The straddle: just inside and just past, both derived from the constant. These two prove the
+  // BOUNDARY BEHAVIOUR and deliberately say nothing about the constant's value — they pass at any
+  // W, which is correct for what they are for and is why the pinning test below exists.
+  //
+  // That separation was not here until a review found the gap. The original comment claimed "the
+  // band test below is what holds the constant's value", and a band constrains a RANGE, never a
+  // value: *measured*, mutating 10 → 20 minutes reddened 0 of 21 tests. A test may derive its
+  // observation window from the code under test, or test that window's value, but not both
+  // (cairn: prove-a-guard-test-can-fail, fifteenth outcome) — and writing the mitigation prose
+  // in the same breath as the gap is what stopped anyone looking. `thread-view.test.ts` had the
+  // right pattern eleven lines away the whole time.
   it("suppresses a second message just inside the window", async () => {
     const s = store();
     const transport = recordingTransport();
@@ -288,28 +307,106 @@ describe("notifyMessage — the ten-minute window (AC 4)", () => {
     expect(transport.sent).toHaveLength(2);
   });
 
+  /**
+   * THE FAILING-PROVIDER WALK. The single-step rule is that a refusal does not start a quiet
+   * window (the test below), and that rule walked five steps used to mean every message in a
+   * burst made a fresh outbound API call: no successful send ever existed, so the anchor stayed
+   * null for ever and the ten-minute window that protects the 100/day cap was bypassed entirely.
+   * Only EMAIL_SKIP_AT remained — 95 real calls a day. Found by review; the single-step test
+   * below passed throughout, which is the same step-versus-walk shape as the backstop.
+   */
+  it("rations retries while the provider keeps refusing: one per window, not one per message", async () => {
+    const s = store();
+    const transport = recordingTransport("provider refused");
+    const outcomes: string[] = [];
+    // Five messages, one minute apart, provider refusing every time.
+    for (let step = 0; step < 5; step += 1) {
+      const when = at(step * MIN);
+      s.tick(when);
+      const r = await notifyMessage(MESSAGE, { store: s, transport, now: when, siteUrl: SITE });
+      outcomes.push(r?.retryDeferred ? "deferred" : "attempted");
+    }
+    // The first tries; the next four are held off the provider.
+    expect(outcomes).toEqual(["attempted", "deferred", "deferred", "deferred", "deferred"]);
+    expect(transport.sent).toHaveLength(1);
+
+    // Past the window, one more retry is allowed — a deferral is not a permanent stop.
+    const later = at(11 * MIN);
+    s.tick(later);
+    const r = await notifyMessage(MESSAGE, { store: s, transport, now: later, siteUrl: SITE });
+    expect(r?.retryDeferred).toBe(false);
+    expect(transport.sent).toHaveLength(2);
+  });
+
+  it("a deferred retry is logged distinguishably from an ordinary suppression", async () => {
+    // Different facts: an ordinary suppression means the counterparty WAS reached recently; a
+    // deferral means they were not reached at all. #43's operator view reads these rows.
+    const s = store();
+    const transport = recordingTransport("provider refused");
+    await notifyMessage(MESSAGE, { store: s, transport, now: NOW, siteUrl: SITE });
+    s.tick(at(MIN));
+    await notifyMessage(MESSAGE, { store: s, transport, now: at(MIN), siteUrl: SITE });
+    const suppressions = s.logs.filter((e) => e.kind === KIND_MESSAGE_SUPPRESSED);
+    expect(suppressions).toHaveLength(1);
+    expect(suppressions[0]?.error).toBe("retry deferred");
+  });
+
   it("a refused send does not start a quiet window — the next message retries", async () => {
     const s = store();
     const transport = recordingTransport("provider refused");
     await notifyMessage(MESSAGE, { store: s, transport, now: NOW, siteUrl: SITE });
     expect(s.logs.filter((e) => e.kind === KIND_MESSAGE && e.error !== null)).toHaveLength(1);
 
-    const soon = at(MIN);
-    s.tick(soon);
+    // Past the retry floor, the next message reaches the provider and succeeds. This is AC 4's
+    // "a refused send does not start a quiet window" — the window belongs to SUCCESSFUL sends,
+    // so a refusal never suppresses and the message is retried rather than dropped.
+    //
+    // THE ASSERTION MOVED FROM ONE MINUTE TO ELEVEN, and that is a real narrowing rather than a
+    // convenience. This test used to retry at one minute and pass, which is the same fact the
+    // failing-provider walk above turns into a defect: with no successful send there was no
+    // anchor at all, so EVERY message made a fresh outbound call for as long as the provider
+    // stayed down. The retry floor is what bounds that, and it defers rather than suppresses —
+    // `retryDeferred`, not `suppressed`, because the counterparty was never reached.
+    const later = at(11 * MIN);
+    s.tick(later);
     const ok = recordingTransport();
-    const r = await notifyMessage(MESSAGE, { store: s, transport: ok, now: soon, siteUrl: SITE });
-    // One minute later, well inside the window — but the first send failed, so there is no
-    // anchor and this is not a second message for the rule's purposes.
+    const r = await notifyMessage(MESSAGE, { store: s, transport: ok, now: later, siteUrl: SITE });
     expect(r?.suppressed).toBe(false);
+    expect(r?.retryDeferred).toBe(false);
     expect(r?.emailed).toBe(true);
+    // And the retry is a real send, not a suppression dressed as one.
+    expect(ok.sent).toHaveLength(1);
   });
 
   it("holds the window in a band whose edges are product statements, not the constant", async () => {
-    // This is the test that OWNS the constant's value, so it names numbers rather than deriving
-    // them. Below ~2 minutes the suppression is decoration; above ~30 a genuine second message
-    // goes unnoticed for half an hour, which is what the thread exists to prevent.
+    // The band is a SANITY RAIL, not the pin — it catches an absurd value and nothing else.
+    // Below ~2 minutes the suppression is decoration; above ~30 a genuine second message goes
+    // unnoticed for half an hour, which is what the thread exists to prevent.
     expect(MESSAGE_EMAIL_WINDOW_MS).toBeGreaterThanOrEqual(2 * MIN);
     expect(MESSAGE_EMAIL_WINDOW_MS).toBeLessThanOrEqual(30 * MIN);
+  });
+
+  // THE PIN. Hardcoded gaps, no arithmetic on the constant: a nine-minute gap must suppress and
+  // an eleven-minute gap must email, which is true at ten minutes and at no other value the band
+  // admits. Moving the constant in either direction reddens one of these two, which is exactly
+  // what the straddle tests above cannot do.
+  it("suppresses at a nine-minute gap and emails at eleven — pinning ten minutes, not a band", async () => {
+    const nine = store();
+    const t1 = recordingTransport();
+    await notifyMessage(MESSAGE, { store: nine, transport: t1, now: NOW, siteUrl: SITE });
+    nine.tick(at(9 * MIN));
+    const inside = await notifyMessage(MESSAGE, { store: nine, transport: t1, now: at(9 * MIN), siteUrl: SITE });
+    expect(inside?.suppressed).toBe(true);
+    expect(t1.sent).toHaveLength(1);
+
+    const eleven = store();
+    const t2 = recordingTransport();
+    await notifyMessage(MESSAGE, { store: eleven, transport: t2, now: NOW, siteUrl: SITE });
+    eleven.tick(at(11 * MIN));
+    const outside = await notifyMessage(MESSAGE, { store: eleven, transport: t2, now: at(11 * MIN), siteUrl: SITE });
+    expect(outside?.suppressed).toBe(false);
+    expect(outside?.emailed).toBe(true);
+    expect(t2.sent).toHaveLength(2);
   });
 });
 
@@ -408,12 +505,30 @@ describe("notifyMessage — the cap and the missing pieces", () => {
     expect(s.logs.filter((e) => e.error === "daily cap")).toHaveLength(1);
   });
 
-  it("logs a counterparty with no contact row rather than throwing", async () => {
+  it("logs a counterparty with no contact row under its own kind, not against the cap", async () => {
     const s = store((x) => x.emails.delete(CREW));
     const transport = recordingTransport();
     const r = await notifyMessage(MESSAGE, { store: s, transport, now: NOW, siteUrl: SITE });
     expect(r?.emailed).toBe(false);
     expect(s.logs.filter((e) => e.error === "no contact email")).toHaveLength(1);
+    // The KIND is what keeps it off the cap, because emailsSentToday() counts kinds and not
+    // errors — a `message` row here would spend a slot of the app-wide daily budget on an email
+    // that never reached the provider. #23 set this precedent with rung_email_no_address.
+    expect(s.logs.filter((e) => e.kind === KIND_MESSAGE_NO_ADDRESS)).toHaveLength(1);
+    expect(s.logs.filter((e) => e.kind === KIND_MESSAGE)).toHaveLength(0);
+  });
+
+  it("does not let a no-address row defer a later retry that could succeed", async () => {
+    // The retry floor reads attempts on the PROVIDER. A missing contact row is not one, so
+    // adding the address must let the very next message email rather than wait out a window.
+    const s = store((x) => x.emails.delete(CREW));
+    const transport = recordingTransport();
+    await notifyMessage(MESSAGE, { store: s, transport, now: NOW, siteUrl: SITE });
+    s.emails.set(CREW, "cy@hsc-crew.org");
+    s.tick(at(MIN));
+    const r = await notifyMessage(MESSAGE, { store: s, transport, now: at(MIN), siteUrl: SITE });
+    expect(r?.emailed).toBe(true);
+    expect(r?.retryDeferred).toBe(false);
   });
 
   it("returns null when the message, the match or the post is gone", async () => {

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { notifyMessageLive } from "@/notify/live";
 import { UUID } from "@/post/post-form";
-import { MESSAGE_BODY_MAX, threadIsOpen } from "@/post/thread-view";
+import { sendMessageRefusal } from "@/post/thread-view";
 import { supabaseServer } from "@/lib/supabase/server";
 
 /**
@@ -46,8 +46,6 @@ export async function sendMessage(postId: string, _prev: SendState, formData: Fo
 
   const raw = formData.get("body");
   const body = typeof raw === "string" ? raw.trim() : "";
-  if (body.length === 0) return { error: "empty", body: typeof raw === "string" ? raw : "" };
-  if (body.length > MESSAGE_BODY_MAX) return { error: "too_long", body };
 
   const client = await supabaseServer();
   const {
@@ -74,7 +72,13 @@ export async function sendMessage(postId: string, _prev: SendState, formData: Fo
     | null;
   const date = post ? ((Array.isArray(post.race_date) ? post.race_date[0] : post.race_date) as { starts_at: string } | null) : null;
   if (!date) return { error: "refused", body };
-  if (!threadIsOpen(date.starts_at, new Date())) return { error: "closed", body };
+
+  // Every refusal this function decides for itself, in one pure call (thread-view.ts). Returning
+  // null is the only route to the insert below, which is what makes the seven-day close testable
+  // — it had one enforcement point and no test until a review found that deleting the guard
+  // reddened nothing.
+  const refusal = sendMessageRefusal({ body, startsAt: date.starts_at }, new Date());
+  if (refusal) return { error: refusal, body: typeof raw === "string" ? raw : "" };
 
   const { data: created, error } = await client
     .from("message")

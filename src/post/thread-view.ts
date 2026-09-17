@@ -59,6 +59,32 @@ export function threadIsOpen(startsAt: string, now: Date): boolean {
 export const THREAD_CLOSED_NOTE =
   "This thread has closed — it stays here to read, but no more messages can be sent.";
 
+/**
+ * Whether a message may be sent, and why not when it may not (AC 2, AC 5). Every refusal the
+ * send action can decide for itself, in one pure function.
+ *
+ * IT IS A FUNCTION RATHER THAN THREE `if`s IN THE ACTION because a review found that the
+ * seven-day close had exactly one enforcement point — the action, since RLS cannot express
+ * elapsed time — and no test of it: deleting the guard left the whole suite green, because
+ * nothing referenced `sendMessage` and `thread-view.test.ts` only called the pure helper
+ * directly. A Server Action cannot be rendered or easily invoked in a unit test, so the
+ * durable repair is to put the DECISION somewhere a test can reach and leave the action to
+ * apply it. `sendMessageRefusal` returning null is the only route to an insert.
+ *
+ * The body is checked here too, so all three refusals have one home; 0020's check constraint
+ * remains the boundary that a direct POST cannot bypass.
+ */
+export function sendMessageRefusal(
+  input: { body: string; startsAt: string },
+  now: Date,
+): "empty" | "too_long" | "closed" | null {
+  const body = input.body.trim();
+  if (body.length === 0) return "empty";
+  if (body.length > MESSAGE_BODY_MAX) return "too_long";
+  if (!threadIsOpen(input.startsAt, now)) return "closed";
+  return null;
+}
+
 /** The refusals the send action can hand back, as the form explains them (AC 2). */
 export function explainMessageRefusal(reason: string): string {
   switch (reason) {

@@ -85,7 +85,7 @@ export const PUSH_BODY_PREVIEW_CHARS = 120;
  * updates, which is the whole reason push needs no suppression window while email does. The
  * author's name is in the title rather than the body so it survives a truncated preview.
  */
-export function messagePush(post: RungPost, authorName: string, body: string, matchTag?: string): PushPayload {
+export function messagePush(post: RungPost, authorName: string, body: string, matchId: string): PushPayload {
   const trimmed = body.trim();
   const preview =
     trimmed.length > PUSH_BODY_PREVIEW_CHARS ? `${trimmed.slice(0, PUSH_BODY_PREVIEW_CHARS - 1)}…` : trimmed;
@@ -93,7 +93,15 @@ export function messagePush(post: RungPost, authorName: string, body: string, ma
     title: `${authorName}: ${post.boatName}`,
     body: preview,
     url: `/post/${post.id}/thread`,
-    tag: `thread-${matchTag ?? post.id}`,
+    // `matchId` is REQUIRED, and was optional with a `?? post.id` fallback until a review found
+    // that the production caller passed three arguments while only the tests passed the fourth —
+    // so the shipped tag was `thread-<postId>` while this docstring said `thread-<matchId>`, and
+    // deleting the parameter reddened nothing. It was accidentally right only because
+    // `match.post_id` is unique, which is the 1:1 that 0020's own header argues not to lean on.
+    // Required rather than defaulted so the next such omission is a typecheck failure instead of
+    // a behaviour that is wrong only in a future the schema currently forbids: an optional
+    // parameter whose only callers that pass it are tests has a load-bearing, untested default.
+    tag: `thread-${matchId}`,
   };
 }
 

@@ -20,16 +20,26 @@ import { EMAIL_SKIP_AT, type LogEntry, type RungPost } from "./rung";
  *
  * AND A BACKSTOP, which is the part that is NOT notifyAnswer()'s shape (owner decision
  * 2026-09-17). The window is anchored on the last email SENT, and a suppressed message sends no
- * email — so the anchor does not move when a message is suppressed. An author posting just
- * inside the window repeatedly would therefore email the counterparty ONCE and never again,
- * with every single step obeying the rule: a bound that is true of every step and false of the
- * walk (cairn: a-per-step-bound-is-unbounded-across-steps-2026-09-08). Push still fires, but
- * AC 3's whole premise is a counterparty who has no push installed. So after
- * MESSAGE_SUPPRESS_LIMIT consecutive suppressions to that counterparty, the next message emails
- * regardless of the window, and the run resets.
+ * email — so the anchor does not move when a message is suppressed. Under a BURST, messages
+ * arriving faster than the window, that would email the counterparty ONCE and never again, with
+ * every single step obeying the rule: a bound true of every step and false of the walk (cairn:
+ * a-per-step-bound-is-unbounded-across-steps-2026-09-08). Push still fires, but AC 3's whole
+ * premise is a counterparty who has no push installed. So after MESSAGE_SUPPRESS_LIMIT
+ * consecutive suppressions to that counterparty, the next message emails regardless of the
+ * window, and the run resets.
+ *
+ * A SLOW DRIP IS NOT THE CASE, though it was the one first given for this rule: at a nine-minute
+ * gap against a ten-minute window the anchor advances on its own every other message, so a drip
+ * self-corrects and never reaches the limit. The sharper form of the cairn note is the lesson —
+ * check WHICH reference the action moves, because that is what decides the exposed traffic shape.
  *
  * The window is measured from the last SUCCESSFUL message email (error null), so a send the
- * provider refused does not start a quiet ten minutes — the next message retries.
+ * provider refused does not start a quiet ten minutes — the next message retries. With a RETRY
+ * FLOOR behind it: when there is no successful send to anchor on, the last failed attempt bounds
+ * retries to one per window instead of one per message. Without it a persistently failing
+ * provider disabled the rationing altogether, every message in a burst making a fresh outbound
+ * call with only the app-wide daily cap as a ceiling — the same step-versus-walk shape as the
+ * backstop, found by review rather than by the single-step test that passed throughout.
  *
  * The recipient is always the counterparty, never the author: a person is not notified about
  * their own message. Which of the two parties that is comes from the match, not from the
@@ -47,6 +57,17 @@ export const KIND_MESSAGE_SUPPRESSED = "message_suppressed";
 export const KIND_MESSAGE_PUSH = "message_push";
 /** A subscription the push service retired, found while pushing. Row deleted. */
 export const KIND_MESSAGE_PUSH_GONE = "message_push_gone";
+/**
+ * A counterparty with no contact row to send to — logged, never retried by this call, and NOT an
+ * attempt for the cap's purposes.
+ *
+ * Its own kind rather than a `KIND_MESSAGE` row carrying an error, because `emailsSentToday()`
+ * counts kinds and not errors: a `message` row with "no contact email" spent a slot of the
+ * app-wide daily budget on an email that never reached the provider. #23 established exactly this
+ * precedent with `rung_email_no_address` and gave the reason; this story logged the case under the
+ * send kind anyway until a review found it. The precedent existed and was not followed.
+ */
+export const KIND_MESSAGE_NO_ADDRESS = "message_no_address";
 
 /**
  * How long after a message email the next one to the same counterparty is suppressed. The
@@ -62,8 +83,13 @@ export const MESSAGE_EMAIL_WINDOW_MS = 10 * 60 * 1000;
 
 /**
  * How many consecutive suppressions to one counterparty before an email is forced through.
- * Three: on a rapid exchange that is roughly one email per four messages, and on a steady drip
- * just inside the window the counterparty hears again after about thirty-six minutes.
+ * Three: on a burst that is roughly one email per four messages.
+ *
+ * The case this closes is a BURST — messages arriving faster than the window — and not a slow
+ * drip, which was the rationale first given and is wrong: the anchor is the last email SENT, so
+ * at a nine-minute gap against a ten-minute window only the message at nine minutes is
+ * suppressed, and the one at eighteen is measured against an anchor still at zero, falls outside
+ * the window and emails on its own. A drip self-corrects; a burst does not.
  */
 export const MESSAGE_SUPPRESS_LIMIT = 3;
 
@@ -96,6 +122,13 @@ export interface MessageStore {
    */
   lastMessageEmailAt(matchId: string, personId: string): Promise<Date | null>;
   /**
+   * When the last message email to this person in this thread was ATTEMPTED — successful or
+   * refused — or null if never. The retry floor, read only when there is no successful send to
+   * anchor on, so a persistently failing provider cannot turn every message into a fresh
+   * outbound call (see the two-anchor note in notifyMessage).
+   */
+  lastMessageAttemptAt(matchId: string, personId: string): Promise<Date | null>;
+  /**
    * How many `message_suppressed` rows this person has in this thread SINCE that last
    * successful email — the consecutive run the backstop counts. Zero when none.
    */
@@ -124,6 +157,12 @@ export type MessageNotifyResult = {
   suppressed: boolean;
   /** True when the email went out because of the backstop rather than the window being clear. */
   forced: boolean;
+  /**
+   * True when the send was held back by the retry floor rather than by the window — no
+   * successful email exists to anchor on, and the last ATTEMPT failed inside the window. The
+   * counterparty was not reached; a plain `suppressed` means they were reached recently.
+   */
+  retryDeferred: boolean;
   skippedCap: boolean;
   pushed: number;
   pushFailed: number;
@@ -180,6 +219,7 @@ export async function notifyMessage(messageId: string, deps: MessageNotifyDeps):
     emailed: false,
     suppressed: false,
     forced: false,
+    retryDeferred: false,
     skippedCap: false,
     pushed: 0,
     pushFailed: 0,
@@ -190,7 +230,7 @@ export async function notifyMessage(messageId: string, deps: MessageNotifyDeps):
   if (push) {
     const authorName = (await store.name(message.authorId)) ?? "Your counterparty";
     for (const target of await store.pushTargets(to)) {
-      const outcome = await push.send(target, messagePush(post, authorName, message.body));
+      const outcome = await push.send(target, messagePush(post, authorName, message.body, message.matchId));
       if (outcome.ok) {
         result.pushed += 1;
         await store.log({ kind: KIND_MESSAGE_PUSH, channel: "push", personId: to, toEmail: null, postId: post.id, providerId: target.endpoint, error: null });
@@ -206,8 +246,25 @@ export async function notifyMessage(messageId: string, deps: MessageNotifyDeps):
   }
 
   // Email second, behind the window — unless the backstop is due (AC 4).
+  //
+  // TWO ANCHORS, AND THE SECOND EXISTS BECAUSE A FAILING PROVIDER WOULD OTHERWISE DISABLE THE
+  // RATIONING ALTOGETHER. The window proper is measured from the last SUCCESSFUL send, so one
+  // refusal does not start a quiet ten minutes and the next message retries — that is the rule
+  // AC 4 asks for and the behaviour `a refused send does not start a quiet window` asserts.
+  // But with the provider persistently refusing there is never a successful send, so the anchor
+  // stayed null for ever: every message in a burst found `inWindow` false and attempted a fresh
+  // outbound call, leaving only the app-wide EMAIL_SKIP_AT as a ceiling — 95 real API calls a
+  // day, which is the cap the window exists to protect. Found by review, not by the tests.
+  //
+  // So a FAILED attempt sets a retry floor instead: one retry per window rather than one per
+  // message. The distinction that keeps AC 4 intact is which anchor governs — a success
+  // suppresses (no email, `message_suppressed`), a failure merely defers, and both are read from
+  // the same table so neither needs a new store method.
   const last = await store.lastMessageEmailAt(message.matchId, to);
+  const lastAttempt = last === null ? await store.lastMessageAttemptAt(message.matchId, to) : null;
   const inWindow = last !== null && now.getTime() - last.getTime() < MESSAGE_EMAIL_WINDOW_MS;
+  const retryTooSoon =
+    last === null && lastAttempt !== null && now.getTime() - lastAttempt.getTime() < MESSAGE_EMAIL_WINDOW_MS;
   // The run counted since the last successful email, which is exactly the anchor above: a
   // successful send both moves the anchor and ends the run, so the two can never disagree.
   //
@@ -227,6 +284,16 @@ export async function notifyMessage(messageId: string, deps: MessageNotifyDeps):
     await store.log({ kind: KIND_MESSAGE_SUPPRESSED, channel: "email", personId: to, toEmail: null, postId: post.id, providerId: null, error: null });
     return result;
   }
+
+  // The retry floor. Logged with its own error string rather than a bare suppression, because
+  // the two are different facts: the counterparty was not reached at all here, where an ordinary
+  // suppression means they were reached recently enough. #43's operator view reads these rows.
+  if (retryTooSoon) {
+    result.suppressed = true;
+    result.retryDeferred = true;
+    await store.log({ kind: KIND_MESSAGE_SUPPRESSED, channel: "email", personId: to, toEmail: null, postId: post.id, providerId: null, error: "retry deferred" });
+    return result;
+  }
   result.forced = forced;
 
   // The daily cap is checked after the window, so a message that would have been suppressed
@@ -240,8 +307,10 @@ export async function notifyMessage(messageId: string, deps: MessageNotifyDeps):
 
   const address = await store.email(to);
   if (address === null) {
-    // No contact row: log it and leave the message standing. Nothing here undoes the insert.
-    await store.log({ kind: KIND_MESSAGE, channel: "email", personId: to, toEmail: null, postId: post.id, providerId: null, error: "no contact email" });
+    // No contact row: log it under its OWN kind and leave the message standing. Nothing here
+    // undoes the insert, and nothing here spends a slot of the daily cap — see
+    // KIND_MESSAGE_NO_ADDRESS for why the kind rather than an error field carries that.
+    await store.log({ kind: KIND_MESSAGE_NO_ADDRESS, channel: "email", personId: to, toEmail: null, postId: post.id, providerId: null, error: "no contact email" });
     return result;
   }
 

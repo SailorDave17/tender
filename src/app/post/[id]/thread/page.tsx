@@ -72,18 +72,31 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
 
   // Removed messages are filtered out rather than shown as removed: the moderation story owns
   // what a removed message looks like, and until it ships the honest rendering is absence.
-  const { data: messages } = await client
+  //
+  // THE `error` IS READ, NOT DISCARDED, and that is the point of the throw below. Destructuring
+  // only `data` leaves `messages` undefined on a failed read, and this page would then render
+  // `No messages yet.` with a working send box at HTTP 200 — both parties shown their entire
+  // conversation apparently deleted, with nothing anywhere saying otherwise. The realistic
+  // trigger is not exotic: a column-grant regression on any column NAMED here, including in the
+  // `is()` and the `order()`, is refused with a message naming the table and not the column,
+  // which is the shape that bit #29's push_subscription delete. An error page is the honest
+  // answer, because "no messages" is a claim this page must only make when it is true.
+  const { data: messages, error: messagesError } = await client
     .from("message")
     .select("id, author_id, body, created_at")
     .eq("match_id", match.id)
     .is("removed_at", null)
     .order("created_at", { ascending: true });
+  if (messagesError) throw new Error(`thread: read messages: ${messagesError.message}`);
 
-  // Both parties' names, for the attribution line on each message.
-  const { data: people } = await client
+  // Both parties' names, for the attribution line on each message. A failure here is NOT fatal:
+  // the fallback is the word "someone" beside a message whose text is already correct, which is
+  // a cosmetic loss rather than a false statement about the conversation.
+  const { data: people, error: peopleError } = await client
     .from("person")
     .select("id, display_name")
     .in("id", [match.skipper_id, match.crew_id]);
+  if (peopleError) console.error(`thread: read names: ${peopleError.message}`);
   const names = new Map((people ?? []).map((p) => [p.id, p.display_name]));
 
   const now = new Date();

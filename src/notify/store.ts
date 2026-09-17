@@ -452,6 +452,26 @@ export function supabaseMessageStore(): MessageStore {
       return data ? new Date(data.sent_at) : null;
     },
 
+    async lastMessageAttemptAt(matchId, personId) {
+      // Every attempt, successful or refused — no `error` filter, which is the whole difference
+      // from lastMessageEmailAt above. KIND_MESSAGE only: a no-address row is not an attempt on
+      // the provider and must not defer a retry that could now succeed.
+      const postId = await postOfMatch(admin, matchId);
+      if (postId === null) return null;
+      const { data, error } = await admin
+        .from("notification_log")
+        .select("sent_at")
+        .eq("kind", KIND_MESSAGE)
+        .eq("channel", "email")
+        .eq("post_id", postId)
+        .eq("person_id", personId)
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) fail("read last message attempt", error);
+      return data ? new Date(data.sent_at) : null;
+    },
+
     async suppressedSince(matchId, personId, since) {
       const postId = await postOfMatch(admin, matchId);
       if (postId === null) return 0;

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  MESSAGE_BODY_MAX,
   THREAD_CLOSED_NOTE,
   THREAD_OPEN_DAYS,
   explainMessageRefusal,
+  sendMessageRefusal,
   threadClosesAt,
   threadIsOpen,
 } from "./thread-view";
@@ -61,6 +63,62 @@ describe("threadIsOpen — the seven-day window (AC 5)", () => {
     expect(threadClosesAt(beforeDst).toISOString()).toBe("2027-11-11T18:00:00.000Z");
     expect(threadIsOpen(beforeDst, new Date("2027-11-11T17:59:00Z"))).toBe(true);
     expect(threadIsOpen(beforeDst, new Date("2027-11-11T18:01:00Z"))).toBe(false);
+  });
+});
+
+describe("sendMessageRefusal — every refusal the action decides itself (AC 2, AC 5)", () => {
+  const open = { startsAt: RACE };
+  const duringWeek = after(1);
+
+  it("passes a good message in an open thread", () => {
+    expect(sendMessageRefusal({ ...open, body: "D dock, 5pm." }, duringWeek)).toBeNull();
+  });
+
+  it("refuses an empty or whitespace-only body", () => {
+    expect(sendMessageRefusal({ ...open, body: "" }, duringWeek)).toBe("empty");
+    expect(sendMessageRefusal({ ...open, body: "   \n\t " }, duringWeek)).toBe("empty");
+  });
+
+  it("refuses a body over the cap, and accepts one exactly at it", () => {
+    expect(sendMessageRefusal({ ...open, body: "x".repeat(MESSAGE_BODY_MAX + 1) }, duringWeek)).toBe("too_long");
+    expect(sendMessageRefusal({ ...open, body: "x".repeat(MESSAGE_BODY_MAX) }, duringWeek)).toBeNull();
+  });
+
+  it("measures the cap AFTER trimming, so trailing whitespace cannot refuse a legal message", () => {
+    const atCap = `${"x".repeat(MESSAGE_BODY_MAX)}   \n`;
+    expect(atCap.length).toBeGreaterThan(MESSAGE_BODY_MAX);
+    expect(sendMessageRefusal({ ...open, body: atCap }, duringWeek)).toBeNull();
+  });
+
+  // THE GUARD THE REVIEW FOUND UNTESTED. This is the seven-day close's only enforcement point —
+  // RLS cannot express elapsed time and the page's ternary is render-time only — so if this
+  // assertion goes, nothing anywhere stops a message being sent into a thread closed a year ago.
+  it("refuses a message once the thread has closed, however good the body", () => {
+    expect(sendMessageRefusal({ ...open, body: "D dock, 5pm." }, after(THREAD_OPEN_DAYS, 1000))).toBe("closed");
+    expect(sendMessageRefusal({ ...open, body: "D dock, 5pm." }, after(365))).toBe("closed");
+    // And still open a second before, so the refusal is the boundary and not a blanket no.
+    expect(sendMessageRefusal({ ...open, body: "D dock, 5pm." }, after(THREAD_OPEN_DAYS, -1000))).toBeNull();
+  });
+
+  it("reports the body problem before the closed thread, so a person fixes what they typed first", () => {
+    // Ordering is a product choice, not an accident: told 'the thread has closed' about a message
+    // that was also too long, a person would fix nothing. Both are true; the actionable one wins.
+    const closed = after(30);
+    expect(sendMessageRefusal({ ...open, body: "" }, closed)).toBe("empty");
+    expect(sendMessageRefusal({ ...open, body: "x".repeat(MESSAGE_BODY_MAX + 1) }, closed)).toBe("too_long");
+    // But a GOOD body in the same closed thread must still be refused — without this line the
+    // test passes with the closed check deleted entirely, since both cases above are decided
+    // before it is reached. *Measured*: deleting the guard reddened 1 test against a predicted
+    // 3, and this was one of the two that wrongly stayed green.
+    expect(sendMessageRefusal({ ...open, body: "D dock, 5pm." }, closed)).toBe("closed");
+  });
+
+  it("every reason it returns has a sentence, with no gap between the two lists", () => {
+    // A reason with no sentence falls through to the generic fallback, which is how a specific
+    // refusal silently becomes "That could not be sent."
+    for (const reason of ["empty", "too_long", "closed"] as const) {
+      expect(explainMessageRefusal(reason)).not.toBe("That could not be sent.");
+    }
   });
 });
 
