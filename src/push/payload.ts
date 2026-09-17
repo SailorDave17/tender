@@ -66,6 +66,38 @@ export function answerPush(post: RungPost, count: number): PushPayload {
 }
 
 /**
+ * How many characters of a message body the push preview carries (story #35).
+ *
+ * THIS IS THE ONE PAYLOAD FIELD A PERSON CONTROLS AT LENGTH. Everywhere else the variable text
+ * is a boat name (80 characters, 0006) or a class name, which is why the 4 KB ceiling has so
+ * far been unreachable in practice; a message body is 2,000 characters by 0020's own check, and
+ * a 2,000-character body plus the title and URL would still fit — but only just, and only while
+ * nothing else grows. Truncating here means the ceiling is never approached rather than
+ * defended, and a preview is what a notification is for: the thread has the rest.
+ */
+export const PUSH_BODY_PREVIEW_CHARS = 120;
+
+/**
+ * What a party's phone shows when their counterparty says something (story #35 AC 3).
+ *
+ * The tag is `thread-<matchId>`, distinct from both post tags above and shared by every message
+ * in one thread — so a burst collapses into ONE notification on the device whose content
+ * updates, which is the whole reason push needs no suppression window while email does. The
+ * author's name is in the title rather than the body so it survives a truncated preview.
+ */
+export function messagePush(post: RungPost, authorName: string, body: string, matchTag?: string): PushPayload {
+  const trimmed = body.trim();
+  const preview =
+    trimmed.length > PUSH_BODY_PREVIEW_CHARS ? `${trimmed.slice(0, PUSH_BODY_PREVIEW_CHARS - 1)}…` : trimmed;
+  return {
+    title: `${authorName}: ${post.boatName}`,
+    body: preview,
+    url: `/post/${post.id}/thread`,
+    tag: `thread-${matchTag ?? post.id}`,
+  };
+}
+
+/**
  * The wire form. Throws rather than sending something the push service will reject — a caller
  * that let this through would log a success for a notification nobody received.
  */

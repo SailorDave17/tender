@@ -4,6 +4,7 @@ import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { KIND_ANSWER, type AnswerPost, type AnswerStore } from "./answer";
 import { KIND_MATCH, type MatchStore } from "./match";
+import { KIND_MESSAGE, KIND_MESSAGE_SUPPRESSED, type MessageStore } from "./message";
 import { KIND_RUNG_EMAIL, emailDayStart, type LogEntry, type Pending, type PendingPush, type RungPost, type RungStore } from "./rung";
 
 /**
@@ -347,4 +348,174 @@ export function supabaseMatchStore(): MatchStore {
       if (error) fail("log", error);
     },
   };
+}
+
+/**
+ * The MessageStore over the live database, as the service role (story #35). Same division of
+ * labour as the three above: every rule is in notifyMessage(), this only reads and writes.
+ * 0020's `grant select on public.message to service_role` is what the first two reads need —
+ * stated in that migration rather than inherited, because the local image grants a new table's
+ * service_role no DML at all while the hosted project has been measured granting ALL.
+ *
+ * Every lookup here is a separate round trip rather than an embed. That is deliberate: a
+ * PostgREST filter naming an embedded resource is applied to the EMBED and not to the parent,
+ * so the parent row still comes back with the embed set to null — which every schema-derived
+ * type says is impossible, and which no SQL harness can reproduce (cairn:
+ * postgrest-filtering-on-an-embedded-resource). Two reads that cannot lie beat one that can.
+ */
+export function supabaseMessageStore(): MessageStore {
+  const admin = supabaseAdmin();
+  return {
+    async message(messageId) {
+      const { data, error } = await admin
+        .from("message")
+        .select("id, match_id, author_id, body")
+        .eq("id", messageId)
+        .maybeSingle();
+      if (error) fail("read message", error);
+      if (!data) return null;
+      // The post the match sits on — notification_log keys every row by post, and the email's
+      // copy needs the boat and the race date. A second read, for the reason in the docstring.
+      const { data: m, error: mErr } = await admin
+        .from("match")
+        .select("post_id")
+        .eq("id", data.match_id)
+        .maybeSingle();
+      if (mErr) fail("read match for message", mErr);
+      if (!m) return null;
+      return { id: data.id, matchId: data.match_id, authorId: data.author_id, body: data.body, postId: m.post_id };
+    },
+
+    async parties(matchId) {
+      const { data, error } = await admin.from("match").select("skipper_id, crew_id").eq("id", matchId).maybeSingle();
+      if (error) fail("read match parties", error);
+      return data ? { skipperId: data.skipper_id, crewId: data.crew_id } : null;
+    },
+
+    async post(postId): Promise<RungPost | null> {
+      const { data, error } = await admin
+        .from("post")
+        .select("id, race_date_id, minimum, current_rung, closed_at, boat:boat_id (name, class), race_date:race_date_id (starts_at, title)")
+        .eq("id", postId)
+        .maybeSingle();
+      if (error) fail("read post for message", error);
+      if (!data) return null;
+      const boat = (Array.isArray(data.boat) ? data.boat[0] : data.boat) as { name: string; class: string };
+      const date = (Array.isArray(data.race_date) ? data.race_date[0] : data.race_date) as { starts_at: string; title: string };
+      return {
+        id: data.id,
+        raceDateId: data.race_date_id,
+        boatClass: boat.class,
+        boatName: boat.name,
+        minimum: data.minimum,
+        startsAt: date.starts_at,
+        dateTitle: date.title,
+        currentRung: data.current_rung,
+        closedAt: data.closed_at,
+      };
+    },
+
+    async name(personId) {
+      const { data, error } = await admin.from("person").select("display_name").eq("id", personId).maybeSingle();
+      if (error) fail("read author name", error);
+      return data?.display_name ?? null;
+    },
+
+    async email(personId) {
+      const { data, error } = await admin.from("person_contact").select("email").eq("person_id", personId).maybeSingle();
+      if (error) fail("read message contact", error);
+      return data?.email ?? null;
+    },
+
+    async lastMessageEmailAt(matchId, personId) {
+      // Successful sends only (error null): a refused send must not start a quiet window, the
+      // same rule supabaseAnswerStore().lastAnswerEmailAt applies for the same reason.
+      //
+      // Scoped by person AND by the thread's post, because notification_log has no match_id —
+      // it keys by post, and a match has exactly one post (0008's unique constraint), so the
+      // post id identifies the thread. The caller passes the match id it knows; resolving it to
+      // the post here keeps that mapping in one place.
+      const postId = await postOfMatch(admin, matchId);
+      if (postId === null) return null;
+      const { data, error } = await admin
+        .from("notification_log")
+        .select("sent_at")
+        .eq("kind", KIND_MESSAGE)
+        .eq("channel", "email")
+        .eq("post_id", postId)
+        .eq("person_id", personId)
+        .is("error", null)
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) fail("read last message email", error);
+      return data ? new Date(data.sent_at) : null;
+    },
+
+    async suppressedSince(matchId, personId, since) {
+      const postId = await postOfMatch(admin, matchId);
+      if (postId === null) return 0;
+      // `error is null` excludes the cap-skipped rows, which carry error 'daily cap': a send the
+      // cap refused is not a suppression the backstop should count toward forcing another send.
+      let q = admin
+        .from("notification_log")
+        .select("id", { count: "exact", head: true })
+        .eq("kind", KIND_MESSAGE_SUPPRESSED)
+        .eq("channel", "email")
+        .eq("post_id", postId)
+        .eq("person_id", personId)
+        .is("error", null);
+      if (since) q = q.gte("sent_at", since.toISOString());
+      const { count, error } = await q;
+      if (error) fail("count suppressed messages", error);
+      return count ?? 0;
+    },
+
+    async pushTargets(personId) {
+      const { data, error } = await admin
+        .from("push_subscription")
+        .select("id, endpoint, p256dh, auth")
+        .eq("person_id", personId);
+      if (error) fail("read message subscriptions", error);
+      return data ?? [];
+    },
+
+    async deleteSubscription(id) {
+      const { error } = await admin.from("push_subscription").delete().eq("id", id);
+      if (error) fail("delete subscription", error);
+    },
+
+    async emailsSentToday(now) {
+      // Every attempt kind, as supabaseMatchStore() counts them: the cap is Resend's and counts
+      // every send, so the widest count available is the honest one.
+      const { count, error } = await admin
+        .from("notification_log")
+        .select("id", { count: "exact", head: true })
+        .eq("channel", "email")
+        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH, KIND_MESSAGE])
+        .gte("sent_at", emailDayStart(now).toISOString());
+      if (error) fail("count today's email for message", error);
+      return count ?? 0;
+    },
+
+    async log(entry: LogEntry) {
+      const { error } = await admin.from("notification_log").insert({
+        kind: entry.kind,
+        channel: entry.channel,
+        person_id: entry.personId,
+        to_email: entry.toEmail,
+        post_id: entry.postId,
+        provider_id: entry.providerId,
+        error: entry.error,
+      });
+      if (error) fail("log", error);
+    },
+  };
+}
+
+/** The post a match sits on — one per match (0008's unique post_id). Null when the match is gone. */
+async function postOfMatch(admin: ReturnType<typeof supabaseAdmin>, matchId: string): Promise<string | null> {
+  const { data, error } = await admin.from("match").select("post_id").eq("id", matchId).maybeSingle();
+  if (error) fail("read post of match", error);
+  return data?.post_id ?? null;
 }
