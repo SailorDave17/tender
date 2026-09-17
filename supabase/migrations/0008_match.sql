@@ -1,7 +1,7 @@
 -- 0008 — a match: the skipper accepts one answer, and contact is revealed to both (story #21).
 --
 -- Numbered per the filing plan (0003 is #16's invite-code rotation and may land after this
--- file). **Paste order: 0002, 0004, 0005, 0006, 0007, then this** — match references post (0006)
+-- file). **Apply order: 0002, 0004, 0005, 0006, 0007, then this** — match references post (0006)
 -- and person (0002); accept_answer() below reads answer (0007) and boat (0006); and the
 -- person_contact policy replaced at the bottom names match, which must exist first.
 --

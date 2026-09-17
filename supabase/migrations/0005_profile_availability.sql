@@ -2,9 +2,9 @@
 -- phone on their profile, the club's fleet list, and which race days each person can sail.
 --
 -- Numbered per the filing plan (0003 is #16's invite-code rotation and may land after this
--- file; the sequence can carry a gap, harmlessly). **Paste order: 0002, 0004, then this** —
+-- file; the sequence can carry a gap, harmlessly). **Apply order: 0002, 0004, then this** —
 -- it alters person (0002) and availability references race_date (0004), so either missing
--- fails the paste with 42P01.
+-- fails the apply with 42P01.
 --
 -- Three things, each on the table the charter puts it on:
 --

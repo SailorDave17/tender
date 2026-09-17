@@ -17,6 +17,8 @@ supabase-js with RLS and hand-written SQL migrations. Chosen because the visibil
 ## Consequences
 Every policy gets a failing-then-passing test in the pglite harness, with that harness's documented blindness (it grants `all` where Supabase grants less) stated in the repo. `check:live` ships with the scaffold. Migrations are pasted by the owner — the one externally-gated operation in the deploy path.
 
+- **Superseded 2026-09-01 (story #114).** Applying a migration is no longer externally gated and no longer a paste: a session runs `npm run migrate:live <file>`, which asks Postgres for the length, byte count and md5 of what it received and refuses before applying if they disagree with the file on disk. The authority is a Supabase personal access token held in `.env.local` (named in the README, not here — the repo keeps that spelling in three files and a guard test counts them), and the command takes a **file** from `supabase/migrations/` and never arbitrary SQL, by design. The line above is kept rather than rewritten because it was the decision at scaffold and the change of role is the thing worth seeing. What stays externally gated is **deciding** to apply, and the `develop` → `release` promotion — both the owner's. *(Note added 2026-09-17 at a groom-backlog sweep; the consequence had said the opposite for 16 days.)*
+
 ## Kill condition
 An RLS policy that cannot express the contact-on-match rule without a `security definer` escape the house notes warn against — reopen toward an API layer with app-enforced authorization, with the structural loss recorded.
 

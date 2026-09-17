@@ -1,11 +1,11 @@
 -- 0019 — tick_run.sweep_at: when Vercel's daily sweep last called the tick (story #145).
 --
--- **Paste after 0012**, which creates the table; in numeric order after 0018 is the expected
+-- **Apply after 0012**, which creates the table; in numeric order after 0018 is the expected
 -- path. It creates no table and no function, so the rule that 0015 and 0016 go last does not
 -- reach it: a column added to an existing table is covered by that table's grants and nothing
 -- else, and 0012 already took every one of them away from `anon`.
 --
--- Paste it BEFORE promoting the `develop` that carries #145. From that deployment on, /admin
+-- Apply it BEFORE promoting the `develop` that carries #145. From that deployment on, /admin
 -- selects `sweep_at` and the daily sweep writes it. Against a project without the column the
 -- read errors, and /admin then prints "never" for both clocks. The write fails the sweep with a 500.
 --
@@ -28,7 +28,7 @@
 -- column added later. So an admin reads this column, the service role writes it, and no client
 -- role can write it, for the same reasons as `last_at`. `test/tick.test.ts` holds all three.
 --
--- NULL MEANS NEVER. No default and no backfill: until the first sweep after this paste there is
+-- NULL MEANS NEVER. No default and no backfill: until the first sweep after this apply there is
 -- nothing to report, and /admin prints "never". That is the honest answer, and the loud one.
 
 alter table public.tick_run add column sweep_at timestamptz;

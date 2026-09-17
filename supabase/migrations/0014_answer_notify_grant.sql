@@ -1,7 +1,7 @@
 -- 0014 — service_role reads `answer`, for the skipper notification (story #24).
 --
 -- Numbered by arrival: 0013 was on disk when this story started, so this takes the next free
--- number (overlay rule since #23's collision). **Paste after 0007**, which creates the table;
+-- number (overlay rule since #23's collision). **Apply after 0007**, which creates the table;
 -- in numeric order after 0013 is fine and is the expected path.
 --
 -- notifyAnswer() (src/notify/answer.ts) counts a post's un-withdrawn answers as the service

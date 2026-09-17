@@ -47,6 +47,18 @@ export function MatchPanel({
         <dt>Phone</dt>
         <dd>{contact?.phone ? <a href={`tel:${contact.phone}`}>{contact.phone}</a> : <em>not given</em>}</dd>
       </dl>
+      {/*
+        The way into the thread (story #35). It sits here rather than on the board because a
+        party reaches a match through its post, and this panel is the only place that already
+        knows the viewer is a party. Without this link the thread is reachable only by typing
+        the URL — a feature that ships unreachable is the documented-is-not-installed shape.
+      */}
+      <p>
+        <a href={`/post/${match.post_id}/thread`} data-thread-link={match.post_id}>
+          Messages
+        </a>{" "}
+        — sort out which dock and what time here.
+      </p>
     </section>
   );
 }
