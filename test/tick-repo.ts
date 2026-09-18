@@ -98,6 +98,17 @@ export function pgliteTickRepo(db: PGlite): TickRepo {
       return rows.map((r) => ({ personId: r.person_id, rung: r.rung }));
     },
 
+    async pendingCount(postId: string): Promise<number> {
+      // The same column `dispatchPending()` writes, read as the service role — so a test that
+      // asserts the clock retried somebody is asserting it against the real ledger (#128).
+      const rows = await svc<{ n: number }>(
+        db,
+        `select count(*)::int as n from public.suggestion where post_id = $1 and notified_at is null`,
+        [postId],
+      );
+      return rows[0]?.n ?? 0;
+    },
+
     async setRung(postId: string, rung: 1 | 2 | 3): Promise<void> {
       await svc(db, `update public.post set current_rung = $2 where id = $1`, [postId, rung]);
     },

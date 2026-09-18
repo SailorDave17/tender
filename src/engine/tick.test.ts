@@ -42,6 +42,8 @@ class RecordingRepo implements TickRepo {
   existing: Suggested[] = [];
   rungsSet: { postId: string; rung: Rung }[] = [];
   inserted: NewSuggestion[] = [];
+  /** Rows still owed a send, per post (#128). Independent of `existing`: see tick-handler.test.ts. */
+  pending = new Map<string, number>();
 
   async openPosts(now: Date) {
     this.calls.push(`openPosts(${now.toISOString()})`);
@@ -54,6 +56,10 @@ class RecordingRepo implements TickRepo {
   async suggestionsFor(postId: string) {
     this.calls.push(`suggestionsFor(${postId})`);
     return this.existing;
+  }
+  async pendingCount(postId: string) {
+    this.calls.push(`pendingCount(${postId})`);
+    return this.pending.get(postId) ?? 0;
   }
   async setRung(postId: string, rung: Rung) {
     this.calls.push(`setRung(${postId},${rung})`);
@@ -133,6 +139,35 @@ describe("runTick — the calls it does and does not make", () => {
     expect(repo.inserted.map((r) => r.personId)).toEqual(["a", "b"]);
     expect(result.ticked[0].reached.map((r) => r.personId)).toEqual(["b"]);
     expect(result.newSuggestions).toBe(1);
+  });
+
+  /**
+   * #128. `pending` is what the handler dispatches on, and it is read AFTER the insert on purpose:
+   * this pass's own new rows are owed a send too. Reading first would report a post carrying
+   * nothing but brand-new candidates as having nothing pending — which is the original defect
+   * inverted, and would be invisible in any test whose fixture had an older pending row in it.
+   */
+  it("counts what is pending AFTER the insert, so this pass's own new rows count (#128)", async () => {
+    const repo = new RecordingRepo();
+    repo.posts = [post("p1")];
+    repo.pool = [crew("a", 2, ["Thistle"])];
+    repo.pending.set("p1", 1);
+
+    const result = await runTick(repo, NOW);
+    expect(repo.calls.indexOf("insertSuggestions(1)")).toBeLessThan(repo.calls.indexOf("pendingCount(p1)"));
+    expect(result.ticked[0].pending).toBe(true);
+  });
+
+  it("reports a post with nothing owed as not pending, however many suggestions it carries (#128)", async () => {
+    const repo = new RecordingRepo();
+    repo.posts = [post("p1")];
+    repo.pool = [crew("a", 2, ["Thistle"])];
+    repo.existing = [{ personId: "a", rung: 1 }];
+    repo.pending.set("p1", 0); // all notified
+
+    const result = await runTick(repo, NOW);
+    expect(result.ticked[0].reached).toEqual([]);
+    expect(result.ticked[0].pending).toBe(false);
   });
 
   it("skips the insert entirely when nobody is available", async () => {

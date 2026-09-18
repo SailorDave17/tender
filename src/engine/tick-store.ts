@@ -10,12 +10,13 @@ import type { TickRunRow } from "./tick-handler";
  * (the first is `test/tick-repo.ts`, over pglite, which is what the behaviour fixtures run
  * through). Nothing here decides anything: every rule is in `runTick()`.
  *
- * Three of the five methods ARE the notify store's, forwarded rather than rewritten. `poolFor`,
+ * Three of the six methods ARE the notify store's, forwarded rather than rewritten. `poolFor`,
  * `setRung` and `insertSuggestions` ask exactly the questions `pool`, `raiseRung` and
  * `addSuggestions` already answer for story #23, and a second copy of the pool query would be a
  * second answer to "who is available on this date" — the one thing the ladder and the tick must
- * never disagree about. The two new methods are the ones the notify path had no need for: which
- * posts a clock should look at, and what is already suggested on one.
+ * never disagree about. The other three are the ones the notify path had no need for: which posts
+ * a clock should look at, what is already suggested on one, and how much of that is still owed a
+ * send (`pendingCount`, #128 — the read the dispatch condition turns on).
  *
  * Why the service role: `suggestion` and `post.current_rung` are written by no client role
  * (0010), and the tick has no caller whose session it could borrow — it is a cron POST.
@@ -69,6 +70,19 @@ export function supabaseTickRepo(store: RungStore = supabaseRungStore()): TickRe
       const { data, error } = await admin.from("suggestion").select("person_id, rung").eq("post_id", postId);
       if (error) fail("read suggestions", error);
       return (data ?? []).map((s) => ({ personId: s.person_id, rung: s.rung }));
+    },
+
+    async pendingCount(postId): Promise<number> {
+      // `head: true` with an exact count: PostgREST answers from the Content-Range header and
+      // sends no rows, which is the whole of what the caller needs. `count` is null only on an
+      // error, which the line above has already thrown on.
+      const { count, error } = await admin
+        .from("suggestion")
+        .select("person_id", { count: "exact", head: true })
+        .eq("post_id", postId)
+        .is("notified_at", null);
+      if (error) fail("count pending suggestions", error);
+      return count ?? 0;
     },
 
     setRung(postId, rung) {
