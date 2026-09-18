@@ -45,4 +45,7 @@ export const EXPECTED_FUNCTIONS = [
   { name: "current_invite_code", args: {} },
   { name: "push_install_status", args: {} },
   { name: "rotate_invite_code", args: {} },
+  // 0021 (#37). The GET probe runs as anon and is refused (42501), which reads PRESENT; the
+  // status value is irrelevant to the verdict for the same reason the nil uuid is.
+  { name: "set_match_status", args: { match_id: NIL_UUID, status: "confirmed" } },
 ];

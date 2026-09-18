@@ -6,12 +6,12 @@ import { formatStartsAt } from "@/dates/race-date";
 import { toCrew } from "@/engine/toCrew";
 import { answerState, explainAnswerRefusal } from "@/post/answer-rules";
 import { CandidateList, RungBadge } from "@/post/CandidateList";
-import { MatchPanel, type Contact } from "@/post/MatchPanel";
-import { counterpartyOf, explainAcceptRefusal } from "@/post/match-view";
+import { MatchPanel, type Contact, type StatusForm } from "@/post/MatchPanel";
+import { counterpartyOf, explainAcceptRefusal, explainStatusRefusal, matchControls } from "@/post/match-view";
 import { UUID, explainPostRefusal } from "@/post/post-form";
 import { ratingLabel } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
-import { acceptAnswer, answerPost, closePost } from "../actions";
+import { acceptAnswer, answerPost, closePost, setMatchStatus } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -89,8 +89,28 @@ export default async function PostPage({
   }
   const names = new Map([...data.people.values()].map((p) => [p.id, p.display_name]));
 
+  // The status buttons (story #37): decided here from the clock, decided again by 0021's
+  // definer on the tap. The forms are built here because the action needs a request.
+  const controls = match ? matchControls(match, date.starts_at, user.id, now) : undefined;
+  const statusForm: StatusForm = (status, label) => (
+    <form action={setMatchStatus} style={{ display: "inline" }}>
+      <input type="hidden" name="match_id" value={match!.id} />
+      <input type="hidden" name="post_id" value={post.id} />
+      <input type="hidden" name="status" value={status} />
+      <button type="submit" data-set-status={status}>
+        {label}
+      </button>
+    </form>
+  );
+
   const explain = (reason: string) =>
-    own ? (reason === "matched" || reason === "refused" ? explainAcceptRefusal(reason) : explainPostRefusal(reason)) : explainAnswerRefusal(reason);
+    reason === "status-refused"
+      ? explainStatusRefusal(reason)
+      : own
+        ? reason === "matched" || reason === "refused"
+          ? explainAcceptRefusal(reason)
+          : explainPostRefusal(reason)
+        : explainAnswerRefusal(reason);
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
@@ -107,7 +127,7 @@ export default async function PostPage({
       </p>
       {post.note && <blockquote>{post.note}</blockquote>}
       {match ? (
-        <MatchPanel match={match} viewerId={user.id} names={names} contact={contact} />
+        <MatchPanel match={match} viewerId={user.id} names={names} contact={contact} controls={controls} statusForm={statusForm} />
       ) : closed ? (
         <p data-status="closed">
           <strong>Closed.</strong> This need is no longer on the board.

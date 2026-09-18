@@ -79,6 +79,8 @@ function setUp(over: { pool?: Crew[]; posts?: TickPost[]; pending?: Record<strin
   for (const p of repo.posts) repo.pending.set(p.id, over.pending?.[p.id] ?? 1);
   const dispatched: string[] = [];
   const stamps: TickRunRow[] = [];
+  /** Every effect the handler makes, in order — what a stamp-after-the-work claim is about. */
+  const order: string[] = [];
   const deps = {
     secret: SECRET,
     // pg_cron's POST, unless a test says otherwise: it carries no x-vercel-cron-schedule.
@@ -86,13 +88,19 @@ function setUp(over: { pool?: Crew[]; posts?: TickPost[]; pending?: Record<strin
     repo,
     dispatch: async (p: TickPost) => {
       dispatched.push(p.id);
+      order.push(`dispatch(${p.id})`);
     },
     recordRun: async (row: TickRunRow) => {
       stamps.push(row);
+      order.push("recordRun");
+    },
+    // The morning-of pass (#37), recorded with the instant it was handed.
+    morningOf: async (now: Date) => {
+      order.push(`morningOf(${now.toISOString()})`);
     },
     now: NOW,
   };
-  return { repo, dispatched, stamps, deps };
+  return { repo, dispatched, stamps, order, deps };
 }
 
 /** The row pg_cron's tick writes: `last_at` and nothing else, so the daily stamp is left alone. */
@@ -106,13 +114,14 @@ describe("handleTick — the refusal", () => {
     ["an empty bearer", "Bearer "],
   ] as const) {
     it(`401s on ${name}, and the repo is untouched`, async () => {
-      const { repo, dispatched, stamps, deps } = setUp();
+      const { repo, dispatched, stamps, order, deps } = setUp();
       const res = await handleTick({ ...deps, authorization: header });
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: "unauthorized" });
       expect(repo.calls).toEqual([]); // nothing was read, nothing was written
       expect(dispatched).toEqual([]);
       expect(stamps).toEqual([]); // and last_at does not move, so /admin still shows the truth
+      expect(order).toEqual([]); // and no reminder pass ran either (#37)
     });
   }
 
@@ -135,13 +144,31 @@ describe("handleTick — the run", () => {
 
   it("dispatches exactly the posts that owe somebody a send, and stamps the run after the work", async () => {
     // p2 was already proposed this crew AND already emailed them: nothing new, nothing pending.
-    const { repo, dispatched, stamps, deps } = setUp({ posts: [post("p1"), post("p2")], pending: { p2: 0 } });
+    const { repo, dispatched, stamps, order, deps } = setUp({ posts: [post("p1"), post("p2")], pending: { p2: 0 } });
     repo.existing.set("p2", [{ personId: "a", rung: 1 }]);
 
     const res = await handleTick({ ...deps, authorization: `Bearer ${SECRET}` });
     expect(res.body).toEqual({ posts: 2, newSuggestions: 1 });
     expect(dispatched).toEqual(["p1"]);
     expect(stamps).toEqual([clockRow]);
+    // The order IS the claim (#37 AC 2, "run by the existing tick"): ladder dispatch, then the
+    // morning-of pass with this tick's own clock, then the stamp. The handler holds the stamp back
+    // from a pass that throws (next test); the route's wrapper swallows, so in production only an
+    // unwrapped ladder read does — see tick-handler.ts's deps doc.
+    expect(order).toEqual(["dispatch(p1)", `morningOf(${NOW.toISOString()})`, "recordRun"]);
+  });
+
+  it("runs the morning-of pass on a tick with nothing to dispatch, and does not stamp one whose pass threw (#37)", async () => {
+    const quiet = setUp({ posts: [] });
+    await handleTick({ ...quiet.deps, authorization: `Bearer ${SECRET}` });
+    expect(quiet.order).toEqual([`morningOf(${NOW.toISOString()})`, "recordRun"]);
+
+    const broken = setUp({ posts: [] });
+    broken.deps.morningOf = async () => {
+      throw new Error("the reminder store said no");
+    };
+    await expect(handleTick({ ...broken.deps, authorization: `Bearer ${SECRET}` })).rejects.toThrow("the reminder store said no");
+    expect(broken.stamps).toEqual([]);
   });
 
   /**

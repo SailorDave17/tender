@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { recordTickRun, supabaseTickRepo } from "@/engine/tick-store";
 import { handleTick, VERCEL_CRON_HEADER } from "@/engine/tick-handler";
-import { dispatchPendingLive } from "@/notify/live";
+import { dispatchPendingLive, morningOfLive } from "@/notify/live";
 
 /**
  * /api/ladder/tick — the ladder clock's one entry point (story #25 AC 5).
@@ -32,6 +32,7 @@ async function tick(request: NextRequest): Promise<NextResponse> {
     repo: supabaseTickRepo(),
     dispatch: dispatchPendingLive,
     recordRun: recordTickRun,
+    morningOf: morningOfLive,
     now: new Date(),
   });
   return NextResponse.json(body, { status });
