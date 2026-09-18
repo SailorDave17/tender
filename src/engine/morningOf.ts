@@ -8,8 +8,13 @@ import type { RungPost } from "@/notify/rung";
  * next tick asks nobody twice.
  *
  * IT RIDES THE EXISTING TICK, so there is one clock (the issue's own reasoning). `handleTick()`
- * runs the ladder pass, dispatches, then calls this, then stamps `tick_run` — a reminder pass
- * that threw leaves the stamp unmoved, the same rule the ladder half lives under.
+ * runs the ladder pass, dispatches, then calls this, then stamps `tick_run`. The handler holds
+ * the stamp back from a pass that THROWS — but the route hands it `morningOfLive`, which
+ * swallows everything to a console error (src/notify/live.ts), so in production a pass that
+ * cannot read still lets the stamp advance. That is the dispatch's standing too, and it is a
+ * recorded decision, not the ladder read's rule: `runTick()` is unwrapped and does hold the stamp
+ * back. The durable evidence that a pass did not reach a match is the match itself — `accepted`
+ * with `reminded_at` null on a race that has started.
  *
  * THE DECISION IS HERE, NOT IN THE QUERY, and that is deliberate. The repo hands back every
  * candidate — accepted, not yet reminded — and `reminderDue()` decides which are due against
@@ -29,6 +34,11 @@ import type { RungPost } from "@/notify/rung";
  *     the skipper is marking sailed or no-show by then. A tick catching up after a paused project
  *     therefore sends nothing for a race that already sailed, and the negative case is a named
  *     test rather than an assumption.
+ *
+ * The two rules intersect: a race starting AT OR BEFORE 06:00 club time is never reminded — too
+ * early before 06:00, already started after it. The admin form accepts any start time, so the
+ * input is reachable; no club race starts before dawn, and the intersection is stated here and in
+ * a named test rather than left for the day it happens (fan-out finding, 2026-09-18).
  *
  * WHAT IT DOES NOT DO: send, or mark. `remind` is injected — the route hands in
  * `remindCrewLive` (src/notify/live.ts), which owns the two channels, the cap and the log, and

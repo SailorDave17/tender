@@ -16,8 +16,11 @@ import { pgliteDispatchStore, pgliteTickRepo } from "./tick-repo";
  * as the route runs it, with the pglite adapters in place of the supabase-js ones. So a fixture
  * here exercises the real authorisation, the real ladder pass (which finds nothing: every post
  * below is matched, hence closed), the real reminder decision, the real send, and 0021's
- * `reminded_at` grant — the whole of the story's clock half except the Next binding and how
- * PostgREST spells a join.
+ * `reminded_at` grant — the whole of the story's clock half except the Next binding, how
+ * PostgREST spells a join, and — a third blind class the fan-out named — the live adapter's own
+ * two predicates: `test/morning-repo.ts` restates `status = 'accepted'` and `reminded_at is null`
+ * in SQL by hand, so deleting either from `src/engine/morning-store.ts` reddens nothing here.
+ * The live pass on a stack is the instrument for those.
  *
  * THE FIXTURE IS A TIMELINE, as test/tick.test.ts's is and for the same reason: the pass acts on
  * EVERY candidate, so the scenarios cannot share a race day. Each has its own Sunday, a week

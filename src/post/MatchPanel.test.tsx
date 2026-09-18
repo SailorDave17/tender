@@ -100,6 +100,15 @@ describe("matchControls — the crew's Confirm on the race day, the skipper's ou
     expect(matchControls(accepted, RACE, "cy", new Date("2027-06-14T04:00:00Z")).confirm).toBe(false); // Monday
   });
 
+  it("promises 'later' only before the race day: not on it, and not after it on a match nobody closed", () => {
+    expect(matchControls(accepted, RACE, "cy", new Date("2027-06-06T12:00:00Z")).confirmLater).toBe(true); // a week out
+    expect(matchControls(accepted, RACE, "cy", new Date("2027-06-13T03:59:59Z")).confirmLater).toBe(true); // 23:59 the night before
+    expect(matchControls(accepted, RACE, "cy", new Date("2027-06-13T04:00:00Z")).confirmLater).toBe(false); // race day: Confirm instead
+    expect(matchControls(accepted, RACE, "cy", new Date("2027-06-14T12:00:00Z")).confirmLater).toBe(false); // the day after
+    expect(matchControls(confirmed, RACE, "cy", new Date("2027-06-06T12:00:00Z")).confirmLater).toBe(false);
+    expect(matchControls(accepted, RACE, "sam", new Date("2027-06-06T12:00:00Z")).confirmLater).toBe(false);
+  });
+
   it("only while the match is still accepted, and never for the skipper or a bystander", () => {
     const morning = new Date("2027-06-13T12:00:00Z");
     expect(matchControls(confirmed, RACE, "cy", morning).confirm).toBe(false);
@@ -144,21 +153,26 @@ describe("MatchPanel — the outcome is shown to everyone, the buttons to the pa
 
   it("the crew sees Confirm on the race morning, and a 'later' note before it", () => {
     const open = renderToStaticMarkup(
-      <MatchPanel match={accepted} viewerId="cy" names={names} contact={CONTACT} controls={{ confirm: true, record: false }} statusForm={form} />,
+      <MatchPanel match={accepted} viewerId="cy" names={names} contact={CONTACT} controls={{ confirm: true, confirmLater: false, record: false }} statusForm={form} />,
     );
     expect(open).toContain('data-set-status="confirmed"');
     expect(open).toContain("Confirm I");
     expect(open).not.toContain('data-set-status="sailed"');
     const later = renderToStaticMarkup(
-      <MatchPanel match={accepted} viewerId="cy" names={names} contact={CONTACT} controls={{ confirm: false, record: false }} statusForm={form} />,
+      <MatchPanel match={accepted} viewerId="cy" names={names} contact={CONTACT} controls={{ confirm: false, confirmLater: true, record: false }} statusForm={form} />,
     );
     expect(later).toContain("morning of the race");
     expect(later).not.toContain("data-set-status");
+    // and after the race day, on a match nobody closed, no promise about a morning already gone
+    const gone = renderToStaticMarkup(
+      <MatchPanel match={accepted} viewerId="cy" names={names} contact={CONTACT} controls={{ confirm: false, confirmLater: false, record: false }} statusForm={form} />,
+    );
+    expect(gone).not.toContain("morning of the race");
   });
 
   it("the skipper sees Sailed and Did not show after the start, and nothing before", () => {
     const after = renderToStaticMarkup(
-      <MatchPanel match={confirmed} viewerId="sam" names={names} contact={CONTACT} controls={{ confirm: false, record: true }} statusForm={form} />,
+      <MatchPanel match={confirmed} viewerId="sam" names={names} contact={CONTACT} controls={{ confirm: false, confirmLater: false, record: true }} statusForm={form} />,
     );
     expect(after).toContain('data-set-status="sailed"');
     expect(after).toContain('data-set-status="no_show"');
@@ -169,7 +183,7 @@ describe("MatchPanel — the outcome is shown to everyone, the buttons to the pa
 
   it("without a form renderer no button is rendered, whatever the controls say", () => {
     const html = renderToStaticMarkup(
-      <MatchPanel match={accepted} viewerId="cy" names={names} contact={CONTACT} controls={{ confirm: true, record: true }} />,
+      <MatchPanel match={accepted} viewerId="cy" names={names} contact={CONTACT} controls={{ confirm: true, confirmLater: false, record: true }} />,
     );
     expect(html).not.toContain("data-set-status");
   });

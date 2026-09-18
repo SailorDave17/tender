@@ -152,8 +152,9 @@ describe("handleTick — the run", () => {
     expect(dispatched).toEqual(["p1"]);
     expect(stamps).toEqual([clockRow]);
     // The order IS the claim (#37 AC 2, "run by the existing tick"): ladder dispatch, then the
-    // morning-of pass with this tick's own clock, then the stamp — so a reminder pass that throws
-    // leaves `tick_run` unmoved, the same rule the ladder half lives under.
+    // morning-of pass with this tick's own clock, then the stamp. The handler holds the stamp back
+    // from a pass that throws (next test); the route's wrapper swallows, so in production only an
+    // unwrapped ladder read does — see tick-handler.ts's deps doc.
     expect(order).toEqual(["dispatch(p1)", `morningOf(${NOW.toISOString()})`, "recordRun"]);
   });
 

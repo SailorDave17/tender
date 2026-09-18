@@ -95,9 +95,11 @@ export type TickHandlerDeps = {
   recordRun: (row: TickRunRow) => Promise<void>;
   /**
    * The morning-of pass (#37): ask every crew whose race morning it is to confirm. Runs after
-   * the ladder's dispatch and before the stamp, so it rides the same clock and the same rule —
-   * a pass that throws leaves `tick_run` unmoved. Per-match failures are the live wrapper's to
-   * swallow (src/notify/live.ts), the same way `dispatch` is.
+   * the ladder's dispatch and before the stamp, so it rides the same clock. A pass that THROWS
+   * leaves `tick_run` unmoved — but the route hands in `morningOfLive`, which swallows the whole
+   * pass to a console error, the same standing `dispatch` has (src/notify/live.ts). So the
+   * stamp-holding rule binds the ladder READ (`runTick`, unwrapped) and not this half; the
+   * evidence a pass did not run is the un-reminded match, not a stale stamp.
    */
   morningOf: (now: Date) => Promise<void>;
   now: Date;

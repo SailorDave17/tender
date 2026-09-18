@@ -150,7 +150,7 @@ describe("on_race_day — the boundary, at pinned instants, both sides of a DST 
 describe("AC 1 — who, and when", () => {
   it("the crew confirms on the race day (23:59:59 tonight, not started): succeeds, status confirmed", async () => {
     const r = await as(db, "authenticated", set(RACES.todayLate.match, "confirmed"), CREW);
-    expect(r.rows).toEqual([{ status: "confirmed" }]);
+    expect(r.rows).toEqual([{ status: "accepted" }]); // the PRIOR status: a real transition happened
     expect(await statusOf(RACES.todayLate.match)).toBe("confirmed");
   });
 
@@ -170,7 +170,7 @@ describe("AC 1 — who, and when", () => {
     await as(db, "authenticated", set(RACES.todayEarly.match, "confirmed"), CREW);
     expect(await statusOf(RACES.todayEarly.match)).toBe("confirmed");
     const r = await as(db, "authenticated", set(RACES.todayEarly.match, "sailed"), SKIPPER);
-    expect(r.rows).toEqual([{ status: "sailed" }]);
+    expect(r.rows).toEqual([{ status: "confirmed" }]); // what it was, not what was asked
     expect(await statusOf(RACES.todayEarly.match)).toBe("sailed");
   });
 
@@ -185,13 +185,13 @@ describe("AC 1 — who, and when", () => {
 
   it("accepted → no_show by the skipper after the start", async () => {
     const r = await as(db, "authenticated", set(RACES.yesterday.match, "no_show"), SKIPPER);
-    expect(r.rows).toEqual([{ status: "no_show" }]);
+    expect(r.rows).toEqual([{ status: "accepted" }]);
     expect(await statusOf(RACES.yesterday.match)).toBe("no_show");
   });
 
   it("accepted → sailed by the skipper after the start — a crew who forgot to confirm but turned up (owner decision 2026-09-18)", async () => {
     const r = await as(db, "authenticated", set(RACES.yesterday2.match, "sailed"), SKIPPER);
-    expect(r.rows).toEqual([{ status: "sailed" }]);
+    expect(r.rows).toEqual([{ status: "accepted" }]);
     expect(await statusOf(RACES.yesterday2.match)).toBe("sailed");
   });
 });
@@ -226,7 +226,10 @@ describe("AC 1 — the trigger: illegal transitions refused, terminal states fin
     await move(RACES.yesterday2.match, "sailed");
     expect(await statusOf(RACES.todayLate.match)).toBe("confirmed");
     expect(await statusOf(RACES.yesterday2.match)).toBe("sailed");
-    // and through the definer, as the person would: the crew taps Confirm twice on the race day
+    // and through the definer, as the person would: the crew taps Confirm twice on the race day.
+    // The answer is the PRIOR status — 'confirmed' here against 'accepted' on the first tap —
+    // which is the one signal the action has for "tell the skipper, or not" (fan-out finding:
+    // without it a double tap in flight or a stale tab emailed the skipper twice).
     const r = await as(db, "authenticated", set(RACES.todayLate.match, "confirmed"), CREW);
     expect(r.rows).toEqual([{ status: "confirmed" }]);
   });

@@ -72,6 +72,13 @@ export function statusLabel(status: MatchStatus): string {
 export type MatchControls = {
   /** The crew's Confirm button: race day (club zone), match still accepted. */
   confirm: boolean;
+  /**
+   * The crew's "you'll be asked on the morning of the race" note: match still accepted and the
+   * race day not yet come. Its own field rather than `!confirm`, because after the race day on a
+   * match nobody closed, `!confirm` would promise a morning that has already gone (fan-out
+   * finding, 2026-09-18).
+   */
+  confirmLater: boolean;
   /** The skipper's Sailed / Did not show buttons: after the start, match not yet final. */
   record: boolean;
 };
@@ -92,9 +99,11 @@ export function matchControls(
 ): MatchControls {
   const role = matchRole(match, viewerId);
   const race = new Date(startsAt);
-  const confirm = role === "crew" && match.status === "accepted" && localDate(now) === localDate(race);
+  const accepted = role === "crew" && match.status === "accepted";
+  const confirm = accepted && localDate(now) === localDate(race);
+  const confirmLater = accepted && localDate(now) < localDate(race);
   const record = role === "skipper" && (match.status === "accepted" || match.status === "confirmed") && now.getTime() > race.getTime();
-  return { confirm, record };
+  return { confirm, confirmLater, record };
 }
 
 /** The refusal setMatchStatus sends back, as the page explains it. */

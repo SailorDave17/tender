@@ -180,7 +180,11 @@ export async function acceptAnswer(formData: FormData): Promise<void> {
  * a courtesy: a Server Action is a POST anyone can send.
  *
  * On 'confirmed', the skipper is told through the existing transports (AC 3). Runs after the
- * write succeeded, as the service role, and a failure in it never undoes the confirmation.
+ * write succeeded, as the service role, and a failure in it never undoes the confirmation — and
+ * ONLY on a real transition: the rpc answers the status the row HAD, so a double tap while the
+ * first POST is in flight, a stale tab, or a repeat POST by hand finds 'confirmed' already there
+ * and tells the skipper nothing twice. Reading the status before the rpc would not close the
+ * double-tap case (both reads see 'accepted'); the definer, which holds the prior row, can.
  */
 export async function setMatchStatus(formData: FormData): Promise<void> {
   const matchId = field(formData, "match_id");
@@ -190,10 +194,10 @@ export async function setMatchStatus(formData: FormData): Promise<void> {
   if (!UUID.test(matchId) || !isSettableStatus(status)) redirect(`/post/${postId}?error=status-refused`);
 
   const client = await supabaseServer();
-  const { error } = await client.rpc("set_match_status", { match_id: matchId, status });
+  const { data: previous, error } = await client.rpc("set_match_status", { match_id: matchId, status });
   if (error) redirect(`/post/${postId}?error=status-refused`);
 
-  if (status === "confirmed") await notifyConfirmedLive(matchId);
+  if (status === "confirmed" && previous === "accepted") await notifyConfirmedLive(matchId);
 
   revalidatePath("/board");
   revalidatePath(`/post/${postId}`);

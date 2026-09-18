@@ -47,6 +47,15 @@ describe("reminderDue — the race morning, on the club's clock", () => {
     expect(reminderDue(JUNE_RACE, new Date("2027-06-06T10:00:00Z"))).toBe(false);
   });
 
+  it("is never due for a race starting at or before 06:00 club time — too early before, started after", () => {
+    const dawn = "2027-06-13T10:00:00Z"; // a 06:00 EDT start
+    expect(reminderDue(dawn, new Date("2027-06-13T09:59:59Z"))).toBe(false); // 05:59:59, before the hour
+    expect(reminderDue(dawn, new Date("2027-06-13T10:00:00Z"))).toBe(false); // 06:00:00, the start itself
+    expect(reminderDue(dawn, new Date("2027-06-13T12:00:00Z"))).toBe(false); // sailed
+    // and one minute later than 06:00 is reminded in the one tick that fits
+    expect(reminderDue("2027-06-13T10:01:00Z", new Date("2027-06-13T10:00:00Z"))).toBe(true);
+  });
+
   it("uses the offset in force on the race day — 06:00 EST in November is 11:00 UTC, not 10:00", () => {
     expect(reminderDue(NOVEMBER_RACE, new Date("2027-11-07T10:59:59Z"))).toBe(false); // 05:59:59 EST
     expect(reminderDue(NOVEMBER_RACE, new Date("2027-11-07T11:00:00Z"))).toBe(true); // 06:00:00 EST

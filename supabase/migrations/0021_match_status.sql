@@ -64,6 +64,8 @@
 --                       when is refused with the default raise code (P0001) and a sentence.
 --                       The transition itself is not re-checked here — the trigger is the
 --                       single copy of that rule, and it fires inside this function's UPDATE.
+--                       Returns the PRIOR status, so a caller can tell a transition from a
+--                       same-value no-op and notify on the first only.
 --
 -- ---------------------------------------------------------------------------------------------
 -- GRANTS
@@ -194,7 +196,12 @@ begin
 
   -- The trigger decides whether the transition is legal, and raises if not.
   update public.match set status = set_match_status.status where id = set_match_status.match_id;
-  return set_match_status.status;
+  -- Returns the status the row HAD, not the one asked for. A same-value write is a no-op the
+  -- trigger accepts silently, and the caller cannot tell it from a real transition by the row
+  -- alone — the confirm action notifies the skipper only when this answers 'accepted', so a
+  -- double tap, a stale tab or a crafted repeat POST confirms nothing twice (fan-out finding,
+  -- 2026-09-18). The new status is what the caller asked for and already holds.
+  return v_match.status;
 end
 $$;
 

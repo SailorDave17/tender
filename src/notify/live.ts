@@ -182,7 +182,11 @@ export async function remindCrewLive(match: MorningMatch): Promise<void> {
  * `remindCrewLive` above. Swallowed, like the dispatch: the ladder half has already done its
  * work, and a reminder pass that cannot read must not stop `tick_run` recording that the clock
  * is alive. The cost is that a broken candidate read is a console error and nothing louder —
- * the same standing the dispatch has today, and #43's story to surface.
+ * the same standing the dispatch has today. NOT #43's to surface: that story is `onRequestError`
+ * on a route that throws, and an error swallowed here never reaches it; Vercel Hobby keeps the
+ * console line for one hour. What survives is the match itself — `accepted` with `reminded_at`
+ * null on a race that has started says the pass never reached it, though not why. The
+ * deploy-ordering case (0021 not yet applied) is what README 2d exists to prevent.
  */
 export async function morningOfLive(now: Date): Promise<void> {
   try {

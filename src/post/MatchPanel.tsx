@@ -22,7 +22,7 @@ export type Contact = { email: string; phone: string | null };
 /** A form that sets the match's status — the page supplies it (the action needs a request). */
 export type StatusForm = (status: SettableStatus, label: string) => ReactNode;
 
-const NO_CONTROLS: MatchControls = { confirm: false, record: false };
+const NO_CONTROLS: MatchControls = { confirm: false, confirmLater: false, record: false };
 
 export function MatchPanel({
   match,
@@ -86,7 +86,7 @@ export function MatchPanel({
           It&apos;s race day — the skipper wants to know by breakfast. {statusForm("confirmed", "Confirm I'm sailing")}
         </p>
       )}
-      {role === "crew" && match.status === "accepted" && !controls.confirm && (
+      {controls.confirmLater && (
         <p data-controls="confirm-later">You&apos;ll be asked to confirm on the morning of the race.</p>
       )}
       {controls.record && statusForm && (

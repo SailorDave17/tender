@@ -3,8 +3,9 @@ import { poolForDate } from "@/board/post-view";
 import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { KIND_ANSWER, type AnswerPost, type AnswerStore } from "./answer";
-import { KIND_CONFIRMED, KIND_MORNING_OF, type ConfirmMatch, type ConfirmStore } from "./confirm";
-import { KIND_MATCH, type MatchStore } from "./match";
+import type { ConfirmMatch, ConfirmStore } from "./confirm";
+import { EMAIL_ATTEMPT_KINDS } from "./kinds";
+import type { MatchStore } from "./match";
 import { KIND_MESSAGE, KIND_MESSAGE_SUPPRESSED, type MessageStore } from "./message";
 import { KIND_RUNG_EMAIL, emailDayStart, type LogEntry, type Pending, type PendingPush, type RungPost, type RungStore } from "./rung";
 
@@ -322,15 +323,16 @@ export function supabaseMatchStore(): MatchStore {
     },
 
     async emailsSentToday(now) {
-      // All three attempt kinds, unlike supabaseRungStore()'s rung_email-only count: the cap is
-      // Resend's, which counts every send, so the widest count available is the honest one here.
-      // (The rung store's narrower count predates the answer and match kinds and is noted on
-      // #33 rather than changed by it.)
+      // Every attempt kind, from the one list (src/notify/kinds.ts), unlike supabaseRungStore()'s
+      // rung_email-only count: the cap is Resend's, which counts every send, so the widest count
+      // available is the honest one here. (The rung store's narrower count predates the other
+      // kinds and is noted on #33 rather than changed by it; this list stopped at three kinds
+      // until #37's fan-out found the three stores disagreeing.)
       const { count, error } = await admin
         .from("notification_log")
         .select("id", { count: "exact", head: true })
         .eq("channel", "email")
-        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH])
+        .in("kind", EMAIL_ATTEMPT_KINDS)
         .gte("sent_at", emailDayStart(now).toISOString());
       if (error) fail("count today's email for match", error);
       return count ?? 0;
@@ -507,13 +509,12 @@ export function supabaseMessageStore(): MessageStore {
     },
 
     async emailsSentToday(now) {
-      // Every attempt kind, as supabaseMatchStore() counts them: the cap is Resend's and counts
-      // every send, so the widest count available is the honest one.
+      // Every attempt kind, from the one list the match and confirm stores read too.
       const { count, error } = await admin
         .from("notification_log")
         .select("id", { count: "exact", head: true })
         .eq("channel", "email")
-        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH, KIND_MESSAGE, KIND_MORNING_OF, KIND_CONFIRMED])
+        .in("kind", EMAIL_ATTEMPT_KINDS)
         .gte("sent_at", emailDayStart(now).toISOString());
       if (error) fail("count today's email for message", error);
       return count ?? 0;
@@ -604,13 +605,12 @@ export function supabaseConfirmStore(): ConfirmStore {
     },
 
     async emailsSentToday(now) {
-      // Every attempt kind, as the match and message stores count them: the cap is Resend's and
-      // counts every send, so the widest count available is the honest one.
+      // Every attempt kind, from the one list the match and message stores read too.
       const { count, error } = await admin
         .from("notification_log")
         .select("id", { count: "exact", head: true })
         .eq("channel", "email")
-        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH, KIND_MESSAGE, KIND_MORNING_OF, KIND_CONFIRMED])
+        .in("kind", EMAIL_ATTEMPT_KINDS)
         .gte("sent_at", emailDayStart(now).toISOString());
       if (error) fail("count today's email for confirm", error);
       return count ?? 0;
