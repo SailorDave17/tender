@@ -43,6 +43,10 @@ export const EXPECTED_FUNCTIONS = [
   { name: "accept_answer", args: { post_id: NIL_UUID, person_id: NIL_UUID } },
   { name: "answer_counts", args: { post_ids: `{${NIL_UUID}}` } },
   { name: "current_invite_code", args: {} },
+  // 0022 (#31). Takes a text[], so the placeholder is an array literal rather than a nil uuid.
+  // The probe runs as anon and is refused (42501 — execute is revoked from anon by name), which
+  // reads PRESENT: a present function and a closed grant at once, which is what this story wants.
+  { name: "members_among", args: { p_emails: "{nobody@example.invalid}" } },
   { name: "push_install_status", args: {} },
   { name: "rotate_invite_code", args: {} },
   // 0021 (#37). The GET probe runs as anon and is refused (42501), which reads PRESENT; the

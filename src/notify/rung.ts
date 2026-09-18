@@ -76,13 +76,23 @@ export type Pending = {
   email: string | null;
 };
 
+/**
+ * One row of notification_log.
+ *
+ * `personId` and `postId` are nullable to match the columns (0010), which have been nullable since
+ * the table was created — nothing sent to a member lacks either, so every sender up to #31 wrote
+ * both and the type said `string`. The invite (#31) is the first send addressed to somebody who is
+ * NOT a member yet: there is no person row to point at and no post involved, and `to_email` is the
+ * whole record of who was reached. Widening the type rather than passing a sentinel keeps the
+ * "deleted person's rows stay, anonymised" rule in 0010 the only meaning null carries here.
+ */
 export type LogEntry = {
   kind: string;
   /** 0010's check constraint allows exactly these two. */
   channel: "email" | "push";
-  personId: string;
+  personId: string | null;
   toEmail: string | null;
-  postId: string;
+  postId: string | null;
   providerId: string | null;
   error: string | null;
 };

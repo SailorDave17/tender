@@ -37,7 +37,9 @@ const SRC = join(process.cwd(), "src");
  * `notifyMatch`/`notifyMatchLive` email both parties when a match forms (story #33);
  * `notifyMessage`/`notifyMessageLive` tell a counterparty something was said (story #35);
  * `remindCrew`/`remindCrewLive`/`morningOfLive` ask a crew to confirm on the race morning and
- * `notifyConfirmed`/`notifyConfirmedLive` tell the skipper they did (story #37).
+ * `notifyConfirmed`/`notifyConfirmedLive` tell the skipper they did (story #37);
+ * `sendInvites`/`sendInvitesLive` email a pasted list the club's invite code (story #37's lesson
+ * applied at filing time — #31).
  */
 const SENDERS = [
   "notifyRung",
@@ -55,6 +57,8 @@ const SENDERS = [
   "morningOfLive",
   "notifyConfirmed",
   "notifyConfirmedLive",
+  "sendInvites",
+  "sendInvitesLive",
 ];
 
 async function sourceFiles(): Promise<{ path: string; text: string }[]> {
@@ -118,7 +122,10 @@ describe("what can send a rung email (AC 3)", () => {
     expect(files.length).toBeGreaterThan(20);
     // The thread's send action joined this list when `notifyMessage` joined SENDERS (#37 —
     // the name had been missing since #35, so the file was a sender the scan did not count).
+    // The admin's invite action joined on #31, with its name added to SENDERS in the same edit —
+    // which is #37's lesson (d) applied at filing time rather than found two stories later.
     expect(sendersAmong(files)).toEqual([
+      "app/admin/invite/actions.ts",
       "app/api/ladder/tick/route.ts",
       "app/board/actions.ts",
       "app/post/[id]/thread/actions.ts",
