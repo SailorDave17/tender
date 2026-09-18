@@ -31,12 +31,31 @@ import { join, relative } from "node:path";
 const SRC = join(process.cwd(), "src");
 
 /**
- * The eight ways a caller can cause a send. `notifyRung`/`notifyRungLive` run the ladder and
- * then send; `dispatchPending`/`dispatchPendingLive` send what the tick has already queued;
+ * The ways a caller can cause a send. `notifyRung`/`notifyRungLive` run the ladder and then
+ * send; `dispatchPending`/`dispatchPendingLive` send what the tick has already queued;
  * `notifyAnswer`/`notifyAnswerLive` tell a post's skipper that crew answered (story #24);
- * `notifyMatch`/`notifyMatchLive` email both parties when a match forms (story #33).
+ * `notifyMatch`/`notifyMatchLive` email both parties when a match forms (story #33);
+ * `notifyMessage`/`notifyMessageLive` tell a counterparty something was said (story #35);
+ * `remindCrew`/`remindCrewLive`/`morningOfLive` ask a crew to confirm on the race morning and
+ * `notifyConfirmed`/`notifyConfirmedLive` tell the skipper they did (story #37).
  */
-const SENDERS = ["notifyRung", "notifyRungLive", "dispatchPending", "dispatchPendingLive", "notifyAnswer", "notifyAnswerLive", "notifyMatch", "notifyMatchLive"];
+const SENDERS = [
+  "notifyRung",
+  "notifyRungLive",
+  "dispatchPending",
+  "dispatchPendingLive",
+  "notifyAnswer",
+  "notifyAnswerLive",
+  "notifyMatch",
+  "notifyMatchLive",
+  "notifyMessage",
+  "notifyMessageLive",
+  "remindCrew",
+  "remindCrewLive",
+  "morningOfLive",
+  "notifyConfirmed",
+  "notifyConfirmedLive",
+];
 
 async function sourceFiles(): Promise<{ path: string; text: string }[]> {
   const out: { path: string; text: string }[] = [];
@@ -94,12 +113,15 @@ describe("what can send a rung email (AC 3)", () => {
     ]);
   });
 
-  it("exactly the two Server Actions and the tick route can send — no page, no component", async () => {
+  it("exactly the three Server Actions and the tick route can send — no page, no component", async () => {
     const files = await sourceFiles();
     expect(files.length).toBeGreaterThan(20);
+    // The thread's send action joined this list when `notifyMessage` joined SENDERS (#37 —
+    // the name had been missing since #35, so the file was a sender the scan did not count).
     expect(sendersAmong(files)).toEqual([
       "app/api/ladder/tick/route.ts",
       "app/board/actions.ts",
+      "app/post/[id]/thread/actions.ts",
       "app/post/actions.ts",
     ]);
     // A sender is a Server Action or a Route Handler. Both are entered by a request the person

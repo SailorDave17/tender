@@ -35,6 +35,16 @@ class RecordingRepo implements TickRepo {
   posts: TickPost[] = [];
   pool: Crew[] = [];
   existing = new Map<string, Suggested[]>();
+  /**
+   * How many rows on each post are owed a send AFTER this pass's insert (#128). Set per test, and
+   * deliberately independent of `existing` — a row can be in `existing` and still pending (the cap
+   * skipped it) or in `existing` and settled (it was emailed), which is the whole distinction the
+   * story turns on and which a value derived from `existing` could not express.
+   *
+   * The default is the honest one for a repo that has just been handed new candidates: whatever a
+   * test does not override, `setUp` computes from the pass itself.
+   */
+  pending = new Map<string, number>();
 
   async openPosts(): Promise<TickPost[]> {
     this.calls.push("openPosts");
@@ -48,6 +58,10 @@ class RecordingRepo implements TickRepo {
     this.calls.push("suggestionsFor");
     return this.existing.get(postId) ?? [];
   }
+  async pendingCount(postId: string): Promise<number> {
+    this.calls.push(`pendingCount(${postId})`);
+    return this.pending.get(postId) ?? 0;
+  }
   async setRung(postId: string, rung: Rung) {
     this.calls.push(`setRung(${postId},${rung})`);
   }
@@ -56,12 +70,17 @@ class RecordingRepo implements TickRepo {
   }
 }
 
-function setUp(over: { pool?: Crew[]; posts?: TickPost[] } = {}) {
+function setUp(over: { pool?: Crew[]; posts?: TickPost[]; pending?: Record<string, number> } = {}) {
   const repo = new RecordingRepo();
   repo.posts = over.posts ?? [post("p1")];
   repo.pool = over.pool ?? [{ id: "a", rating: 2, hulls: ["Thistle"], available: true }];
+  // Default: every post is owed one send — the ordinary state after a pass that proposed somebody.
+  // A test measuring the pending condition itself overrides it, which is the point of the field.
+  for (const p of repo.posts) repo.pending.set(p.id, over.pending?.[p.id] ?? 1);
   const dispatched: string[] = [];
   const stamps: TickRunRow[] = [];
+  /** Every effect the handler makes, in order — what a stamp-after-the-work claim is about. */
+  const order: string[] = [];
   const deps = {
     secret: SECRET,
     // pg_cron's POST, unless a test says otherwise: it carries no x-vercel-cron-schedule.
@@ -69,13 +88,19 @@ function setUp(over: { pool?: Crew[]; posts?: TickPost[] } = {}) {
     repo,
     dispatch: async (p: TickPost) => {
       dispatched.push(p.id);
+      order.push(`dispatch(${p.id})`);
     },
     recordRun: async (row: TickRunRow) => {
       stamps.push(row);
+      order.push("recordRun");
+    },
+    // The morning-of pass (#37), recorded with the instant it was handed.
+    morningOf: async (now: Date) => {
+      order.push(`morningOf(${now.toISOString()})`);
     },
     now: NOW,
   };
-  return { repo, dispatched, stamps, deps };
+  return { repo, dispatched, stamps, order, deps };
 }
 
 /** The row pg_cron's tick writes: `last_at` and nothing else, so the daily stamp is left alone. */
@@ -89,13 +114,14 @@ describe("handleTick — the refusal", () => {
     ["an empty bearer", "Bearer "],
   ] as const) {
     it(`401s on ${name}, and the repo is untouched`, async () => {
-      const { repo, dispatched, stamps, deps } = setUp();
+      const { repo, dispatched, stamps, order, deps } = setUp();
       const res = await handleTick({ ...deps, authorization: header });
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: "unauthorized" });
       expect(repo.calls).toEqual([]); // nothing was read, nothing was written
       expect(dispatched).toEqual([]);
       expect(stamps).toEqual([]); // and last_at does not move, so /admin still shows the truth
+      expect(order).toEqual([]); // and no reminder pass ran either (#37)
     });
   }
 
@@ -116,14 +142,71 @@ describe("handleTick — the run", () => {
     expect(res.body).toEqual({ posts: 1, newSuggestions: 1 });
   });
 
-  it("dispatches exactly the posts that reached somebody new, and stamps the run after the work", async () => {
-    const { repo, dispatched, stamps, deps } = setUp({ posts: [post("p1"), post("p2")] });
-    repo.existing.set("p2", [{ personId: "a", rung: 1 }]); // p2 already told this crew
+  it("dispatches exactly the posts that owe somebody a send, and stamps the run after the work", async () => {
+    // p2 was already proposed this crew AND already emailed them: nothing new, nothing pending.
+    const { repo, dispatched, stamps, order, deps } = setUp({ posts: [post("p1"), post("p2")], pending: { p2: 0 } });
+    repo.existing.set("p2", [{ personId: "a", rung: 1 }]);
 
     const res = await handleTick({ ...deps, authorization: `Bearer ${SECRET}` });
     expect(res.body).toEqual({ posts: 2, newSuggestions: 1 });
     expect(dispatched).toEqual(["p1"]);
     expect(stamps).toEqual([clockRow]);
+    // The order IS the claim (#37 AC 2, "run by the existing tick"): ladder dispatch, then the
+    // morning-of pass with this tick's own clock, then the stamp. The handler holds the stamp back
+    // from a pass that throws (next test); the route's wrapper swallows, so in production only an
+    // unwrapped ladder read does — see tick-handler.ts's deps doc.
+    expect(order).toEqual(["dispatch(p1)", `morningOf(${NOW.toISOString()})`, "recordRun"]);
+  });
+
+  it("runs the morning-of pass on a tick with nothing to dispatch, and does not stamp one whose pass threw (#37)", async () => {
+    const quiet = setUp({ posts: [] });
+    await handleTick({ ...quiet.deps, authorization: `Bearer ${SECRET}` });
+    expect(quiet.order).toEqual([`morningOf(${NOW.toISOString()})`, "recordRun"]);
+
+    const broken = setUp({ posts: [] });
+    broken.deps.morningOf = async () => {
+      throw new Error("the reminder store said no");
+    };
+    await expect(handleTick({ ...broken.deps, authorization: `Bearer ${SECRET}` })).rejects.toThrow("the reminder store said no");
+    expect(broken.stamps).toEqual([]);
+  });
+
+  /**
+   * #128 AC 1 — the story's whole subject. A post whose rung did not move reaches NOBODY new, and
+   * before #128 that alone decided the dispatch, so a suggestion left pending by the day's cap was
+   * never handed back to `dispatchPending()` by the clock. The repo records every dispatch call,
+   * so the assertion is on what the handler did rather than on what it answered.
+   */
+  it("dispatches a post that reached nobody new but still has a pending send (#128 AC 1)", async () => {
+    const { repo, dispatched, deps } = setUp({ pending: { p1: 1 } });
+    repo.existing.set("p1", [{ personId: "a", rung: 1 }]); // the pool's only crew, proposed earlier
+
+    const res = await handleTick({ ...deps, authorization: `Bearer ${SECRET}` });
+    expect(res.body).toEqual({ posts: 1, newSuggestions: 0 }); // nobody new, and that is the point
+    expect(dispatched).toEqual(["p1"]);
+  });
+
+  /**
+   * #128 AC 3 — the other side of the same condition, and the reason it is a `notified_at` read
+   * rather than "does this post have suggestions". Widening it carelessly would turn the clock
+   * into a full sweep of every open post every fifteen minutes; ninety-six of those a day is what
+   * the cap cannot afford.
+   */
+  it("does not dispatch a post whose suggestions are all already notified (#128 AC 3)", async () => {
+    const { repo, dispatched, deps } = setUp({ pending: { p1: 0 } });
+    repo.existing.set("p1", [{ personId: "a", rung: 1 }]);
+
+    const res = await handleTick({ ...deps, authorization: `Bearer ${SECRET}` });
+    expect(res.body).toEqual({ posts: 1, newSuggestions: 0 });
+    expect(dispatched).toEqual([]);
+  });
+
+  it("dispatches every post that owes a send, not merely the first (#128 AC 1)", async () => {
+    const { repo, dispatched, deps } = setUp({ posts: [post("p1"), post("p2"), post("p3")], pending: { p2: 0 } });
+    for (const id of ["p1", "p2", "p3"]) repo.existing.set(id, [{ personId: "a", rung: 1 }]);
+
+    await handleTick({ ...deps, authorization: `Bearer ${SECRET}` });
+    expect(dispatched).toEqual(["p1", "p3"]);
   });
 
   it("stamps a tick that found nothing to do — a quiet clock and a dead one must not look alike", async () => {

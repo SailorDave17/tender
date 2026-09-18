@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { answerState } from "@/post/answer-rules";
+import { isSettableStatus } from "@/post/match-view";
 import { UUID, parsePostForm } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
-import { notifyAnswerLive, notifyMatchLive, notifyRungLive } from "@/notify/live";
+import { notifyAnswerLive, notifyConfirmedLive, notifyMatchLive, notifyRungLive } from "@/notify/live";
 
 /**
  * A skipper's two writes on a post: post a need, close it. Both through the cookie-bound
@@ -168,4 +169,37 @@ export async function acceptAnswer(formData: FormData): Promise<void> {
   revalidatePath("/board");
   revalidatePath(`/post/${id}`);
   redirect(`/post/${id}`);
+}
+
+/**
+ * Move a match's status (story #37): the crew confirms on the race morning, the skipper records
+ * sailed or a no-show after the start. Nothing is decided here at all — set_match_status()
+ * (0021) is a definer function that takes the caller from auth.uid(), checks who and when, and
+ * lets the transition trigger decide whether the move is legal; every refusal comes back as an
+ * error and is shown as one sentence. The page hid the button outside the window, and that was
+ * a courtesy: a Server Action is a POST anyone can send.
+ *
+ * On 'confirmed', the skipper is told through the existing transports (AC 3). Runs after the
+ * write succeeded, as the service role, and a failure in it never undoes the confirmation — and
+ * ONLY on a real transition: the rpc answers the status the row HAD, so a double tap while the
+ * first POST is in flight, a stale tab, or a repeat POST by hand finds 'confirmed' already there
+ * and tells the skipper nothing twice. Reading the status before the rpc would not close the
+ * double-tap case (both reads see 'accepted'); the definer, which holds the prior row, can.
+ */
+export async function setMatchStatus(formData: FormData): Promise<void> {
+  const matchId = field(formData, "match_id");
+  const postId = field(formData, "post_id");
+  const status = field(formData, "status");
+  if (!UUID.test(postId)) redirect("/board?error=refused");
+  if (!UUID.test(matchId) || !isSettableStatus(status)) redirect(`/post/${postId}?error=status-refused`);
+
+  const client = await supabaseServer();
+  const { data: previous, error } = await client.rpc("set_match_status", { match_id: matchId, status });
+  if (error) redirect(`/post/${postId}?error=status-refused`);
+
+  if (status === "confirmed" && previous === "accepted") await notifyConfirmedLive(matchId);
+
+  revalidatePath("/board");
+  revalidatePath(`/post/${postId}`);
+  redirect(`/post/${postId}`);
 }

@@ -21,6 +21,27 @@ import { runTick, type TickPost, type TickRepo } from "./tick";
  * both used to write the same `last_at` — so the daily call was overwritten within 15 minutes and
  * its only other trace was a function-log line Vercel Hobby keeps for one hour. `sweep_at` (0019)
  * is stamped only when Vercel's cron is the caller, so the second clock stays readable for days.
+ *
+ * THE CLOCK IS WHAT RETRIES A PENDING SEND (#128 AC 5), and saying so is the point of this
+ * paragraph: the two halves of this were each correct on their own, and nothing owned the seam.
+ * `dispatchPending()` (src/notify/rung.ts) leaves `notified_at` NULL on a send the provider
+ * refused and on one skipped at the day's cap, so that "the next call retries that person alone".
+ * Until #128 the next call never came from here — the handler dispatched a post only when the
+ * pass had reached somebody NEW, and a cap-skipped person is in `suggestion` from the pass that
+ * skipped them, so they are never new again. The pending row waited on a post-create or an
+ * availability toggle on that date, and if nobody else marked the day it waited forever. The
+ * fifteen-minute schedule made it worse rather than better: ninety-six passes a day, every one of
+ * them finding nobody new and skipping dispatch, and the pass that would resend after the cap
+ * clears at UTC midnight is precisely one of those.
+ *
+ * So: the clock retries, on `TickedPost.pending`. The post-create and availability-toggle call
+ * sites still dispatch as they always did — this adds a caller, it does not move the
+ * responsibility. What it costs is that a permanently failing address IS now retried on every
+ * tick, each attempt counting against Resend's 100/day cap, which this file previously called out
+ * as the reason not to do it (owner decision, 2026-09-18, on #128: the systematic cap case is
+ * worth more than the pathological address case). If that cost ever bites, the discriminator is
+ * already in the ledger — a cap skip logs `rung_email_skipped_cap` and a refusal logs `rung_email`
+ * with an `error` — so the condition can be narrowed to the former without a schema change.
  */
 
 /**
@@ -72,6 +93,15 @@ export type TickHandlerDeps = {
   dispatch: (post: TickPost) => Promise<void>;
   /** Upsert the row into `tick_run` (0012, 0019). */
   recordRun: (row: TickRunRow) => Promise<void>;
+  /**
+   * The morning-of pass (#37): ask every crew whose race morning it is to confirm. Runs after
+   * the ladder's dispatch and before the stamp, so it rides the same clock. A pass that THROWS
+   * leaves `tick_run` unmoved — but the route hands in `morningOfLive`, which swallows the whole
+   * pass to a console error, the same standing `dispatch` has (src/notify/live.ts). So the
+   * stamp-holding rule binds the ladder READ (`runTick`, unwrapped) and not this half; the
+   * evidence a pass did not run is the un-reminded match, not a stale stamp.
+   */
+  morningOf: (now: Date) => Promise<void>;
   now: Date;
 };
 
@@ -81,19 +111,21 @@ export type TickResponse = {
 };
 
 export async function handleTick(deps: TickHandlerDeps): Promise<TickResponse> {
-  const { authorization, cronSchedule, secret, repo, dispatch, recordRun, now } = deps;
+  const { authorization, cronSchedule, secret, repo, dispatch, recordRun, morningOf, now } = deps;
   if (!bearerAuthorized(authorization, secret)) return { status: 401, body: { error: "unauthorized" } };
 
   const result = await runTick(repo, now);
 
-  // Only posts this pass newly reached somebody. A post whose rung did not move has nobody new
-  // to tell, and dispatching it anyway would retry a permanently failing address on every tick —
-  // each retry logged as an attempt, and attempts are what Resend's 100/day cap counts. A send
-  // that failed is retried by the next post or availability toggle on that date (story #23's
-  // rule), not by the clock.
+  // Every post with anything OWED a send, not only the ones this pass reached somebody new on
+  // (#128). `dispatchPending()` sends to whoever is pending and nobody else, so handing it a post
+  // twice sends nothing twice; what it cannot do is send to a post it is never handed.
   for (const ticked of result.ticked) {
-    if (ticked.reached.length > 0) await dispatch(ticked.post);
+    if (ticked.pending) await dispatch(ticked.post);
   }
+
+  // The race morning's reminders (#37), on the same clock. After the ladder, so a crew reached
+  // by this very pass is not asked to confirm a match that does not exist yet; before the stamp.
+  await morningOf(now);
 
   await recordRun(tickRunRow(now, tickCaller(cronSchedule)));
   return { status: 200, body: { posts: result.posts, newSuggestions: result.newSuggestions } };

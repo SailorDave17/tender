@@ -245,6 +245,9 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       // caller ever receiving an endpoint. Admin-gated by raising 42501, like the two above.
       "public.push_install_status",
       "public.rotate_invite_code",
+      // 0021 (#37) — the one client route to a match's status: takes the caller from auth.uid(),
+      // refuses the wrong party and the wrong time, and lets the transition trigger decide the rest.
+      "public.set_match_status",
     ]);
   });
 });

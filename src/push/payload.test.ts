@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RungPost } from "@/notify/rung";
-import { PUSH_PAYLOAD_MAX_BYTES, encodePush, rungPush } from "./payload";
+import { PUSH_PAYLOAD_MAX_BYTES, answerPush, confirmPush, confirmedPush, encodePush, rungPush } from "./payload";
 
 /** A race at 1 pm on a Sunday in Ohio — 17:00 UTC in June, when the club is on EDT. */
 const post: RungPost = {
@@ -40,6 +40,29 @@ describe("rungPush — what the phone shows (AC 5)", () => {
   it("collapses repeats for one post with a per-post tag", () => {
     expect(rungPush(post, 1).tag).toBe(`post-${post.id}`);
     expect(rungPush(post, 3).tag).toBe(rungPush(post, 1).tag); // same post, same tag, whatever the rung
+  });
+});
+
+describe("confirmPush / confirmedPush — the race morning's two payloads (story #37)", () => {
+  it("the crew's reminder names the boat and the start, links the post, and carries its own tag", () => {
+    const p = confirmPush(post);
+    expect(p.title).toBe("Confirm for today: Blue Moon (Thistle)");
+    expect(p.body).toBe("Sun, Jun 13, 1:00 PM · tap to confirm you're sailing");
+    expect(p.url).toBe(`/post/${post.id}`);
+    expect(p.tag).toBe(`post-${post.id}-confirm`);
+  });
+
+  it("the skipper's 'confirmed' names the crew in the title, and carries its own tag", () => {
+    const p = confirmedPush(post, "Cy");
+    expect(p.title).toBe("Cy confirmed: Blue Moon (Thistle)");
+    expect(p.body).toBe("Sun, Jun 13, 1:00 PM");
+    expect(p.url).toBe(`/post/${post.id}`);
+    expect(p.tag).toBe(`post-${post.id}-confirmed`);
+  });
+
+  it("neither tag collapses into the crew-need or the answer notification for the same post", () => {
+    const tags = [rungPush(post, 1).tag, answerPush(post, 1).tag, confirmPush(post).tag, confirmedPush(post, "Cy").tag];
+    expect(new Set(tags).size).toBe(4);
   });
 });
 

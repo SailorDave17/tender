@@ -6,6 +6,7 @@ import { formatStartsAt } from "@/dates/race-date";
 import { InstallBanner } from "@/install/InstallBanner";
 import { RegisterServiceWorker } from "@/install/RegisterServiceWorker";
 import { RungBadge } from "@/post/CandidateList";
+import { statusLabel } from "@/post/match-view";
 import { explainPostRefusal } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
 import { setAvailability } from "./actions";
@@ -123,13 +124,17 @@ export default async function BoardPage({
                       if (m) {
                         const skipper = data.people.get(m.skipper_id)?.display_name ?? "the skipper";
                         const crew = data.people.get(m.crew_id)?.display_name ?? "the crew";
+                        // What became of the match (story #37 AC 4) — shown to everyone who can
+                        // see the match, since a crewed boat's state is news the way the match was.
+                        const outcome = statusLabel(m.status);
                         return (
-                          <li key={p.id} data-post={p.id} data-matched="true">
+                          <li key={p.id} data-post={p.id} data-matched="true" data-match-status={m.status}>
                             <strong>Crewed</strong> —{" "}
                             <Link href={`/post/${p.id}`}>
                               {boat.name} ({boat.class})
                             </Link>
                             : {skipper} with {crew}
+                            {outcome && <> — {outcome.toLowerCase()}</>}
                           </li>
                         );
                       }

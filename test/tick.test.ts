@@ -3,7 +3,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import type { Message, Transport } from "@/email/send";
 import { handleTick, type TickRunRow } from "@/engine/tick-handler";
 import type { TickPost } from "@/engine/tick";
-import { dispatchPending } from "@/notify/rung";
+import { dispatchPending, EMAIL_SKIP_AT, KIND_RUNG_EMAIL_SKIPPED_CAP } from "@/notify/rung";
 import { as, freshDb } from "./pglite";
 import { pgliteDispatchStore, pgliteTickRepo } from "./tick-repo";
 
@@ -135,12 +135,24 @@ async function tick(
   const transport = new FakeTransport();
   for (const to of opts.refuse ?? []) transport.refuse.add(to);
   const store = pgliteDispatchStore(db);
+  // Which posts the handler handed to the dispatch, in order (#128). A dispatch of a post with
+  // NOTHING pending is silent — it sends no mail and writes no log row — so it is indistinguishable
+  // from not dispatching at all by any read of the database. AC 3 is a claim about the call, and
+  // this is the only thing that can see one. The mutation pass is what established that: dropping
+  // the `notified_at` filter from the adapter's pendingCount reddened zero tests while every
+  // assertion available was on the ledger.
+  const dispatched: string[] = [];
+  // The morning-of pass (#37) is recorded, not run: its behaviour fixtures are
+  // test/morning-of.test.ts's, over the same handler with the pglite reminder adapter. What this
+  // file can say is that every tick the route runs hands the pass its clock, once.
+  const morningOf: Date[] = [];
   const response = await handleTick({
     authorization: opts.authorization === undefined ? `Bearer ${SECRET}` : opts.authorization,
     cronSchedule: opts.cronSchedule ?? null,
     secret: SECRET,
     repo: pgliteTickRepo(db),
     dispatch: async (post: TickPost) => {
+      dispatched.push(post.id);
       await dispatchPending(post, { store, transport, now, siteUrl: SITE });
     },
     // What src/engine/tick-store.ts's recordTickRun() does, in this adapter's dialect: the
@@ -157,9 +169,12 @@ async function tick(
         Object.values(row),
       );
     },
+    morningOf: async (at: Date) => {
+      morningOf.push(at);
+    },
     now,
   });
-  return { response, emailed: transport.sent.map((m) => m.to).sort(), sent: transport.sent };
+  return { response, emailed: transport.sent.map((m) => m.to).sort(), sent: transport.sent, dispatched, morningOf };
 }
 
 async function rungOf(postId: string): Promise<number> {
@@ -226,11 +241,13 @@ afterAll(async () => {
 describe("AC 2 — 47 h before the race, the post widens to rung 2 and only rung 2 is emailed", () => {
   it("widens the post, emails exactly the rung-2 crew, and reports one new suggestion", async () => {
     expect(await rungOf(S.clock.post)).toBe(1); // the precondition, or the assertions below prove nothing
-    const { response, emailed } = await tick(before(S.clock, 47));
+    const now = before(S.clock, 47);
+    const { response, emailed, morningOf } = await tick(now);
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ posts: expect.any(Number), newSuggestions: 1 });
     expect(await rungOf(S.clock.post)).toBe(2);
     expect(emailed).toEqual([emailOf(R2)]);
+    expect(morningOf).toEqual([now]); // the same tick carries the morning-of pass (#37)
   });
 
   it("records the send, so the day's count against Resend's cap is right", async () => {
@@ -387,17 +404,22 @@ describe("re-offering a suggestion is a no-op — the row, its rung and its noti
 });
 
 /**
- * A send the provider refuses leaves notified_at NULL, so the person stays queued — but the CLOCK
- * does not retry them, because a post whose rung did not move reaches nobody new and is not
- * dispatched. That is a deliberate choice (src/engine/tick-handler.ts): retrying on every tick
- * would spend the day's cap on an address that will refuse it ninety-six times.
+ * A send the provider refuses leaves notified_at NULL, so the person stays queued — and since
+ * #128 the CLOCK is what retries them. Before #128 it did not: a post whose rung had not moved
+ * reached nobody new and was never dispatched, so `dispatchPending()`'s retry had no caller on the
+ * schedule. The cost, accepted by the owner on 2026-09-18, is that a permanently failing address
+ * is retried on every tick; the benefit is the cap case below, which is the systematic one.
+ *
+ * This describe block asserted the OPPOSITE until #128 — that the second tick sent nothing — and
+ * its docstring called that deliberate. It is rewritten rather than deleted so the reversal is
+ * visible in the history of the test that recorded the old rule.
  */
-describe("a refused send stays queued, and the clock does not spend the cap retrying it", () => {
+describe("a refused send stays queued, and the clock retries it (#128)", () => {
   const DATE = "c0000000-0000-4000-8000-0000000000ff";
   const POST = "b0000000-0000-4000-8000-0000000000ff";
   const RACE = new Date("2027-08-15T17:00:00Z");
 
-  it("leaves the person pending after a refusal, and the next tick does not try again", async () => {
+  it("leaves the person pending after a refusal, and the next tick tries again", async () => {
     await db.query(`insert into public.race_date (id, starts_at, title, published) values ($1, $2, 'Refusal', true)`, [
       DATE,
       RACE.toISOString(),
@@ -415,11 +437,122 @@ describe("a refused send stays queued, and the clock does not spend the cap retr
       `select count(*)::int as n from public.suggestion where post_id = $1 and notified_at is null`,
       [POST],
     );
-    expect(pending.rows[0].n).toBe(1); // still queued for the next post or availability toggle
+    expect(pending.rows[0].n).toBe(1);
 
+    // Nobody new — `newSuggestions` is 0 — and the send happens anyway. That pair is the story.
     const second = await tick(new Date(RACE.getTime() - 19 * HOUR));
-    expect(second.emailed).toEqual([]);
+    expect(second.emailed).toEqual([emailOf(R2)]);
     expect(second.response.body).toEqual({ posts: 1, newSuggestions: 0 });
+
+    const after = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.suggestion where post_id = $1 and notified_at is null`,
+      [POST],
+    );
+    expect(after.rows[0].n).toBe(0); // and now they are settled
+
+    // A third tick sends nothing: dispatchPending() sends to whoever is pending, and nobody is.
+    const third = await tick(new Date(RACE.getTime() - 18 * HOUR));
+    expect(third.emailed).toEqual([]);
+  });
+});
+
+/**
+ * #128 AC 2 — the systematic case, and the one the fifteen-minute schedule made worse rather than
+ * better. The day's cap is reached on one pass, so the crew is inserted into `suggestion` and
+ * skipped with `notified_at` NULL. Every later pass that day finds them already suggested,
+ * therefore not new. The cap clears at UTC midnight, and the pass that would resend after it
+ * clears is precisely one of those — so before #128 the mail simply never arrived.
+ *
+ * Both ticks run with nobody new and nobody else marking the day, which is the condition the
+ * issue names: "if nobody else marks that day, it is never retried at all".
+ */
+describe("the cap clears overnight and the clock resends, with nobody new (#128 AC 2)", () => {
+  const DATE = "c0000000-0000-4000-8000-0000000000fe";
+  const POST = "b0000000-0000-4000-8000-0000000000fe";
+  // Late enough on the 20th that a 20h-before tick is still the same UTC day as the cap rows.
+  const RACE = new Date("2027-08-21T17:00:00Z");
+
+  it("skips at the cap, then sends exactly once on the next day's first pass and marks them notified", async () => {
+    await db.query(`insert into public.race_date (id, starts_at, title, published) values ($1, $2, 'Capped', true)`, [
+      DATE,
+      RACE.toISOString(),
+    ]);
+    await db.query(
+      `insert into public.post (id, boat_id, race_date_id, minimum, current_rung) values ($1, $2, $3, 2, 3)`,
+      [POST, BOAT, DATE],
+    );
+    await db.query(`insert into public.availability (person_id, race_date_id) values ($1, $2)`, [R2, DATE]);
+
+    // Fill the day's quota with real rung_email rows — what emailsSentToday() actually counts.
+    const capDay = new Date(RACE.getTime() - 20 * HOUR); // 2027-08-20T21:00Z
+    await svc(
+      `insert into public.notification_log (kind, channel, person_id, to_email, post_id, provider_id, sent_at)
+       select 'rung_email', 'email', $1, 'filler@example.org', $2, 'msg-filler', $3
+         from generate_series(1, ${EMAIL_SKIP_AT})`,
+      [SKIPPER, POST, capDay.toISOString()],
+    );
+
+    const capped = await tick(capDay);
+    expect(capped.emailed).toEqual([]); // at the cap: proposed, logged as skipped, not sent
+    expect(capped.response.body).toEqual({ posts: 1, newSuggestions: 1 });
+    const skip = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.notification_log where post_id = $1 and kind = $2`,
+      [POST, KIND_RUNG_EMAIL_SKIPPED_CAP],
+    );
+    expect(skip.rows[0].n).toBe(1);
+
+    // The next UTC day's first pass. Nobody new has marked the date, so `reached` is empty — the
+    // exact condition that used to skip the dispatch entirely.
+    const nextDay = new Date("2027-08-21T00:15:00Z");
+    const after = await tick(nextDay);
+    expect(after.emailed).toEqual([emailOf(R2)]);
+    expect(after.response.body).toEqual({ posts: 1, newSuggestions: 0 });
+
+    const row = await db.query<{ notified_at: string | null }>(
+      `select notified_at::text from public.suggestion where post_id = $1 and person_id = $2`,
+      [POST, R2],
+    );
+    expect(row.rows[0].notified_at).not.toBeNull();
+
+    // Exactly once: a later pass the same day sends nothing further.
+    const again = await tick(new Date("2027-08-21T00:30:00Z"));
+    expect(again.emailed).toEqual([]);
+    const sends = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.notification_log
+        where post_id = $1 and kind = 'rung_email' and person_id = $2`,
+      [POST, R2],
+    );
+    expect(sends.rows[0].n).toBe(1);
+  });
+
+  /**
+   * #128 AC 3, against the real query rather than a fake's return value — and it is here because
+   * the mutation pass found the gap. Dropping `and notified_at is null` from the adapter's
+   * `pendingCount` reddened NOTHING (predicted 3, actual 0): every other fixture either has rows
+   * pending or has no suggestions at all, so a `pendingCount` that counts every suggestion row is
+   * indistinguishable from a correct one. That is precisely the careless widening the AC warns
+   * about — the clock sweeping every open post on every pass — and it was uncovered.
+   *
+   * The handler test in src/engine/tick-handler.test.ts cannot reach this: it injects the count,
+   * so it measures the CONDITION and is structurally blind to the QUERY behind it.
+   */
+  it("a post whose suggestions are all notified is not dispatched at all (#128 AC 3)", async () => {
+    const settled = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.suggestion where post_id = $1 and notified_at is null`,
+      [POST],
+    );
+    expect(settled.rows[0].n).toBe(0); // the precondition: rows exist, none owed a send
+    const rows = await db.query<{ n: number }>(`select count(*)::int as n from public.suggestion where post_id = $1`, [
+      POST,
+    ]);
+    expect(rows.rows[0].n).toBeGreaterThan(0);
+
+    const quiet = await tick(new Date("2027-08-21T00:45:00Z"));
+    expect(quiet.emailed).toEqual([]);
+    // The claim is about the CALL, not about the mail. A dispatch of a post with nothing pending
+    // sends nothing and logs nothing, so every database read agrees with a correct run — which is
+    // exactly how the uncovered case survived the first mutation pass at a predicted 3, actual 0.
+    expect(quiet.dispatched).not.toContain(POST);
   });
 });
 

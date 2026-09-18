@@ -120,8 +120,10 @@ season. Known blind spot: matches it caused that closed by text.
 Entities: club (theme), person (role flags; name, email, optional phone, self-rating, hull
 willingness, 18+ attestation), boat (class, default minimum), race_date, availability
 (person × date), post (boat × date × minimum × note × current rung), suggestion (post × person ×
-rung × notified-at), answer, match (accepted → confirmed → sailed | no-show), message (thread per
-match), notification_log.
+rung × notified-at), answer, match (accepted → confirmed → sailed | no-show — *amended 2026-09-18,
+#37: accepted → sailed is also legal, by owner decision; a crew who never tapped Confirm but turned
+up did sail, and the skipper's record is the fact the metric counts. 0021 is the enforcement*),
+message (thread per match), notification_log.
 
 - **Ownership**: a person owns their record; deletion on request removes profile, availability
   and messages; past matches remain as anonymised rows so the season's metric stays countable.

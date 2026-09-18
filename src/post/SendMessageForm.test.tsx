@@ -23,7 +23,7 @@ import { MESSAGE_BODY_MAX, THREAD_CLOSED_NOTE, explainMessageRefusal, threadIsOp
  * the PR body rather than papered over.
  */
 
-const match = { id: "m1", post_id: "p1", skipper_id: "sam", crew_id: "cy", accepted_at: "2026-08-22T12:00:00Z" };
+const match = { id: "m1", post_id: "p1", skipper_id: "sam", crew_id: "cy", accepted_at: "2026-08-22T12:00:00Z", status: "accepted" as const };
 const names = new Map([
   ["sam", "Sam"],
   ["cy", "Cy"],

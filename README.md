@@ -452,6 +452,15 @@ over whatever arrived.
    select last_at, sweep_at from public.tick_run;   -- sweep_at inside 12:00–13:00 UTC today
    ```
 
+2d. **The race morning** (#37). The same tick asks every crew still merely *accepted* on a match
+   for that day to confirm — a push if they have one, an email with a Confirm link — at the first
+   quarter-hour on or after **06:00 America/New_York**, once (`match.reminded_at`). The crew's
+   Confirm button and the skipper's *Sailed* / *Did not show* buttons call `set_match_status()`.
+   All of it is `0021`. **Apply `0021` before promoting the `develop` that carries #37.** Until
+   then a tap on any of the three buttons is refused (PGRST202, shown as one sentence) and the
+   morning-of pass logs a read error and does nothing, while the ladder half still runs — neither
+   failure is loud, which is why the order matters. Nothing to enable and no new secret.
+
 3. **Vercel**: import the repo, set the production branch to `release`, add the environment
    variables, turn on Deployment Protection → Standard Protection (previews carry the production
    Supabase host), add the domain `tender.madcowsailing.com` (CNAME per Vercel's per-project
