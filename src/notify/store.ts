@@ -3,6 +3,7 @@ import { poolForDate } from "@/board/post-view";
 import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { KIND_ANSWER, type AnswerPost, type AnswerStore } from "./answer";
+import { KIND_CONFIRMED, KIND_MORNING_OF, type ConfirmMatch, type ConfirmStore } from "./confirm";
 import { KIND_MATCH, type MatchStore } from "./match";
 import { KIND_MESSAGE, KIND_MESSAGE_SUPPRESSED, type MessageStore } from "./message";
 import { KIND_RUNG_EMAIL, emailDayStart, type LogEntry, type Pending, type PendingPush, type RungPost, type RungStore } from "./rung";
@@ -512,7 +513,7 @@ export function supabaseMessageStore(): MessageStore {
         .from("notification_log")
         .select("id", { count: "exact", head: true })
         .eq("channel", "email")
-        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH, KIND_MESSAGE])
+        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH, KIND_MESSAGE, KIND_MORNING_OF, KIND_CONFIRMED])
         .gte("sent_at", emailDayStart(now).toISOString());
       if (error) fail("count today's email for message", error);
       return count ?? 0;
@@ -529,6 +530,115 @@ export function supabaseMessageStore(): MessageStore {
         error: entry.error,
       });
       if (error) fail("log", error);
+    },
+  };
+}
+
+/**
+ * The ConfirmStore over the live database, as the service role (story #37). Same division of
+ * labour as the four above: every rule is in remindCrew() / notifyConfirmed(), this only reads
+ * and writes. The one write the earlier stores do not make — `match.reminded_at` — is what
+ * 0021's `grant update (reminded_at) on public.match to service_role` exists for, and the
+ * match read is 0018's.
+ */
+export function supabaseConfirmStore(): ConfirmStore {
+  const admin = supabaseAdmin();
+  return {
+    async match(matchId): Promise<ConfirmMatch | null> {
+      const { data, error } = await admin
+        .from("match")
+        .select("id, post_id, skipper_id, crew_id, status")
+        .eq("id", matchId)
+        .maybeSingle();
+      if (error) fail("read match for confirm", error);
+      return data ? { id: data.id, postId: data.post_id, skipperId: data.skipper_id, crewId: data.crew_id, status: data.status } : null;
+    },
+
+    async post(postId): Promise<RungPost | null> {
+      const { data, error } = await admin
+        .from("post")
+        .select("id, race_date_id, minimum, current_rung, closed_at, boat:boat_id (name, class), race_date:race_date_id (starts_at, title)")
+        .eq("id", postId)
+        .maybeSingle();
+      if (error) fail("read post for confirm", error);
+      if (!data) return null;
+      const boat = (Array.isArray(data.boat) ? data.boat[0] : data.boat) as { name: string; class: string };
+      const date = (Array.isArray(data.race_date) ? data.race_date[0] : data.race_date) as { starts_at: string; title: string };
+      return {
+        id: data.id,
+        raceDateId: data.race_date_id,
+        boatClass: boat.class,
+        boatName: boat.name,
+        minimum: data.minimum,
+        startsAt: date.starts_at,
+        dateTitle: date.title,
+        currentRung: data.current_rung,
+        closedAt: data.closed_at,
+      };
+    },
+
+    async name(personId) {
+      const { data, error } = await admin.from("person").select("display_name").eq("id", personId).maybeSingle();
+      if (error) fail("read person name for confirm", error);
+      return data?.display_name ?? null;
+    },
+
+    async email(personId) {
+      const { data, error } = await admin.from("person_contact").select("email").eq("person_id", personId).maybeSingle();
+      if (error) fail("read confirm contact", error);
+      return data?.email ?? null;
+    },
+
+    async pushTargets(personId) {
+      const { data, error } = await admin
+        .from("push_subscription")
+        .select("id, endpoint, p256dh, auth")
+        .eq("person_id", personId);
+      if (error) fail("read confirm subscriptions", error);
+      return data ?? [];
+    },
+
+    async deleteSubscription(id) {
+      const { error } = await admin.from("push_subscription").delete().eq("id", id);
+      if (error) fail("delete subscription", error);
+    },
+
+    async emailsSentToday(now) {
+      // Every attempt kind, as the match and message stores count them: the cap is Resend's and
+      // counts every send, so the widest count available is the honest one.
+      const { count, error } = await admin
+        .from("notification_log")
+        .select("id", { count: "exact", head: true })
+        .eq("channel", "email")
+        .in("kind", [KIND_RUNG_EMAIL, KIND_ANSWER, KIND_MATCH, KIND_MESSAGE, KIND_MORNING_OF, KIND_CONFIRMED])
+        .gte("sent_at", emailDayStart(now).toISOString());
+      if (error) fail("count today's email for confirm", error);
+      return count ?? 0;
+    },
+
+    async log(entry: LogEntry) {
+      const { error } = await admin.from("notification_log").insert({
+        kind: entry.kind,
+        channel: entry.channel,
+        person_id: entry.personId,
+        to_email: entry.toEmail,
+        post_id: entry.postId,
+        provider_id: entry.providerId,
+        error: entry.error,
+      });
+      if (error) fail("log", error);
+    },
+
+    async markReminded(matchId, at) {
+      // Read the write back: an update matching zero rows does not throw, and a match reminded
+      // in the log but never marked would be reminded again in fifteen minutes.
+      const { data, error } = await admin
+        .from("match")
+        .update({ reminded_at: at.toISOString() })
+        .eq("id", matchId)
+        .select("id");
+      if (error) fail("mark reminded", error);
+      if (!data?.length) fail("mark reminded", { message: `no match ${matchId} to mark` });
     },
   };
 }

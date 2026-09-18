@@ -142,6 +142,10 @@ async function tick(
   // the `notified_at` filter from the adapter's pendingCount reddened zero tests while every
   // assertion available was on the ledger.
   const dispatched: string[] = [];
+  // The morning-of pass (#37) is recorded, not run: its behaviour fixtures are
+  // test/morning-of.test.ts's, over the same handler with the pglite reminder adapter. What this
+  // file can say is that every tick the route runs hands the pass its clock, once.
+  const morningOf: Date[] = [];
   const response = await handleTick({
     authorization: opts.authorization === undefined ? `Bearer ${SECRET}` : opts.authorization,
     cronSchedule: opts.cronSchedule ?? null,
@@ -165,9 +169,12 @@ async function tick(
         Object.values(row),
       );
     },
+    morningOf: async (at: Date) => {
+      morningOf.push(at);
+    },
     now,
   });
-  return { response, emailed: transport.sent.map((m) => m.to).sort(), sent: transport.sent, dispatched };
+  return { response, emailed: transport.sent.map((m) => m.to).sort(), sent: transport.sent, dispatched, morningOf };
 }
 
 async function rungOf(postId: string): Promise<number> {
@@ -234,11 +241,13 @@ afterAll(async () => {
 describe("AC 2 — 47 h before the race, the post widens to rung 2 and only rung 2 is emailed", () => {
   it("widens the post, emails exactly the rung-2 crew, and reports one new suggestion", async () => {
     expect(await rungOf(S.clock.post)).toBe(1); // the precondition, or the assertions below prove nothing
-    const { response, emailed } = await tick(before(S.clock, 47));
+    const now = before(S.clock, 47);
+    const { response, emailed, morningOf } = await tick(now);
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ posts: expect.any(Number), newSuggestions: 1 });
     expect(await rungOf(S.clock.post)).toBe(2);
     expect(emailed).toEqual([emailOf(R2)]);
+    expect(morningOf).toEqual([now]); // the same tick carries the morning-of pass (#37)
   });
 
   it("records the send, so the day's count against Resend's cap is right", async () => {

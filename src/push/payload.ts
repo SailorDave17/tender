@@ -106,6 +106,36 @@ export function messagePush(post: RungPost, authorName: string, body: string, ma
 }
 
 /**
+ * What a crew's phone shows on the morning of the race (story #37 AC 2). The tag is
+ * `post-<id>-confirm`, distinct from every tag above: a reminder must not collapse into the
+ * "crew needed" notification for the same post, which the same person may still hold from the
+ * day they were proposed. A second reminder never goes (0021's `reminded_at`), so the tag has
+ * nothing to collapse in practice; it is distinct for the same reason the answer tag is.
+ */
+export function confirmPush(post: RungPost): PushPayload {
+  return {
+    title: `Confirm for today: ${post.boatName} (${post.boatClass})`,
+    body: `${whenLabel(post.startsAt)} · tap to confirm you're sailing`,
+    url: `/post/${post.id}`,
+    tag: `post-${post.id}-confirm`,
+  };
+}
+
+/**
+ * What a skipper's phone shows when the crew confirms (story #37 AC 3). The crew's name is in
+ * the title so it survives a truncated preview; the tag is `post-<id>-confirmed`, distinct from
+ * the answer tag the same skipper held on this post.
+ */
+export function confirmedPush(post: RungPost, crewName: string): PushPayload {
+  return {
+    title: `${crewName} confirmed: ${post.boatName} (${post.boatClass})`,
+    body: whenLabel(post.startsAt),
+    url: `/post/${post.id}`,
+    tag: `post-${post.id}-confirmed`,
+  };
+}
+
+/**
  * The wire form. Throws rather than sending something the push service will reject — a caller
  * that let this through would log a success for a notification nobody received.
  */

@@ -2,11 +2,14 @@ import "server-only";
 import { headers } from "next/headers";
 import { resendTransport } from "@/email/send";
 import { webPushTransport, type PushTransport } from "@/push/send";
+import { runMorningOf, type MorningMatch } from "@/engine/morningOf";
+import { supabaseMorningOfRepo } from "@/engine/morning-store";
 import { notifyAnswer, type AnswerNotifyResult } from "./answer";
+import { notifyConfirmed, remindCrew, type ConfirmNotifyResult } from "./confirm";
 import { notifyMatch, type MatchNotifyResult } from "./match";
 import { notifyMessage, type MessageNotifyResult } from "./message";
 import { dispatchPending, notifyRung, type NotifyResult, type RungPost } from "./rung";
-import { supabaseAnswerStore, supabaseMatchStore, supabaseMessageStore, supabaseRungStore } from "./store";
+import { supabaseAnswerStore, supabaseConfirmStore, supabaseMatchStore, supabaseMessageStore, supabaseRungStore } from "./store";
 
 /**
  * notifyRung() with the live dependencies, for the two Server Actions that call it (post
@@ -125,6 +128,67 @@ export async function notifyMessageLive(messageId: string): Promise<MessageNotif
   } catch (e) {
     console.error(`notifyMessage(${messageId}) failed:`, e instanceof Error ? e.message : e);
     return null;
+  }
+}
+
+/**
+ * notifyConfirmed() with the live dependencies, for the set-status Server Action (story #37
+ * AC 3). Same swallow as the four above and for the same reason: set_match_status() has already
+ * written 'confirmed', the page shows it to both parties, and a notification that could not be
+ * attempted must not undo that or show the crew an error about the skipper's inbox. With push,
+ * like a message: "they're coming" is worth a phone buzzing at breakfast.
+ */
+export async function notifyConfirmedLive(matchId: string): Promise<ConfirmNotifyResult | null> {
+  try {
+    return await notifyConfirmed(matchId, {
+      store: supabaseConfirmStore(),
+      transport: resendTransport(),
+      push: livePushTransport(),
+      now: new Date(),
+      siteUrl: await siteUrl(),
+    });
+  } catch (e) {
+    console.error(`notifyConfirmed(${matchId}) failed:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * One crew's reminder with the live dependencies, for the morning-of pass (story #37 AC 2).
+ * Swallowed per MATCH, the way `dispatchPendingLive` swallows per post: a crew whose reminder
+ * throws must not stop the next crew being asked, and the pass has nothing to undo. What a
+ * throw here means is that `reminded_at` was NOT set (remindCrew marks last), so the next tick
+ * asks again — which is the right outcome for a store that could not be reached, and the
+ * wrong one for a provider that refused, which is exactly why the provider's refusal is caught
+ * inside remindCrew and logged rather than thrown.
+ */
+export async function remindCrewLive(match: MorningMatch): Promise<void> {
+  try {
+    await remindCrew(match, {
+      store: supabaseConfirmStore(),
+      transport: resendTransport(),
+      push: livePushTransport(),
+      now: new Date(),
+      siteUrl: await siteUrl(),
+    });
+  } catch (e) {
+    console.error(`remindCrew(${match.id}) failed:`, e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * The whole morning-of pass with the live adapters, for the tick route (story #37 AC 2).
+ * `runMorningOf()` reads the candidates and decides which are due; each due crew goes through
+ * `remindCrewLive` above. Swallowed, like the dispatch: the ladder half has already done its
+ * work, and a reminder pass that cannot read must not stop `tick_run` recording that the clock
+ * is alive. The cost is that a broken candidate read is a console error and nothing louder —
+ * the same standing the dispatch has today, and #43's story to surface.
+ */
+export async function morningOfLive(now: Date): Promise<void> {
+  try {
+    await runMorningOf(supabaseMorningOfRepo(), remindCrewLive, now);
+  } catch (e) {
+    console.error(`morningOf(${now.toISOString()}) failed:`, e instanceof Error ? e.message : e);
   }
 }
 

@@ -49,7 +49,7 @@ export async function loadBoardData(client: Client): Promise<BoardData> {
     client.from("person").select("id, display_name, rating, any_hull, hulls"),
     client.from("availability").select("person_id, race_date_id"),
     client.from("answer").select("post_id, person_id").is("withdrawn_at", null),
-    client.from("match").select("id, post_id, skipper_id, crew_id, accepted_at"),
+    client.from("match").select("id, post_id, skipper_id, crew_id, accepted_at, status"),
   ]);
   const postRows = (posts.data ?? []) as PostRow[];
   // A second round trip, because the function takes the ids the viewer has already read under

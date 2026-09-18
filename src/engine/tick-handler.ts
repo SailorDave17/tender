@@ -93,6 +93,13 @@ export type TickHandlerDeps = {
   dispatch: (post: TickPost) => Promise<void>;
   /** Upsert the row into `tick_run` (0012, 0019). */
   recordRun: (row: TickRunRow) => Promise<void>;
+  /**
+   * The morning-of pass (#37): ask every crew whose race morning it is to confirm. Runs after
+   * the ladder's dispatch and before the stamp, so it rides the same clock and the same rule —
+   * a pass that throws leaves `tick_run` unmoved. Per-match failures are the live wrapper's to
+   * swallow (src/notify/live.ts), the same way `dispatch` is.
+   */
+  morningOf: (now: Date) => Promise<void>;
   now: Date;
 };
 
@@ -102,7 +109,7 @@ export type TickResponse = {
 };
 
 export async function handleTick(deps: TickHandlerDeps): Promise<TickResponse> {
-  const { authorization, cronSchedule, secret, repo, dispatch, recordRun, now } = deps;
+  const { authorization, cronSchedule, secret, repo, dispatch, recordRun, morningOf, now } = deps;
   if (!bearerAuthorized(authorization, secret)) return { status: 401, body: { error: "unauthorized" } };
 
   const result = await runTick(repo, now);
@@ -113,6 +120,10 @@ export async function handleTick(deps: TickHandlerDeps): Promise<TickResponse> {
   for (const ticked of result.ticked) {
     if (ticked.pending) await dispatch(ticked.post);
   }
+
+  // The race morning's reminders (#37), on the same clock. After the ladder, so a crew reached
+  // by this very pass is not asked to confirm a match that does not exist yet; before the stamp.
+  await morningOf(now);
 
   await recordRun(tickRunRow(now, tickCaller(cronSchedule)));
   return { status: 200, body: { posts: result.posts, newSuggestions: result.newSuggestions } };
