@@ -1,7 +1,12 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { loadSeasonData } from "@/admin/load";
+import { boatsWithoutCrew, countsByDate } from "@/admin/season";
+import { seasonMetric } from "@/lib/metric";
 import { supabaseServer } from "@/lib/supabase/server";
 import { rotateInviteCode } from "./actions";
 import { ClockPulse } from "./ClockPulse";
+import { SeasonSummary } from "./SeasonSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +31,10 @@ export const dynamic = "force-dynamic";
  * "never", which is the honest answer before the first tick and, after #26 wires the schedulers,
  * the loudest thing on the page. Since #145 the same row carries the daily sweep's own stamp
  * (`sweep_at`, 0019), printed beside it by `ClockPulse`.
+ *
+ * Since #38 it also carries the season: the charter's two headline numbers and a row per race
+ * day linking to that day's detail screen. Those reads run as the signed-in admin like every
+ * other read here, so RLS decides them a second time — see `src/admin/load.ts`.
  */
 export default async function AdminPage({
   searchParams,
@@ -47,11 +56,20 @@ export default async function AdminPage({
   const { data: tick } = await client.from("tick_run").select("last_at, sweep_at").maybeSingle();
   const { confirm, rotated, error } = await searchParams;
 
+  // One clock for the whole page: the counts, the metric and "elapsed" must all be decided at
+  // the same instant, or a race day starting mid-render could be elapsed in one number and not
+  // in the next.
+  const now = new Date();
+  const season = await loadSeasonData(client);
+  const counts = countsByDate(season.dates, season.posts, season.matches, now);
+  const metric = seasonMetric(season.matches, season.dates, now);
+
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "48rem" }}>
       <h1>Admin</h1>
       <p>
-        <a href="/board">Back to the board</a> · <a href="/admin/dates">Race dates</a> ·{" "}
+        {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}
+        <a href="/board">Back to the board</a> · <Link href="/admin/dates">Race dates</Link> ·{" "}
         <a href="/admin/invite">Invite people</a>
       </p>
 
@@ -59,7 +77,15 @@ export default async function AdminPage({
       <ClockPulse
         lastAt={tick ? new Date(tick.last_at) : null}
         sweepAt={tick?.sweep_at ? new Date(tick.sweep_at) : null}
-        now={new Date()}
+        now={now}
+      />
+
+      <h2>This season</h2>
+      <SeasonSummary
+        dates={season.dates}
+        counts={counts}
+        metric={metric}
+        strandedBoats={boatsWithoutCrew(counts)}
       />
 
       <h2>Invite code</h2>
