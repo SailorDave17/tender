@@ -160,7 +160,8 @@ export default async function BoardPage({
       )}
       {me?.is_admin && (
         <p>
-          <a href="/admin">Admin</a> · <a href="/admin/dates">Edit race dates</a>
+          {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}
+          <a href="/admin">Admin</a> · <Link href="/admin/dates">Edit race dates</Link>
         </p>
       )}
 
