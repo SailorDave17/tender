@@ -64,6 +64,19 @@ export interface TickRepo {
   poolFor(raceDateId: string): Promise<Crew[]>;
   /** The suggestion rows already on the post, notified or not. */
   suggestionsFor(postId: string): Promise<Suggested[]>;
+  /**
+   * How many suggestion rows on the post are still owed an email — `notified_at` NULL (#128).
+   *
+   * A SEPARATE READ from `suggestionsFor`, deliberately, and the difference is AC 3. That one
+   * answers "who is already on this post" and says nothing about whether they were told;
+   * dispatching on its emptiness would send the tick round every open post on every pass, which
+   * is ninety-six full sweeps a day for posts that owe nobody anything. This asks the question the
+   * dispatch actually turns on, and the column it reads is the one `dispatchPending()` writes.
+   *
+   * Counted rather than listed because the caller needs only the boolean, and the count is what
+   * the SQL can answer without joining the contact rows.
+   */
+  pendingCount(postId: string): Promise<number>;
   /** Only ever called with a rung ABOVE the stored one; 0010's trigger refuses a decrease. */
   setRung(postId: string, rung: Rung): Promise<void>;
   /** Insert, ignoring pairs already present (0010's primary key). */
@@ -76,6 +89,22 @@ export type TickedPost = {
   rung: Rung;
   /** Crew this pass proposed for the first time — who the dispatch will reach. */
   reached: Suggested[];
+  /**
+   * Whether the post has anything owed a send after this pass — a suggestion row with
+   * `notified_at` NULL, whoever wrote it and on whichever pass (#128).
+   *
+   * THIS, not `reached`, is what the caller dispatches on. The two differ exactly when a person
+   * was proposed on an earlier pass and not reached then: the day's cap was hit, or the provider
+   * refused. Those rows are what `dispatchPending()` was built to retry, and dispatching on
+   * `reached` meant the clock never handed it one — the post had nobody NEW, so it was skipped
+   * entirely, and the pending send waited for a post-create or an availability toggle that might
+   * never come.
+   *
+   * A pass that proposes somebody new leaves them pending too, so this is true whenever `reached`
+   * is non-empty. It is a separate field rather than a widened `reached` because `reached` is also
+   * what `newSuggestions` counts, and that number means what it has always meant.
+   */
+  pending: boolean;
 };
 
 export type TickResult = {
@@ -129,7 +158,12 @@ export async function runTick(repo: TickRepo, now: Date): Promise<TickResult> {
       await repo.insertSuggestions(candidates.map((c) => ({ postId: post.id, ...c })));
     }
 
-    ticked.push({ post, rung, reached });
+    // AFTER the insert, not before: this pass's own new rows are owed a send too, and reading
+    // first would report a post with nothing but new candidates as having nothing pending. The
+    // insert is idempotent (0010's primary key), so this counts the settled state either way.
+    const pending = (await repo.pendingCount(post.id)) > 0;
+
+    ticked.push({ post, rung, reached, pending });
   }
 
   return {
