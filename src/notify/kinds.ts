@@ -1,5 +1,6 @@
 import { KIND_ANSWER } from "./answer";
 import { KIND_CONFIRMED, KIND_MORNING_OF } from "./confirm";
+import { KIND_INVITE } from "./invite";
 import { KIND_MATCH } from "./match";
 import { KIND_MESSAGE } from "./message";
 import { KIND_RUNG_EMAIL } from "./rung";
@@ -24,4 +25,5 @@ export const EMAIL_ATTEMPT_KINDS: readonly string[] = [
   KIND_MESSAGE,
   KIND_MORNING_OF,
   KIND_CONFIRMED,
+  KIND_INVITE,
 ];

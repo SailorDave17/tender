@@ -51,7 +51,8 @@ export default async function AdminPage({
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
       <h1>Admin</h1>
       <p>
-        <a href="/board">Back to the board</a> · <a href="/admin/dates">Race dates</a>
+        <a href="/board">Back to the board</a> · <a href="/admin/dates">Race dates</a> ·{" "}
+        <a href="/admin/invite">Invite people</a>
       </p>
 
       <h2>Ladder clock</h2>
