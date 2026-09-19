@@ -253,6 +253,11 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       // returns a COUNT per person so an admin learns who has notifications on without any
       // caller ever receiving an endpoint. Admin-gated by raising 42501, like the two above.
       "public.push_install_status",
+      // 0023 (#36) — the one way a message is removed. Definer because authenticated holds no
+      // update on message and must not gain one (an update grant is the author's edit path AC 3
+      // forbids); admin-gated by raising 42501 like the ones above. It reads and writes message
+      // and message_removal only, is in no policy, and so is not in person_contact's read path.
+      "public.remove_message",
       "public.rotate_invite_code",
       // 0021 (#37) — the one client route to a match's status: takes the caller from auth.uid(),
       // refuses the wrong party and the wrong time, and lets the transition trigger decide the rest.

@@ -114,6 +114,8 @@ describe("message (0020) — shape and grants", () => {
     expect(fk.rows).toEqual([
       { confrelid: "person", confdeltype: "c" },
       { confrelid: "match", confdeltype: "c" },
+      // 0023 (#36) — removed_by: the admin's own deletion must not take the removal with it.
+      { confrelid: "person", confdeltype: "n" },
     ]);
 
     // The cap is the table's, not only the Server Action's: a direct POST bypasses the action.
@@ -145,6 +147,8 @@ describe("message (0020) — shape and grants", () => {
       "SELECT:id",
       "SELECT:match_id",
       "SELECT:removed_at",
+      // 0023 (#36) — who removed it; select-only, the definer is the one writer.
+      "SELECT:removed_by",
     ]);
   });
 
