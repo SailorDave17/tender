@@ -72,6 +72,23 @@ describe("MatchPanel — contact is rendered for a party only (AC 5)", () => {
   });
 });
 
+describe("MatchPanel — the calendar link, for the two parties only (#34)", () => {
+  const link = '<a href="/match/m1/race.ics" download="race.ics" data-ics-link="m1">Add to calendar</a>';
+
+  it("the skipper and the crew each get a link to this match's race.ics", () => {
+    for (const viewer of ["sam", "cy"]) {
+      const html = renderToStaticMarkup(<MatchPanel match={match} viewerId={viewer} names={names} contact={CONTACT} />);
+      expect(html).toContain(link);
+    }
+  });
+
+  it("a bystander gets no link — the route would 404 them anyway", () => {
+    const html = renderToStaticMarkup(<MatchPanel match={match} viewerId="otto" names={names} contact={CONTACT} />);
+    expect(html).not.toContain("race.ics");
+    expect(html).not.toContain("data-ics-link");
+  });
+});
+
 describe("explainAcceptRefusal", () => {
   it("explains each reason differently and falls back for an unknown one", () => {
     const messages = ["matched", "refused"].map(explainAcceptRefusal);
