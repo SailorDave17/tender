@@ -1,5 +1,6 @@
 import "server-only";
 import { poolForDate } from "@/board/post-view";
+import { readRaceIcsInputs } from "@/calendar/read";
 import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { KIND_ANSWER, type AnswerPost, type AnswerStore } from "./answer";
@@ -306,9 +307,14 @@ export function supabaseMatchStore(): MatchStore {
     },
 
     async matchByPost(postId) {
-      const { data, error } = await admin.from("match").select("skipper_id, crew_id").eq("post_id", postId).maybeSingle();
+      const { data, error } = await admin.from("match").select("id, skipper_id, crew_id").eq("post_id", postId).maybeSingle();
       if (error) fail("read match", error);
-      return data ? { skipperId: data.skipper_id, crewId: data.crew_id } : null;
+      return data ? { id: data.id, skipperId: data.skipper_id, crewId: data.crew_id } : null;
+    },
+
+    async calendar(matchId) {
+      // The same read the download route makes as the person (#34) — one query, two clients.
+      return readRaceIcsInputs(admin, matchId);
     },
 
     async name(personId) {

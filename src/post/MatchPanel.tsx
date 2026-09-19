@@ -112,6 +112,18 @@ export function MatchPanel({
         </a>{" "}
         — sort out which dock and what time here.
       </p>
+      {/*
+        The race as a calendar file (story #34). The crew also gets it attached to the match
+        email; the skipper's email carries none, so without this link the skipper could reach
+        the file only by typing its URL. Party-only, like the route itself, which 404s anyone
+        else.
+      */}
+      <p>
+        <a href={`/match/${match.id}/race.ics`} download="race.ics" data-ics-link={match.id}>
+          Add to calendar
+        </a>{" "}
+        — the race as a calendar file.
+      </p>
     </section>
   );
 }
