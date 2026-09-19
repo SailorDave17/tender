@@ -10,13 +10,23 @@
  *
  * Sends from the club's own domain (README runbook: Resend verifies tender.madcowsailing.com,
  * which also carries the password resets). Text only: a notification read on a phone on a Saturday
- * night needs the date, the boat and a link, not a layout.
+ * night needs the date, the boat and a link, not a layout. The one file ever attached is the
+ * crew's race .ics on the match email (story #34).
  */
 
 export interface Message {
   to: string;
   subject: string;
   text: string;
+  /** Files sent with the message (story #34: the crew's race .ics). Absent means none. */
+  attachments?: Attachment[];
+}
+
+/** One attached file. `content` is the file's text; the transport encodes it for the wire. */
+export interface Attachment {
+  filename: string;
+  content: string;
+  contentType: string;
 }
 
 export interface Transport {
@@ -50,7 +60,23 @@ export function resendTransport(
       const res = await fetchImpl(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: FROM, to: [message.to], subject: message.subject, text: message.text }),
+        body: JSON.stringify({
+          from: FROM,
+          to: [message.to],
+          subject: message.subject,
+          text: message.text,
+          // Resend's REST shape: base64 content, the filename, and content_type. Omitted entirely
+          // when there is nothing to attach, so every other message's request is unchanged.
+          ...(message.attachments?.length
+            ? {
+                attachments: message.attachments.map((a) => ({
+                  filename: a.filename,
+                  content: Buffer.from(a.content, "utf8").toString("base64"),
+                  content_type: a.contentType,
+                })),
+              }
+            : {}),
+        }),
       });
       if (!res.ok) {
         // Resend answers a JSON body naming the refusal; keep it short, it lands in notification_log.error.

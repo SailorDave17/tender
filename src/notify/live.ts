@@ -6,10 +6,11 @@ import { runMorningOf, type MorningMatch } from "@/engine/morningOf";
 import { supabaseMorningOfRepo } from "@/engine/morning-store";
 import { notifyAnswer, type AnswerNotifyResult } from "./answer";
 import { notifyConfirmed, remindCrew, type ConfirmNotifyResult } from "./confirm";
+import { sendInvites, type InviteResult } from "./invite";
 import { notifyMatch, type MatchNotifyResult } from "./match";
 import { notifyMessage, type MessageNotifyResult } from "./message";
 import { dispatchPending, notifyRung, type NotifyResult, type RungPost } from "./rung";
-import { supabaseAnswerStore, supabaseConfirmStore, supabaseMatchStore, supabaseMessageStore, supabaseRungStore } from "./store";
+import { supabaseAnswerStore, supabaseConfirmStore, supabaseInviteStore, supabaseMatchStore, supabaseMessageStore, supabaseRungStore } from "./store";
 
 /**
  * notifyRung() with the live dependencies, for the two Server Actions that call it (post
@@ -194,6 +195,31 @@ export async function morningOfLive(now: Date): Promise<void> {
   } catch (e) {
     console.error(`morningOf(${now.toISOString()}) failed:`, e instanceof Error ? e.message : e);
   }
+}
+
+/**
+ * sendInvites() with the live dependencies, for the admin's invite action (story #31).
+ *
+ * The ONE sender here that does not swallow its failure, and the reason is the direction the
+ * report faces. The other five notify somebody about a thing that has already been written and
+ * stands — a post, an answer, a match, a message, a confirmation — so an unreachable provider must
+ * not undo it or show the actor an error about somebody else's inbox. An invite send has no such
+ * row behind it: the whole point of the action is the email, the admin is standing there waiting
+ * to be told what happened to each address, and a swallowed throw would report "nothing sent" as
+ * indistinguishable from "everybody was already a member". So the store's own failures propagate
+ * and the action turns them into a refusal the admin can read. A PROVIDER refusal is still caught
+ * per address inside sendInvites() and logged, exactly as elsewhere.
+ *
+ * No push transport: an invitee has no device subscribed to this app — that is what they are being
+ * invited to install.
+ */
+export async function sendInvitesLive(text: string): Promise<InviteResult> {
+  return await sendInvites(text, {
+    store: supabaseInviteStore(),
+    transport: resendTransport(),
+    now: new Date(),
+    siteUrl: await siteUrl(),
+  });
 }
 
 /**

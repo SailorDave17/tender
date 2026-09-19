@@ -1,9 +1,11 @@
 import "server-only";
 import { poolForDate } from "@/board/post-view";
+import { readRaceIcsInputs } from "@/calendar/read";
 import type { PersonRow } from "@/engine/toCrew";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { KIND_ANSWER, type AnswerPost, type AnswerStore } from "./answer";
 import type { ConfirmMatch, ConfirmStore } from "./confirm";
+import type { InviteStore } from "./invite";
 import { EMAIL_ATTEMPT_KINDS } from "./kinds";
 import type { MatchStore } from "./match";
 import { KIND_MESSAGE, KIND_MESSAGE_SUPPRESSED, type MessageStore } from "./message";
@@ -305,9 +307,14 @@ export function supabaseMatchStore(): MatchStore {
     },
 
     async matchByPost(postId) {
-      const { data, error } = await admin.from("match").select("skipper_id, crew_id").eq("post_id", postId).maybeSingle();
+      const { data, error } = await admin.from("match").select("id, skipper_id, crew_id").eq("post_id", postId).maybeSingle();
       if (error) fail("read match", error);
-      return data ? { skipperId: data.skipper_id, crewId: data.crew_id } : null;
+      return data ? { id: data.id, skipperId: data.skipper_id, crewId: data.crew_id } : null;
+    },
+
+    async calendar(matchId) {
+      // The same read the download route makes as the person (#34) — one query, two clients.
+      return readRaceIcsInputs(admin, matchId);
     },
 
     async name(personId) {
@@ -639,6 +646,77 @@ export function supabaseConfirmStore(): ConfirmStore {
         .select("id");
       if (error) fail("mark reminded", error);
       if (!data?.length) fail("mark reminded", { message: `no match ${matchId} to mark` });
+    },
+  };
+}
+
+/**
+ * The InviteStore over the live database, as the service role (story #31). Same division of labour
+ * as the five above: every rule is in sendInvites(), this only reads and writes.
+ *
+ * Two of its three reads are ones no earlier store makes, and both are why this runs as the
+ * service role rather than as the admin's cookie-bound client:
+ *
+ *   - `club.invite_code` is withheld from every client role (0003) and read through
+ *     `current_invite_code()` by the page. Here it is read directly, as /api/join does.
+ *   - `person_contact.email` across the WHOLE club (AC 3). 0002 reveals a contact row to its own
+ *     person and a match's counterparty only, so no caller — admin included — can ask "which of
+ *     these fifty addresses is already a member". The admin's authority to ask is established by
+ *     the page (notFound() for a non-admin) and by the action re-checking `is_admin` on the
+ *     caller's own client before this store is built; the answer it gets back is a set of
+ *     addresses the admin already typed, never a list of the club's members.
+ */
+export function supabaseInviteStore(): InviteStore {
+  const admin = supabaseAdmin();
+  return {
+    async inviteCode() {
+      const { data, error } = await admin.from("club").select("invite_code").limit(1).single();
+      if (error || !data) fail("read invite code", error);
+      return data.invite_code as string;
+    },
+
+    async members(emails) {
+      if (emails.length === 0) return new Set<string>();
+      // `members_among()` (0022) does the matching in Postgres, against a `lower(email)` index,
+      // and returns only the addresses the caller asked about. Two reasons it is a function rather
+      // than a filter here:
+      //
+      //   - PostgREST cannot express `lower(col) in (…)`. An `in` on the lowercased list is
+      //     compared against the STORED spelling, so a member who signed up as Dave@Example.org is
+      //     silently missed — and a missed skip re-invites somebody who then hits /join's 409.
+      //   - The alternative is selecting every contact row and matching in JS, which answers a
+      //     question about fifty addresses by reading the whole club's PII.
+      //
+      // So what comes back is an answer, not a table: nothing about a member who was not pasted is
+      // learnable through it.
+      const { data, error } = await admin.rpc("members_among", { p_emails: emails });
+      if (error) fail("read member addresses", error);
+      return new Set((data ?? []).map((e: string) => String(e).toLowerCase()));
+    },
+
+    async emailsSentToday(now) {
+      // Every attempt kind, from the one list the match, message and confirm stores read too.
+      const { count, error } = await admin
+        .from("notification_log")
+        .select("id", { count: "exact", head: true })
+        .eq("channel", "email")
+        .in("kind", EMAIL_ATTEMPT_KINDS)
+        .gte("sent_at", emailDayStart(now).toISOString());
+      if (error) fail("count today's email for invite", error);
+      return count ?? 0;
+    },
+
+    async log(entry: LogEntry) {
+      const { error } = await admin.from("notification_log").insert({
+        kind: entry.kind,
+        channel: entry.channel,
+        person_id: entry.personId,
+        to_email: entry.toEmail,
+        post_id: entry.postId,
+        provider_id: entry.providerId,
+        error: entry.error,
+      });
+      if (error) fail("log", error);
     },
   };
 }
