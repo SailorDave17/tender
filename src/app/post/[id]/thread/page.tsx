@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { formatStartsAt, whenLabel } from "@/dates/race-date";
-import { matchRole } from "@/post/match-view";
+import { FORMER_MEMBER, matchRole, partyName } from "@/post/match-view";
 import { UUID } from "@/post/post-form";
 import { SendMessageForm } from "@/post/SendMessageForm";
 import { THREAD_CLOSED_NOTE, messageText, threadClosesAt, threadIsOpen } from "@/post/thread-view";
@@ -107,17 +107,20 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
   // Both parties' names, for the attribution line on each message. A failure here is NOT fatal:
   // the fallback is the word "someone" beside a message whose text is already correct, which is
   // a cosmetic loss rather than a false statement about the conversation.
-  const { data: people, error: peopleError } = await client
-    .from("person")
-    .select("id, display_name")
-    .in("id", [match.skipper_id, match.crew_id]);
+  // A party who deleted their account (0027) is a null side: nothing to read, and `in` with a
+  // null in the list is a PostgREST filter error rather than an empty match.
+  const partyIds = [match.skipper_id, match.crew_id].filter((p): p is string => p !== null);
+  const { data: people, error: peopleError } = await client.from("person").select("id, display_name").in("id", partyIds);
   if (peopleError) console.error(`thread: read names: ${peopleError.message}`);
   const names = new Map((people ?? []).map((p) => [p.id, p.display_name]));
 
   const now = new Date();
-  const open = threadIsOpen(date.starts_at, now);
-  const f = formatStartsAt(date.starts_at);
   const otherId = role === "skipper" ? match.crew_id : match.skipper_id;
+  // A thread whose other party has left is read-only whatever the date: there is nobody to
+  // send to, and the message would sit in a conversation only one person can open.
+  const open = otherId !== null && threadIsOpen(date.starts_at, now);
+  const f = formatStartsAt(date.starts_at);
+  const other = partyName(names, otherId, "your counterparty");
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
@@ -128,7 +131,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
         Messages — {boat.name}, {f.date}
       </h1>
       <p data-thread={match.id} data-open={open} data-role={role}>
-        You and <Link href={`/profile/${otherId}`}>{names.get(otherId) ?? "your counterparty"}</Link> on{" "}
+        You and {otherId ? <Link href={`/profile/${otherId}`}>{other}</Link> : <span data-former-member>{other}</span>} on{" "}
         {boat.name} ({boat.class}), {date.title}, {whenLabel(date.starts_at)}.
       </p>
 
@@ -155,7 +158,12 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
       </ol>
       {(messages?.length ?? 0) === 0 && <p data-status="empty">No messages yet.</p>}
 
-      {open && suspension ? (
+      {otherId === null ? (
+        <p data-status="former-member" role="note">
+          <strong>Closed.</strong> {FORMER_MEMBER.charAt(0).toUpperCase() + FORMER_MEMBER.slice(1)}: the person
+          you were matched with has left the club. What was said stays here; nothing more can be sent.
+        </p>
+      ) : open && suspension ? (
         <p data-status="suspended" role="note">
           {SUSPENDED_NOTE}
         </p>

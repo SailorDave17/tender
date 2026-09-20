@@ -2,8 +2,10 @@ import { redirect } from "next/navigation";
 import { explainLinkReason, hasGoogleIdentity } from "@/auth/link";
 import { PushToggle } from "@/push/PushToggle";
 import { ProfileCard } from "@/profile/ProfileCard";
+import { CONFIRM_VALUE } from "@/profile/delete-account";
 import { explainProfileRefusal, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
+import { deleteMyAccount } from "./account-actions";
 import { saveProfile } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -162,6 +164,30 @@ export default async function ProfilePage({
             Google account at a different address is not recognised as you.
           </p>
         )}
+      </section>
+
+      {/*
+        #42: the person's own way out. One required checkbox is the confirm — it works with no
+        JavaScript, and the action checks the same value again, since `required` is the browser's.
+        What leaves and what stays is said here in the charter's own terms, so nobody ticks it
+        expecting their past races to vanish from the season's count.
+      */}
+      <section style={{ marginTop: "2rem" }}>
+        <h2 style={{ fontSize: "1rem" }}>Leave the club</h2>
+        <p style={{ fontSize: "0.875rem" }}>
+          Deleting your account removes your profile, contact details, availability, answers,
+          messages and notification devices. Any race you were matched on stays as a nameless row,
+          so the season&apos;s count survives without your name.
+        </p>
+        <form action={deleteMyAccount} style={{ display: "grid", gap: "0.5rem" }} data-delete-account>
+          <label>
+            <input type="checkbox" name="confirm" value={CONFIRM_VALUE} required /> I understand, delete my
+            account
+          </label>
+          <button type="submit" style={{ justifySelf: "start" }}>
+            Delete my account
+          </button>
+        </form>
       </section>
 
       {error && <p role="alert">{explainLinkReason(error) ?? explainProfileRefusal(error)}</p>}

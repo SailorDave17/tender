@@ -49,6 +49,10 @@ export function supabaseMorningOfRepo(): MorningOfRepo {
         // A match whose post is gone cannot be reminded about anything; 0008 cascades the match
         // with the post, so this is the deleted-mid-read window and nothing else.
         if (!post) return [];
+        // A side deleted under 0027 is null: no crew to ask, or no skipper whose boat will
+        // sail. Neither is a reminder, so the row is not a candidate — and never gets
+        // `reminded_at`, which is correct, since nothing was attempted.
+        if (row.skipper_id === null || row.crew_id === null) return [];
         const boat = (Array.isArray(post.boat) ? post.boat[0] : post.boat) as { name: string; class: string };
         const date = (Array.isArray(post.race_date) ? post.race_date[0] : post.race_date) as { starts_at: string; title: string };
         return [

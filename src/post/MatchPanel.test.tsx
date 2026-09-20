@@ -28,6 +28,33 @@ describe("matchRole / counterpartyOf", () => {
   });
 });
 
+describe("MatchPanel — a party who deleted their account reads 'former member' (#42 AC 3)", () => {
+  // 0027: the crew left; their side is null, the match stands. Handed a contact row anyway, as
+  // every arm is — the page would not read one for a null counterparty, and the panel must not
+  // print one for a party who is no longer there.
+  const crewGone = { ...match, crew_id: null };
+
+  it("the skipper sees 'Matched' with 'former member' and no profile link, and no contact", () => {
+    const html = renderToStaticMarkup(<MatchPanel match={crewGone} viewerId="sam" names={names} contact={CONTACT} />);
+    expect(html).toContain("Matched");
+    expect(html).toContain("former member");
+    expect(html).not.toContain("/profile/null");
+    expect(html).not.toContain("Cy");
+  });
+
+  it("a bystander sees 'Crewed' with the skipper's name and 'former member'", () => {
+    const html = renderToStaticMarkup(<MatchPanel match={crewGone} viewerId="otto" names={names} contact={null} />);
+    expect(html).toContain("Crewed");
+    expect(html).toContain("Sam is sailing with former member");
+  });
+
+  it("counterpartyOf is null for the surviving party, so the page reads no contact row", () => {
+    expect(counterpartyOf(crewGone, "sam")).toBeNull();
+    expect(matchRole(crewGone, "sam")).toBe("skipper");
+    expect(matchRole(crewGone, "otto")).toBe("other");
+  });
+});
+
 describe("MatchPanel — contact is rendered for a party only (AC 5)", () => {
   it("the skipper sees 'Matched', the crew's name, email and phone", () => {
     const html = renderToStaticMarkup(<MatchPanel match={match} viewerId="sam" names={names} contact={CONTACT} />);

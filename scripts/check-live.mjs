@@ -19,6 +19,14 @@
  */
 import { makeFunctionProbe, makeProbe, runCheck } from "./check-live-core.mjs";
 import { EXPECTED_FUNCTIONS, EXPECTED_TABLES } from "./check-live-expected.mjs";
+import { envReport } from "./server-env.mjs";
+
+// The runbook's step 1 instrument (story #65). FIRST, and before the guard below, because the
+// run that most needs this report is the one that is about to refuse for a missing name — an
+// environment report printed after an early exit is a report nobody in trouble ever sees.
+// Names and present/ABSENT only, never values, so the output is safe to paste into a public
+// issue. It sets no exit code: see envReport's note on why report-only is deliberate here.
+for (const line of envReport()) console.log(line);
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

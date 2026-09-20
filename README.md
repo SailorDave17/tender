@@ -40,6 +40,7 @@ npm test           # vitest: the engine (src/engine), the RLS harness (test/), t
 npm run lint
 npm run typecheck
 npm run check:live # read-only probe of the live Supabase project; needs .env.local
+                   # first line: which of the 9 server env names THIS shell has (names only)
 npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
@@ -277,6 +278,20 @@ footer would be indistinguishable from a page that has none.
    `.env.local`, and in Vercel's environment — **all three**: on 2026-08-23 Vercel carried only
    the two public names, and `/api/join` threw a bare 500 ("Something went wrong.") before it
    could read the club row.
+
+   **That failure is no longer silent, and this step now has an instrument** (#65). Every server
+   name below is read through `env()` in `src/lib/env.ts`, which throws `<NAME> is not set` —
+   *measured* on a production build: a POST to `/api/join` with the service-role key absent logs
+   `⨯ Error: SUPABASE_SERVICE_ROLE_KEY is not set` and answers a 500 whose body never carries the
+   name. And **`npm run check:live` prints, as its first line, which of the nine server names the
+   shell running it has** — `present` / `ABSENT`, names only and never values, so it is safe to
+   paste into an issue on this public repo. It reports rather than refuses, because several of
+   these are legitimately absent on a developer's machine.
+
+   The list lives in `scripts/server-env.mjs` and `test/server-env.test.ts` holds it equal to what
+   `src/` actually reads, so a tenth name cannot be added to the app and forgotten here. Four of
+   the nine **degrade** instead of throwing (the VAPID pair, `CRON_SECRET`, `OWNER_EMAIL`) — they
+   are on the report for exactly that reason: nothing else would ever tell you.
    Enable the **Cron** integration and confirm a job can be scheduled on this plan — ADR 004's
    kill condition; its fallback is named there.
 
@@ -556,6 +571,18 @@ footer would be indistinguishable from a page that has none.
    - **It is a local echo, not the wall.** `git push --no-verify` skips it, and this repo is public,
      so the branch rules that hold against every client are GitHub's ruleset, which the provisioning
      story sets up. The hook stops the habit; the ruleset stops the push.
+6. **A member who wants out deletes themself** — *Leave the club* at the foot of `/profile` (#42,
+   0027). Their profile, contact, availability, answers, messages, devices and suspension go; every
+   match they were on stays as a row with that side null, shown as "former member", so the season's
+   count is unchanged; their boats stay as ownerless names on the posts that already happened, and
+   an open post of theirs stays on the board until its date passes (owner decision 2026-09-20).
+   **Removing someone else** has no screen yet. `delete_person()` admits an admin, but the SQL
+   editor is not a signed-in member, so from the dashboard the route is two statements in this
+   order: `update public.notification_log set to_email = null where person_id = '<uuid>'`, then
+   `delete from auth.users where id = '<uuid>'` — `person` cascades from the auth user and 0027's
+   rules do the rest; the address goes first because `person_id` is already null afterwards. If a
+   member's own deletion lands on `/join?deleted=partial`, their rows are gone and the auth user is
+   not — delete it under Authentication → Users.
 
 ## Brand
 

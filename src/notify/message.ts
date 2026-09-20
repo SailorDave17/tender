@@ -103,7 +103,8 @@ export type MessageRow = {
   postId: string;
 };
 
-export type MessageParties = { skipperId: string; crewId: string };
+/** A side is null once that party deleted their account (0027); a message to them notifies nobody. */
+export type MessageParties = { skipperId: string | null; crewId: string | null };
 
 export interface MessageStore {
   /** The message being notified about, or null when it is gone. */
@@ -203,7 +204,8 @@ export async function notifyMessage(messageId: string, deps: MessageNotifyDeps):
   if (!parties) return null;
 
   // The recipient is the OTHER party, taken from the match rather than from the caller. An
-  // author who is somehow neither party notifies nobody rather than notifying both.
+  // author who is somehow neither party notifies nobody rather than notifying both — and so
+  // does an author whose counterparty has deleted their account (that side is null, 0027).
   const to =
     message.authorId === parties.skipperId
       ? parties.crewId

@@ -10,7 +10,8 @@ import type { MatchRow } from "@/post/match-view";
  */
 
 export type RaceDateRow = { id: string; starts_at: string; title: string };
-export type BoatRow = { id: string; owner_id: string; name: string; class: string; default_minimum: 1 | 2 | 3 | 4 };
+/** `owner_id` is null once the owner has deleted their account (0027): the boat stays as a name on its history. */
+export type BoatRow = { id: string; owner_id: string | null; name: string; class: string; default_minimum: 1 | 2 | 3 | 4 };
 export type PostRow = {
   id: string;
   boat_id: string;

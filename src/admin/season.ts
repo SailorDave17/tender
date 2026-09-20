@@ -1,4 +1,4 @@
-import type { MatchStatus } from "@/post/match-view";
+import { FORMER_MEMBER, type MatchStatus } from "@/post/match-view";
 
 /**
  * What the admin's two screens say about a season and about one race day (story #38).
@@ -46,12 +46,13 @@ export type SeasonPost = {
 export type SeasonMatchRow = {
   id: string;
   post_id: string;
-  skipper_id: string;
-  crew_id: string;
+  /** Null once that party deleted their account (0027) — the match stays, anonymised. */
+  skipper_id: string | null;
+  crew_id: string | null;
   status: MatchStatus;
 };
 
-export type SeasonBoat = { id: string; owner_id: string; name: string; class: string };
+export type SeasonBoat = { id: string; owner_id: string | null; name: string; class: string };
 export type SeasonPerson = { id: string; display_name: string };
 export type SeasonDate = { id: string; starts_at: string; title: string; published: boolean };
 
@@ -63,13 +64,18 @@ export type RaceDayPostRow = {
   minimum: 1 | 2 | 3 | 4;
   /** post.current_rung — the widest rung the ladder opened. See the header. */
   finalRung: 1 | 2 | 3;
-  /** Null when the boat's owner is no longer readable; the screen prints "(removed)". */
+  /**
+   * Null when the boat's owner is no longer readable; the screen prints "(removed)". An owner
+   * who DELETED their account is a different claim and reads "former member" (0027, #42 AC 3):
+   * the boat's `owner_id` is null, not unresolved.
+   */
   skipper: string | null;
   /**
-   * The matched crew's name, null when the person is unreadable but a match exists, and the
-   * whole `match` being null is what "open" means on the screen. The two nulls are different
-   * claims and the screen must not collapse them — an anonymised match is still a match
-   * (story #38 AC 3), and printing it as "open" would erase a boat that did sail.
+   * The matched crew's name — "former member" when the crew deleted their account (0027), null
+   * when the person is unreadable but a match exists, and the whole `match` being null is what
+   * "open" means on the screen. These are different claims and the screen must not collapse
+   * them — an anonymised match is still a match (story #38 AC 3), and printing it as "open"
+   * would erase a boat that did sail.
    */
   crew: string | null;
   /** Null when there is no match at all — the post never found crew. */
@@ -143,6 +149,12 @@ export function boatsWithoutCrew(counts: readonly RaceDayCounts[]): number {
   return counts.filter((c) => c.elapsed).reduce((n, c) => n + c.unmatched, 0);
 }
 
+/** A null id is a person who left (0027); an id nobody can name is a read that fell short. */
+function nameOf(people: ReadonlyMap<string, SeasonPerson>, id: string | null): string | null {
+  if (id === null) return FORMER_MEMBER;
+  return people.get(id)?.display_name ?? null;
+}
+
 /**
  * Every post for one race day, as the detail screen prints them — boats first by name so the
  * order is stable across reloads and does not move as matches are made.
@@ -171,8 +183,8 @@ export function raceDayRows(
         boatClass: boat?.class ?? "(removed)",
         minimum: p.minimum,
         finalRung: p.current_rung,
-        skipper: boat ? (people.get(boat.owner_id)?.display_name ?? null) : null,
-        crew: match ? (people.get(match.crew_id)?.display_name ?? null) : null,
+        skipper: boat ? nameOf(people, boat.owner_id) : null,
+        crew: match ? nameOf(people, match.crew_id) : null,
         status: match?.status ?? null,
         open: match === undefined,
       };

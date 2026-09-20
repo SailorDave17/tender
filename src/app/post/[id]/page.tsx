@@ -7,7 +7,7 @@ import { toCrew } from "@/engine/toCrew";
 import { answerState, explainAnswerRefusal } from "@/post/answer-rules";
 import { CandidateList, RungBadge } from "@/post/CandidateList";
 import { MatchPanel, type Contact, type StatusForm } from "@/post/MatchPanel";
-import { counterpartyOf, explainAcceptRefusal, explainStatusRefusal, matchControls } from "@/post/match-view";
+import { FORMER_MEMBER, counterpartyOf, explainAcceptRefusal, explainStatusRefusal, matchControls } from "@/post/match-view";
 import { UUID, explainPostRefusal } from "@/post/post-form";
 import { ratingLabel, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -125,7 +125,13 @@ export default async function PostPage({
       </h1>
       <p data-post={post.id} data-closed={closed} data-matched={match !== null}>
         {boat.class}, {f.time}, {date.title}. Skipper:{" "}
-        <Link href={`/profile/${boat.owner_id}`}>{data.people.get(boat.owner_id)?.display_name ?? "someone"}</Link>.
+        {boat.owner_id ? (
+          <Link href={`/profile/${boat.owner_id}`}>{data.people.get(boat.owner_id)?.display_name ?? "someone"}</Link>
+        ) : (
+          // The owner deleted their account (0027): the boat stays as the name on its posts.
+          <span data-former-member>{FORMER_MEMBER}</span>
+        )}
+        .
         Minimum: {ratingLabel(post.minimum).toLowerCase()}.
       </p>
       {post.note && <blockquote>{post.note}</blockquote>}

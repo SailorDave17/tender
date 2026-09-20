@@ -89,7 +89,7 @@ afterAll(async () => {
 });
 
 describe("match (0008) — shape and grants", () => {
-  it("exists with RLS on, one match per post, skipper and crew distinct, every parent cascading", async () => {
+  it("exists with RLS on, one match per post, skipper and crew distinct; post cascades, each party sets null (0027)", async () => {
     const rls = await db.query<{ relrowsecurity: boolean }>(
       `select relrowsecurity from pg_class where oid = 'public.match'::regclass`,
     );
@@ -104,10 +104,13 @@ describe("match (0008) — shape and grants", () => {
       `select confrelid::regclass::text as confrelid, confdeltype from pg_constraint
         where conrelid = 'public.match'::regclass and contype = 'f' order by conname`,
     );
+    // Ordered by conname: crew, post, skipper. The two person keys were `c` until 0027 (#42)
+    // made a deleted party a null side rather than a deleted match — test/delete-person.test.ts
+    // holds every person-keyed rule in the schema; this is the row 0008's own file owns.
     expect(fk.rows).toEqual([
-      { confrelid: "person", confdeltype: "c" },
+      { confrelid: "person", confdeltype: "n" },
       { confrelid: "post", confdeltype: "c" },
-      { confrelid: "person", confdeltype: "c" },
+      { confrelid: "person", confdeltype: "n" },
     ]);
     const checks = await db.query<{ n: number }>(
       `select count(*)::int as n from pg_constraint where conrelid = 'public.match'::regclass and contype = 'c'`,
@@ -123,9 +126,11 @@ describe("match (0008) — shape and grants", () => {
     );
     expect(cols.rows.map((x) => `${x.privilege_type}:${x.column_name}`)).toEqual([
       "SELECT:accepted_at",
+      "SELECT:crew_anonymised", // 0027
       "SELECT:crew_id",
       "SELECT:id",
       "SELECT:post_id",
+      "SELECT:skipper_anonymised", // 0027
       "SELECT:skipper_id",
       "SELECT:status",
     ]);

@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { loadEmailUsage } from "@/admin/email-usage";
 import { loadSeasonData } from "@/admin/load";
 import { boatsWithoutCrew, countsByDate } from "@/admin/season";
 import { seasonMetric } from "@/lib/metric";
 import { supabaseServer } from "@/lib/supabase/server";
 import { rotateInviteCode } from "./actions";
 import { ClockPulse } from "./ClockPulse";
+import { EmailUsage } from "./EmailUsage";
 import { SeasonSummary } from "./SeasonSummary";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +37,10 @@ export const dynamic = "force-dynamic";
  * Since #38 it also carries the season: the charter's two headline numbers and a row per race
  * day linking to that day's detail screen. Those reads run as the signed-in admin like every
  * other read here, so RLS decides them a second time — see `src/admin/load.ts`.
+ *
+ * Since #39 it carries Resend's budget, which is ADR 007's promised consequence: the bet was that
+ * email to the current rung fits inside 100 a day, and this is the only place that bet can be seen
+ * losing before the mail stops. It is the one figure here the admin cannot get from the board.
  */
 export default async function AdminPage({
   searchParams,
@@ -63,6 +69,9 @@ export default async function AdminPage({
   const season = await loadSeasonData(client);
   const counts = countsByDate(season.dates, season.posts, season.matches, now);
   const metric = seasonMetric(season.matches, season.dates, now);
+  // Through email_usage() (0026), not a select: 0010 withholds notification_log from every client
+  // role, so the admin gets a count and never a row — the invite code's arrangement again.
+  const usage = await loadEmailUsage(client, now);
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "48rem" }}>
@@ -89,6 +98,9 @@ export default async function AdminPage({
         metric={metric}
         strandedBoats={boatsWithoutCrew(counts)}
       />
+
+      <h2>Email budget</h2>
+      <EmailUsage usage={usage} />
 
       <h2>Invite code</h2>
       <p>

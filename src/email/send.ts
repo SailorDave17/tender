@@ -14,6 +14,8 @@
  * crew's race .ics on the match email (story #34).
  */
 
+import { env } from "@/lib/env";
+
 export interface Message {
   to: string;
   subject: string;
@@ -50,10 +52,12 @@ export function resendUrl(baseUrl: string | undefined = process.env.RESEND_BASE_
  * network; the key defaults to the server's RESEND_API_KEY and is never exported.
  */
 export function resendTransport(
-  apiKey: string | undefined = process.env.RESEND_API_KEY,
+  apiKey: string | undefined = env("RESEND_API_KEY"),
   fetchImpl: typeof fetch = fetch,
   url: string = resendUrl(),
 ): Transport {
+  // The default above throws with the name on it (story #65); this still guards the caller who
+  // passes an explicit empty string, which skips the default entirely. Same message either way.
   if (!apiKey) throw new Error("RESEND_API_KEY is not set");
   return {
     async send(message) {

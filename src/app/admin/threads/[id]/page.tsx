@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { formatStartsAt } from "@/dates/race-date";
+import { partyName } from "@/post/match-view";
 import { UUID } from "@/post/post-form";
 import { messageText } from "@/post/thread-view";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -77,10 +78,10 @@ export default async function AdminThreadPage({
   if (originalsError) console.error(`admin thread: read originals: ${originalsError.message}`);
   const original = new Map(((originals ?? []) as { message_id: string; body: string }[]).map((o) => [o.message_id, o.body]));
 
-  const { data: people } = await client
-    .from("person")
-    .select("id, display_name")
-    .in("id", [match.skipper_id, match.crew_id]);
+  // A null side is a party who deleted their account (0027) — filtered out of the `in`, and
+  // printed as "former member" below.
+  const partyIds = [match.skipper_id, match.crew_id].filter((p): p is string => p !== null);
+  const { data: people } = await client.from("person").select("id, display_name").in("id", partyIds);
   const names = new Map((people ?? []).map((p) => [p.id, p.display_name]));
 
   const { confirm, removed, error } = await searchParams;
@@ -96,7 +97,7 @@ export default async function AdminThreadPage({
         {date ? `, ${formatStartsAt(date.starts_at).date}` : ""}
       </h1>
       <p data-thread={match.id} data-read-only>
-        {names.get(match.skipper_id) ?? "The skipper"} (skipper) and {names.get(match.crew_id) ?? "the crew"} (crew)
+        {partyName(names, match.skipper_id, "The skipper")} (skipper) and {partyName(names, match.crew_id, "the crew")} (crew)
         {date ? ` for ${date.title}` : ""}. Read-only: you can remove a message, not write one.
       </p>
       {removed && <p role="status">The message was removed. Both of them now see &ldquo;Removed by the club admin&rdquo; in its place.</p>}

@@ -17,11 +17,28 @@ export type MatchStatus = "accepted" | "confirmed" | "sailed" | "no_show";
 export type MatchRow = {
   id: string;
   post_id: string;
-  skipper_id: string;
-  crew_id: string;
+  /** Null once that party has deleted their account (0027): the row stays, the person does not. */
+  skipper_id: string | null;
+  crew_id: string | null;
   accepted_at: string;
   status: MatchStatus;
 };
+
+/**
+ * What a deleted party is called wherever a match is shown (story #42 AC 3). One string, so the
+ * board, the post page, the thread and the admin's screens cannot drift into three spellings.
+ */
+export const FORMER_MEMBER = "former member";
+
+/**
+ * A party's display name: the deleted party's placeholder, or the name the page read, or the
+ * page's own fallback for a row it could read but not name. Three states, not two — a null id is
+ * a fact about the person (they left), an unresolved id is a fact about the read.
+ */
+export function partyName(names: ReadonlyMap<string, string>, id: string | null, fallback: string): string {
+  if (id === null) return FORMER_MEMBER;
+  return names.get(id) ?? fallback;
+}
 
 export type MatchRole = "skipper" | "crew" | "other";
 

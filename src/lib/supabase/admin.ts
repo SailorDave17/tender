@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
-import { env } from "./server";
+import { env } from "@/lib/env";
 
 /**
  * The service-role client. Bypasses RLS, so it exists for exactly two jobs: reading the invite

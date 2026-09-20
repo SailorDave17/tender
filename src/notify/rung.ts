@@ -45,6 +45,13 @@ export const EMAIL_DAY_CAP = 100;
 export const EMAIL_HEADROOM = 5;
 export const EMAIL_SKIP_AT = EMAIL_DAY_CAP - EMAIL_HEADROOM;
 
+/**
+ * Resend Free's other cap: 3,000 a month (ADR 007). Nothing enforces it — no sender reads it, and
+ * a month that reached it would have hit the daily cap thirty times first — so it exists here for
+ * the admin screen alone (#39), which is the only thing that can see it coming.
+ */
+export const EMAIL_MONTH_CAP = 3_000;
+
 export const KIND_RUNG_EMAIL = "rung_email";
 export const KIND_RUNG_EMAIL_SKIPPED_CAP = "rung_email_skipped_cap";
 /** A suggestion with no contact row to send to — logged, never retried by this call, not an attempt for the cap. */
@@ -188,6 +195,16 @@ export type DispatchResult = {
  */
 export function emailDayStart(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+/**
+ * The month the 3,000 cap counts within, on the same clock as the day above: UTC, first of the
+ * month. Resend's documentation states the monthly limit without a zone either, and a count that
+ * disagrees with the provider by a few hours at one boundary a month is not what this screen is
+ * for. Read only by /admin (#39).
+ */
+export function emailMonthStart(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
 /** The open rung of a post: the stored rung, or wider if the engine widened it now. */

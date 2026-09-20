@@ -85,7 +85,21 @@ describe("the VAPID private key never reaches a browser (AC 7)", () => {
       .split("\n")
       .map((l) => l.replace(/\\/g, "/"))
       .sort();
-    expect(hits).toEqual([".env.example", "README.md", "scripts/vapid-keys.mjs", "src/push/send.ts"]);
+    //
+    // `scripts/server-env.mjs` joined the list on #65 and is the one entry here that names the
+    // key without being about push at all: it declares every server env name so check:live can
+    // report which are set. It reads the value only as a truthiness test and never prints it —
+    // test/server-env.test.ts asserts no value reaches the output. This is the trap cairn records
+    // as "once you add a detector for a string, that string is in your codebase, and any scan for
+    // it is measuring two populations" (a-misconfigured-value-outside-the-repo): the honest
+    // repair is to name the new file, not to widen the pattern, so a SIXTH one still fails here.
+    expect(hits).toEqual([
+      ".env.example",
+      "README.md",
+      "scripts/server-env.mjs",
+      "scripts/vapid-keys.mjs",
+      "src/push/send.ts",
+    ]);
   });
 });
 
