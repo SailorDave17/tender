@@ -43,7 +43,7 @@ afterAll(async () => {
 });
 
 describe("boat (0006) — shape and grants", () => {
-  it("exists with RLS on; class references boat_class; owner cascades", async () => {
+  it("exists with RLS on; class references boat_class; owner sets null on delete (0027)", async () => {
     const rls = await db.query<{ relrowsecurity: boolean }>(
       `select relrowsecurity from pg_class where oid = 'public.boat'::regclass`,
     );
@@ -52,9 +52,11 @@ describe("boat (0006) — shape and grants", () => {
       `select confrelid::regclass::text as confrelid, confdeltype from pg_constraint
         where conrelid = 'public.boat'::regclass and contype = 'f' order by confrelid`,
     );
+    // `c` until 0027 (#42): a skipper who leaves no longer takes the boat, its posts and the
+    // matches on them — the boat stays as an ownerless name on rows that already happened.
     expect(fk.rows).toEqual([
       { confrelid: "boat_class", confdeltype: "a" },
-      { confrelid: "person", confdeltype: "c" },
+      { confrelid: "person", confdeltype: "n" },
     ]);
   });
 

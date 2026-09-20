@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { threadsByActivity, type ThreadMatch, type ThreadMessage } from "@/admin/threads";
 import { formatStartsAt } from "@/dates/race-date";
+import { partyName } from "@/post/match-view";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -87,7 +88,7 @@ export default async function AdminThreadsPage() {
                 </Link>
                 <br />
                 <small>
-                  {names.get(t.skipper_id) ?? "skipper"} and {names.get(t.crew_id) ?? "crew"} ·{" "}
+                  {partyName(names, t.skipper_id, "skipper")} and {partyName(names, t.crew_id, "crew")} ·{" "}
                   {t.messages === 0 ? "no messages" : t.messages === 1 ? "1 message" : `${t.messages} messages`}
                   {t.removed > 0 && ` (${t.removed} removed)`} · {t.messages === 0 ? "matched" : "last"} {when}
                 </small>

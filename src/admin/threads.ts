@@ -17,8 +17,9 @@
 export type ThreadMatch = {
   id: string;
   post_id: string;
-  skipper_id: string;
-  crew_id: string;
+  /** Null once that party deleted their account (0027). */
+  skipper_id: string | null;
+  crew_id: string | null;
   accepted_at: string;
 };
 

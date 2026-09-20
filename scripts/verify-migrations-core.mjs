@@ -372,6 +372,28 @@ export function parseStatement(statement) {
         });
         continue;
       }
+      // A foreign key, with its ON DELETE rule — the rule is the whole claim of a file like 0027,
+      // which drops a cascade and re-adds the same-named key as set null. Presence alone would
+      // read the un-applied project (cascade, same name) as verified. `on delete` is REQUIRED in
+      // the clause: an omitted rule means `no action`, and a file that relies on the default is
+      // making a claim it did not write down, so it is refused here until it does.
+      const fk = /^add constraint ([\w"]+) foreign key \([^)]*\) references [\w".]+\s*\([^)]*\)\s+on delete (set null|set default|cascade|restrict|no action)\b/i.exec(clause);
+      if (fk) {
+        ops.push({
+          op: "constraint",
+          table,
+          name: identifier(fk[1]),
+          present: true,
+          literals: [],
+          deletes: fk[2].toLowerCase(),
+        });
+        continue;
+      }
+      const nullable = /^alter column ([\w"]+) drop not null$/i.exec(clause);
+      if (nullable) {
+        ops.push({ op: "nullable", table, column: identifier(nullable[1]) });
+        continue;
+      }
       // One unreadable clause makes the whole statement unreadable. Returning the clauses that
       // WERE understood would be worse than returning nothing: it reads as a classified statement.
       return { ops: [], note: null };
@@ -719,11 +741,21 @@ export function foldExpectations(parsed) {
         put(`constraint:${op.table}.${op.name}`, {
           ...where,
           kind: "constraint",
-          subject: `constraint ${op.name} on ${op.table}`,
+          subject: `constraint ${op.name} on ${op.table}${op.deletes ? ` (on delete ${op.deletes})` : ""}`,
           table: op.table,
           name: op.name,
           present: op.present,
           literals: op.literals ?? [],
+          deletes: op.deletes ?? null,
+        });
+        return;
+      case "nullable":
+        put(`nullable:${op.table}.${op.column}`, {
+          ...where,
+          kind: "nullable",
+          subject: `column ${op.table}.${op.column} nullable`,
+          table: op.table,
+          column: op.column,
         });
         return;
       case "grant-table": {
@@ -1068,6 +1100,15 @@ export function factSql(fact) {
       return { ok: `(to_regclass(${literal(fact.table)}) is not null)`, detail: "null::text" };
     case "column":
       return { ok: columnExistsSql(fact.table, fact.column), detail: "null::text" };
+    case "nullable":
+      // Guarded like the privilege reads: a missing column is INDETERMINATE, not "still not null".
+      return {
+        ok: `(case when not ${columnExistsSql(fact.table, fact.column)} then null
+                   else not (select a.attnotnull from pg_attribute a
+                              where a.attrelid = to_regclass(${literal(fact.table)})
+                                and a.attname = ${literal(fact.column)} and not a.attisdropped) end)`,
+        detail: "null::text",
+      };
     case "function":
       return {
         ok: `((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -1107,6 +1148,15 @@ export function factSql(fact) {
                      where c.conrelid = to_regclass(${literal(fact.table)})
                        and c.conname = ${literal(fact.name)})`;
       if (!fact.present) return { ok: `(${def} is null)`, detail: "null::text" };
+      // A foreign key's rule is in its definition text: `… ON DELETE SET NULL`. Asserted on the
+      // deparsed definition rather than on `confdeltype`, so the detail column shows the reader
+      // the same string the assertion read.
+      if (fact.deletes) {
+        return {
+          ok: `coalesce(${def} ilike ${literal(`%on delete ${fact.deletes}%`)}, false)`,
+          detail: `${def}::text`,
+        };
+      }
       if (!fact.literals.length) return { ok: `(${def} is not null)`, detail: `${def}::text` };
       // `\m` and `\M` are Postgres's word-start and word-end assertions, which is what stops `4`
       // being found inside `14` — the same boundary the parser applied on the file's side.

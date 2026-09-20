@@ -23,8 +23,9 @@ import { raceIcs } from "./race-ics";
 export type RaceIcsInputs = {
   matchId: string;
   postId: string;
-  skipperId: string;
-  crewId: string;
+  /** Null once that party deleted their account (0027); the file is still a race the crew is on. */
+  skipperId: string | null;
+  crewId: string | null;
   acceptedAt: string;
   skipperName: string | null;
   boatClass: string;
@@ -56,7 +57,10 @@ export async function readRaceIcsInputs(client: SupabaseClient, matchId: string)
   const date = one(p.race_date as One<{ starts_at: string }>);
   if (!boat || !date) return null;
 
-  const { data: person, error: nErr } = await client.from("person").select("display_name").eq("id", m.skipper_id).maybeSingle();
+  // A skipper who has deleted their account (0027) has no row to read; the file then names none.
+  const { data: person, error: nErr } = m.skipper_id
+    ? await client.from("person").select("display_name").eq("id", m.skipper_id).maybeSingle()
+    : { data: null, error: null };
   if (nErr) throw new Error(`read skipper name for ics: ${nErr.message}`);
 
   const { data: club, error: cErr } = await client.from("club").select("name").limit(1).maybeSingle();

@@ -571,6 +571,18 @@ footer would be indistinguishable from a page that has none.
    - **It is a local echo, not the wall.** `git push --no-verify` skips it, and this repo is public,
      so the branch rules that hold against every client are GitHub's ruleset, which the provisioning
      story sets up. The hook stops the habit; the ruleset stops the push.
+6. **A member who wants out deletes themself** — *Leave the club* at the foot of `/profile` (#42,
+   0027). Their profile, contact, availability, answers, messages, devices and suspension go; every
+   match they were on stays as a row with that side null, shown as "former member", so the season's
+   count is unchanged; their boats stay as ownerless names on the posts that already happened, and
+   an open post of theirs stays on the board until its date passes (owner decision 2026-09-20).
+   **Removing someone else** has no screen yet. `delete_person()` admits an admin, but the SQL
+   editor is not a signed-in member, so from the dashboard the route is two statements in this
+   order: `update public.notification_log set to_email = null where person_id = '<uuid>'`, then
+   `delete from auth.users where id = '<uuid>'` — `person` cascades from the auth user and 0027's
+   rules do the rest; the address goes first because `person_id` is already null afterwards. If a
+   member's own deletion lands on `/join?deleted=partial`, their rows are gone and the auth user is
+   not — delete it under Authentication → Users.
 
 ## Brand
 

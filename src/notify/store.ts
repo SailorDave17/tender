@@ -309,7 +309,11 @@ export function supabaseMatchStore(): MatchStore {
     async matchByPost(postId) {
       const { data, error } = await admin.from("match").select("id, skipper_id, crew_id").eq("post_id", postId).maybeSingle();
       if (error) fail("read match", error);
-      return data ? { id: data.id, skipperId: data.skipper_id, crewId: data.crew_id } : null;
+      // A match is notified the moment it forms, when both parties exist by construction
+      // (accept_answer, 0008). A side already null here (0027) is a match with no pair to
+      // tell, and reads as no match rather than as a pair with a hole in it.
+      if (!data || data.skipper_id === null || data.crew_id === null) return null;
+      return { id: data.id, skipperId: data.skipper_id, crewId: data.crew_id };
     },
 
     async calendar(matchId) {
@@ -559,7 +563,10 @@ export function supabaseConfirmStore(): ConfirmStore {
         .eq("id", matchId)
         .maybeSingle();
       if (error) fail("read match for confirm", error);
-      return data ? { id: data.id, postId: data.post_id, skipperId: data.skipper_id, crewId: data.crew_id, status: data.status } : null;
+      // A confirmation tells the skipper; a null side (0027) means there is no skipper to tell
+      // or no crew who could have confirmed, so it reads as no match to notify about.
+      if (!data || data.skipper_id === null || data.crew_id === null) return null;
+      return { id: data.id, postId: data.post_id, skipperId: data.skipper_id, crewId: data.crew_id, status: data.status };
     },
 
     async post(postId): Promise<RungPost | null> {
