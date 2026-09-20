@@ -212,6 +212,27 @@ over whatever arrived.
   `githooks/owner-only`) `release`. Enable it once per clone: `git config core.hooksPath githooks`.
   It runs `githooks/checks` before any other push.
 
+## Build stamp
+
+Every page ends in a footer such as `Tender v0.1.0 · 3c7759e · feature/169-build-stamp · built
+2026-09-19` (#169). It answers "is production on the new one yet?" from the page itself rather
+than from the Vercel dashboard, which a member cannot see and the owner cannot see from the water.
+
+- **`v0.1.0` is `package.json`'s `version`, and that field is the one place the number lives.**
+  Bump it in the PR that warrants it — edit the field, or `npm version patch --no-git-tag-version`
+  (the flag matters: the repo has no tags and the promotion flow is a PR, so a tag here would be
+  a second, unread record of the same fact). Nothing else reads the field. Forgetting the bump
+  degrades to "which commit", not "no information", because the next two parts change per build.
+- **The commit** is `VERCEL_GIT_COMMIT_SHA` on Vercel and `git rev-parse` locally. Absent both, the
+  stamp omits it rather than the build failing over a footer.
+- **The branch** appears only off `release`, so a preview deployment cannot pass for production.
+- **The date** is when `next build` evaluated `next.config.ts`, where all four are computed and
+  inlined through `env`. They are baked into the bundle, not read at request time, so the stamp on
+  a page is the stamp of the build serving it — a stale bundle cannot claim a newer one.
+
+A build the config did not stamp — vitest, for one — prints *unstamped build* in words. An empty
+footer would be indistinguishable from a page that has none.
+
 ## Owner runbook — the steps only the owner can do
 
 1. **Create the Supabase project** (Free; region near Ohio). Then apply every
