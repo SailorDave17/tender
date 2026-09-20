@@ -1,13 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import RootLayout from "@/app/layout";
+import { HOOVER_SAILING_CLUB } from "@/brand/theme";
 import { BuildStamp } from "./BuildStamp";
 
 /**
  * #169 AC 1 and the rendered half of AC 5. The footer is rendered from explicit stamps here — the
  * component's default reads the inlined values, which vitest does not set — and once through the
  * root layout, which is the mechanism by which "any page" carries it.
+ *
+ * Since #41 the root layout reads the club's pair from the database on every request through a
+ * `server-only` module, so the loader is replaced here with a fixed pair: this file's claim is
+ * about where the footer sits, and `src/app/layout.test.tsx` is where the theming is asserted.
  */
+vi.mock("@/brand/club-theme", () => ({
+  loadClubTheme: async () => ({ name: "Hoover Sailing Club", ...HOOVER_SAILING_CLUB }),
+}));
 const FULL = { version: "0.1.0", sha: "3c7759e", ref: "feature/169-build-stamp", builtAt: "2026-09-19T14:03:22.000Z" };
 
 /** The text inside `<span data-x>`, or undefined when the span is absent. */
@@ -49,12 +57,9 @@ describe("the build stamp footer (#169)", () => {
     expect(html).not.toContain("<time");
   });
 
-  it("is rendered by the root layout, after the page, so every page carries it (AC 1)", () => {
-    const html = renderToStaticMarkup(
-      <RootLayout>
-        <main data-the-page>hello</main>
-      </RootLayout>,
-    );
+  it("is rendered by the root layout, after the page, so every page carries it (AC 1)", async () => {
+    // The layout is an async Server Component since #41; awaiting it yields the plain tree.
+    const html = renderToStaticMarkup(await RootLayout({ children: <main data-the-page>hello</main> }));
     expect(html).toContain("data-the-page");
     expect(html).toContain("data-build-stamp");
     expect(html.indexOf("data-the-page")).toBeLessThan(html.indexOf("data-build-stamp"));

@@ -271,6 +271,12 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       // and message_removal only, is in no policy, and so is not in person_contact's read path.
       "public.remove_message",
       "public.rotate_invite_code",
+      // 0028 (#41) — the one way the club's pair changes. Definer because no client role holds
+      // update on club (0001) and must not gain one; admin-gated by raising 42501 like the ones
+      // above, and it refuses a pair under 3:1 in SQL so a bypass of the screen is refused too.
+      // It reads and writes club only, is in no policy, and so is not in person_contact's read
+      // path. Its helper contrast_ratio() is invoker's rights and is not in this list.
+      "public.set_club_theme",
       // 0021 (#37) — the one client route to a match's status: takes the caller from auth.uid(),
       // refuses the wrong party and the wrong time, and lets the transition trigger decide the rest.
       "public.set_match_status",

@@ -64,6 +64,10 @@ export const EXPECTED_FUNCTIONS = [
   // 0023 (#36). Admin-only definer; the anon probe is refused (42501), which reads PRESENT.
   { name: "remove_message", args: { message_id: NIL_UUID } },
   { name: "rotate_invite_code", args: {} },
+  // 0028 (#41). Admin-only definer; the anon probe is refused (42501), which reads PRESENT. The
+  // placeholders are a passing pair, though the verdict never reaches the body: a GET is a
+  // read-only transaction besides, so nothing could be written by the probe.
+  { name: "set_club_theme", args: { disc: "#000000", mark: "#FFFFFF" } },
   // 0021 (#37). The GET probe runs as anon and is refused (42501), which reads PRESENT; the
   // status value is irrelevant to the verdict for the same reason the nil uuid is.
   { name: "set_match_status", args: { match_id: NIL_UUID, status: "confirmed" } },

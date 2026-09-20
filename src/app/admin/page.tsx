@@ -80,6 +80,7 @@ export default async function AdminPage({
         {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}
         <a href="/board">Back to the board</a> · <Link href="/admin/dates">Race dates</Link> ·{" "}
         <a href="/admin/invite">Invite people</a> · <a href="/admin/people">People</a> ·{" "}
+        <a href="/admin/theme">Theme</a> ·{" "}
         {/* /admin/threads has a dynamic child (#36), so Next requires <Link>, as for dates. */}
         <Link href="/admin/threads">Match threads</Link>
       </p>
