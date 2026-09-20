@@ -185,6 +185,11 @@ export function explainProfileRefusal(reason: string): string {
       return "That does not look like a phone number. Leave it blank if you would rather not give one.";
     case "refused":
       return "The database refused that change.";
+    // #42: the account deletion's own refusals, keyed by the step that refused (delete-account.ts).
+    case "delete-unconfirmed":
+      return "Tick the box to confirm you want your account deleted.";
+    case "delete-person":
+      return "Your account was not deleted: the database refused it. Nothing has changed.";
     default:
       return "That could not be saved.";
   }

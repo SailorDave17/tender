@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { matchRole, statusLabel, type MatchControls, type MatchRow, type SettableStatus } from "./match-view";
+import { matchRole, partyName, statusLabel, type MatchControls, type MatchRow, type SettableStatus } from "./match-view";
 
 /**
  * How a matched post reads (story #21 AC 5). To a party — the skipper or the accepted crew —
@@ -43,8 +43,10 @@ export function MatchPanel({
   statusForm?: StatusForm;
 }) {
   const role = matchRole(match, viewerId);
-  const skipper = names.get(match.skipper_id) ?? "the skipper";
-  const crew = names.get(match.crew_id) ?? "the crew";
+  // A party who deleted their account (0027) reads "former member" — a fact about them, not a
+  // name the page failed to read.
+  const skipper = partyName(names, match.skipper_id, "the skipper");
+  const crew = partyName(names, match.crew_id, "the crew");
   const label = statusLabel(match.status);
   if (role === "other") {
     return (
@@ -74,7 +76,9 @@ export function MatchPanel({
   return (
     <section data-status="matched" data-role={role} data-match-status={match.status}>
       <p>
-        <strong>Matched.</strong> You are sailing with <a href={`/profile/${otherId}`}>{other}</a>.
+        <strong>Matched.</strong> You are sailing with{" "}
+        {/* No profile to link when the other party has left; their name is already the placeholder. */}
+        {otherId ? <a href={`/profile/${otherId}`}>{other}</a> : <span data-former-member>{other}</span>}.
       </p>
       {outcome && (
         <p data-outcome={match.status}>

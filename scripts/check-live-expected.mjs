@@ -46,6 +46,9 @@ export const EXPECTED_FUNCTIONS = [
   { name: "accept_answer", args: { post_id: NIL_UUID, person_id: NIL_UUID } },
   { name: "answer_counts", args: { post_ids: `{${NIL_UUID}}` } },
   { name: "current_invite_code", args: {} },
+  // 0027 (#42). Self-or-admin definer; the anon probe is refused (42501), which reads PRESENT —
+  // and a GET is a read-only transaction besides, so nothing could be deleted by the probe.
+  { name: "delete_person", args: { person_id: NIL_UUID } },
   // 0026 (#39). Admin-only definer; the anon probe is refused (42501), which reads PRESENT. The
   // kinds placeholder is an array literal like members_among's, and the two instants are only
   // ever compared against sent_at, so any valid timestamp settles the probe.

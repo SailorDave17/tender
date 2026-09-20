@@ -162,6 +162,22 @@ describe("raceDayRows", () => {
     expect(rows[0].status).toBe("confirmed");
   });
 
+  it("names a party who deleted their account 'former member', and keeps the match (#42 AC 3)", () => {
+    // 0027: a null side is a person who LEFT — a different claim from an id the read could not
+    // name (null → "(removed)" on the screen) and from an open post. All three must stay apart.
+    const posts = [post("g", "past")];
+    const gone = { ...match("g", "sailed"), crew_id: null };
+    const rows = raceDayRows("past", posts, [gone], boats, people);
+    expect(rows[0]).toMatchObject({ crew: "former member", open: false, status: "sailed" });
+  });
+
+  it("names a skipper who deleted their account 'former member' from the boat's null owner", () => {
+    const ownerless = new Map(boats);
+    ownerless.set("boat-h", { id: "boat-h", owner_id: null, name: "Kestrel", class: "Flying Scot" });
+    const rows = raceDayRows("past", [post("h", "past")], [], ownerless, people);
+    expect(rows[0]).toMatchObject({ boatName: "Kestrel", skipper: "former member", open: true });
+  });
+
   it("keeps a post whose boat is gone", () => {
     const rows = raceDayRows("past", [post("ghost", "past")], [], boats, people);
     expect(rows).toHaveLength(1);

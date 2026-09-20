@@ -220,6 +220,45 @@ describe("parseStatement recognises", () => {
     ]);
   });
 
+  /**
+   * 0027 (#42) drops two cascading keys and re-adds them under the SAME names as set null. A
+   * presence-only read would call the un-applied project verified — the constraint is there,
+   * cascade and all — so the ON DELETE rule is part of the expectation, and a foreign key written
+   * without one is refused rather than read as "present" (the default, no action, is a claim the
+   * file did not make).
+   */
+  it("a foreign key, with the ON DELETE rule it names", () => {
+    expect(
+      ops("alter table public.match drop constraint match_crew_id_fkey, add constraint match_crew_id_fkey foreign key (crew_id) references public.person (id) on delete set null"),
+    ).toEqual([
+      { op: "constraint", table: "public.match", name: "match_crew_id_fkey", present: false },
+      { op: "constraint", table: "public.match", name: "match_crew_id_fkey", present: true, literals: [], deletes: "set null" },
+    ]);
+    expect(ops("alter table public.t add constraint t_a_fkey foreign key (a) references public.u (id) on delete cascade")).toEqual([
+      { op: "constraint", table: "public.t", name: "t_a_fkey", present: true, literals: [], deletes: "cascade" },
+    ]);
+    // No rule written → not read. The whole statement is refused, as for any unreadable clause.
+    expect(ops("alter table public.t add constraint t_a_fkey foreign key (a) references public.u (id)")).toEqual([]);
+  });
+
+  it("reads a foreign key's rule and a column's nullability from the catalog, not just presence", () => {
+    const where = { file: "0027.sql", statement: 1 };
+    const fk = factSql({ ...where, kind: "constraint", table: "public.match", name: "match_crew_id_fkey", present: true, literals: [], deletes: "set null" });
+    expect(fk.ok).toMatch(/on delete set null/i);
+    expect(fk.ok).toMatch(/pg_get_constraintdef/);
+    const nullable = factSql({ ...where, kind: "nullable", table: "public.boat", column: "owner_id" });
+    expect(nullable.ok).toMatch(/attnotnull/);
+    expect(nullable.ok).toMatch(/then null/); // a missing column is indeterminate, not "still not null"
+  });
+
+  it("a column made nullable", () => {
+    expect(ops("alter table public.boat alter column owner_id drop not null")).toEqual([
+      { op: "nullable", table: "public.boat", column: "owner_id" },
+    ]);
+    // `set not null` is the other direction and is still unread: nothing here writes one.
+    expect(ops("alter table public.boat alter column owner_id set not null")).toEqual([]);
+  });
+
   it("a table grant", () => {
     expect(ops("grant select on public.answer to service_role")).toEqual([
       { op: "grant-table", role: "service_role", table: "public.answer", privileges: ["SELECT"] },

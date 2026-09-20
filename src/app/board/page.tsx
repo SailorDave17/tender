@@ -7,7 +7,7 @@ import { InstallBanner } from "@/install/InstallBanner";
 import { RegisterServiceWorker } from "@/install/RegisterServiceWorker";
 import { SUSPENDED_NOTE } from "@/moderation/suspension";
 import { RungBadge } from "@/post/CandidateList";
-import { statusLabel } from "@/post/match-view";
+import { partyName, statusLabel } from "@/post/match-view";
 import { explainPostRefusal } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
 import { setAvailability } from "./actions";
@@ -134,8 +134,10 @@ export default async function BoardPage({
                       if (!boat) return null;
                       const m = data.matches.get(p.id);
                       if (m) {
-                        const skipper = data.people.get(m.skipper_id)?.display_name ?? "the skipper";
-                        const crew = data.people.get(m.crew_id)?.display_name ?? "the crew";
+                        // A party who deleted their account is "former member" (0027, #42 AC 3).
+                        const names = new Map([...data.people.values()].map((p) => [p.id, p.display_name]));
+                        const skipper = partyName(names, m.skipper_id, "the skipper");
+                        const crew = partyName(names, m.crew_id, "the crew");
                         // What became of the match (story #37 AC 4) — shown to everyone who can
                         // see the match, since a crewed boat's state is news the way the match was.
                         const outcome = statusLabel(m.status);
