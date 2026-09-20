@@ -362,6 +362,24 @@ footer would be indistinguishable from a page that has none.
    attestation from the sign-up form through Google and back to `/auth/callback`. Without it the
    Google sign-up route throws and the callback treats every pass as invalid.
 
+   **What a member sees at Google is the Supabase host, and that is not a misconfiguration**
+   (#77). Google renders the **root domain of the OAuth client's redirect URI**, never the App
+   name from consent-screen branding, so with the callback above every Google screen on the
+   sign-in, sign-up and link flows names `<project-ref>.supabase.co`: the account chooser says
+   *"to continue to `<project-ref>.supabase.co`"* and the consent page says *"Sign in to
+   `<project-ref>.supabase.co`"* and *"Google will allow `<project-ref>.supabase.co` to access this
+   info about you"*. The word *Tender* appears nowhere. *Measured* 2026-08-23, 35 minutes after
+   the client was created, and again 2026-09-20, 27 days on, byte-for-byte the same — with every
+   field on the Google side correct and `GET /auth/v1/settings` reporting `external.google: true`.
+   Do not go hunting for a wrong client; Supabase documents the behaviour and warns it *"does not
+   inspire trust"*. Their remedy is a Custom Domain (priced 2026-08-23 at $10/month on a paid
+   plan, outside the $0 charter). The one this project took is **#173**: sign-in and sign-up move
+   to the Google ID-token flow on our own origin, after which only the `/profile` link flow —
+   redirect-only in GoTrue — still shows the Supabase host. Until #173 ships, this is the screen
+   to warn a new member about. To look at it without granting anything, append `&prompt=consent`
+   to a hand-built `/auth/v1/authorize?provider=google&redirect_to=…` URL — consent is
+   remembered, so an ordinary attempt renders nothing — and press Cancel, never Continue.
+
    **Allow manual linking** (#74) — the table's fourth row, at **Authentication → Sign In /
    Providers → User Signups**, sitting directly under *Allow new users to sign up* and described
    there as *"Enable manual linking APIs for your project"*.
