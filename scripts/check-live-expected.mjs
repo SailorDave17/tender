@@ -46,6 +46,13 @@ export const EXPECTED_FUNCTIONS = [
   { name: "accept_answer", args: { post_id: NIL_UUID, person_id: NIL_UUID } },
   { name: "answer_counts", args: { post_ids: `{${NIL_UUID}}` } },
   { name: "current_invite_code", args: {} },
+  // 0026 (#39). Admin-only definer; the anon probe is refused (42501), which reads PRESENT. The
+  // kinds placeholder is an array literal like members_among's, and the two instants are only
+  // ever compared against sent_at, so any valid timestamp settles the probe.
+  {
+    name: "email_usage",
+    args: { p_kinds: "{nothing_is_this_kind}", p_day_start: "1970-01-01T00:00:00Z", p_month_start: "1970-01-01T00:00:00Z" },
+  },
   // 0022 (#31). Takes a text[], so the placeholder is an array literal rather than a nil uuid.
   // The probe runs as anon and is refused (42501 — execute is revoked from anon by name), which
   // reads PRESENT: a present function and a closed grant at once, which is what this story wants.

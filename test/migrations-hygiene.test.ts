@@ -240,6 +240,12 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       "public.admin_from_contact",
       "public.answer_counts",
       "public.current_invite_code",
+      // 0026 (#39) — reads notification_log, which 0010 withheld from every client role (revoke
+      // all, RLS, no policy), and returns two COUNTS so the admin can see Resend's day and month
+      // against their caps without a single row — no address, no recipient, no subject. Admin-
+      // gated by raising 42501 like the ones above, and in no policy, so person_contact's read
+      // path is untouched and ADR 003's kill condition is intact. It reads no other table.
+      "public.email_usage",
       // 0022 (#31) — reads person_contact, which is self-only to every client role, and returns
       // the subset of the addresses it was GIVEN that are members. It is in no policy, so it is
       // not in person_contact's read path and the kill condition above is untouched: the two
