@@ -151,6 +151,9 @@ describe("notification_log (0010)", () => {
       "post_id",
       "provider_id",
       "sent_at",
+      // 0025 (#43). Listed here rather than only in its own block below, because this assertion
+      // is the one that fails when a migration adds a column nobody meant to add.
+      "signature",
       "to_email",
     ]);
     await expect(
@@ -196,5 +199,70 @@ describe("what notifyRung() reads as service_role (0010 grants on older tables)"
     // no story could grant without reversing the ledger's whole access model.
     const r = await db.query<{ ok: boolean }>(`select has_table_privilege('anon', 'public.suggestion', 'select') as ok`);
     expect(r.rows).toEqual([{ ok: false }]);
+  });
+});
+
+/**
+ * 0025 — notification_log.signature (story #43).
+ *
+ * Three claims, and the third is the one the migration's header rests on: the column exists and
+ * is nullable, the partial index the reporter's read uses is there, and NO new grant was needed —
+ * 0010's table-level grants already cover a column added later, which is 0019's reasoning on
+ * `tick_run.sweep_at` applied a second time. A deny against `authenticated` on the same statement
+ * is the positive/negative pair, so "no rows" cannot be a wrong query.
+ */
+describe("notification_log.signature (0025)", () => {
+  const SIG = "TypeError /post/[id]";
+
+  it("is a nullable text column, and every row written before it is null", async () => {
+    const r = await db.query<{ data_type: string; is_nullable: string }>(
+      `select data_type, is_nullable from information_schema.columns
+        where table_schema = 'public' and table_name = 'notification_log' and column_name = 'signature'`,
+    );
+    expect(r.rows).toEqual([{ data_type: "text", is_nullable: "YES" }]);
+    // The rung_email row the 0010 block inserted predates this column and carries no signature.
+    const existing = await db.query<{ kind: string; signature: string | null }>(`select kind, signature from public.notification_log`);
+    expect(existing.rows).toEqual([{ kind: "rung_email", signature: null }]);
+  });
+
+  it("carries the reporter's partial index, on (signature, sent_at desc) where signature is not null", async () => {
+    const r = await db.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes where schemaname = 'public' and indexname = 'notification_log_signature_sent_at'`,
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].indexdef).toMatch(/\(signature, sent_at DESC\)/);
+    expect(r.rows[0].indexdef).toMatch(/WHERE \(signature IS NOT NULL\)/);
+  });
+
+  it("service_role writes and reads it with no grant of its own; authenticated is still refused", async () => {
+    const insert = (role: "authenticated" | "service_role", when: string) =>
+      as(
+        db,
+        role,
+        `insert into public.notification_log (kind, channel, to_email, signature, sent_at)
+           values ('error', 'email', 'owner@example.org', '${SIG}', now() - interval '${when}')`,
+        role === "authenticated" ? SKIPPER : undefined,
+      );
+    await expect(insert("authenticated", "1 minute")).rejects.toThrow(/permission denied/);
+    await insert("service_role", "90 minutes");
+    await insert("service_role", "20 minutes");
+
+    // The reporter's actual read: the most recent attempt for one signature.
+    const last = await as(
+      db,
+      "service_role",
+      `select extract(epoch from now() - sent_at)::int / 60 as minutes_ago from public.notification_log
+        where kind = 'error' and channel = 'email' and signature = '${SIG}' order by sent_at desc limit 1`,
+    );
+    expect((last.rows[0] as { minutes_ago: number }).minutes_ago).toBe(20);
+
+    // Negative control on that read: a signature nothing wrote comes back empty, so the 20 above
+    // is the query working rather than the filter being ignored.
+    const none = await as(
+      db,
+      "service_role",
+      `select 1 from public.notification_log where signature = 'RangeError /nowhere' limit 1`,
+    );
+    expect(none.rows).toEqual([]);
   });
 });

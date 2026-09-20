@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { explainLinkReason, hasGoogleIdentity } from "@/auth/link";
 import { PushToggle } from "@/push/PushToggle";
 import { ProfileCard } from "@/profile/ProfileCard";
-import { RATINGS, explainProfileRefusal } from "@/profile/profile";
+import { explainProfileRefusal, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
 import { saveProfile } from "./actions";
 
@@ -25,19 +25,24 @@ export default async function ProfilePage({
   } = await client.auth.getUser();
   if (!user) redirect("/join");
 
-  const [{ data: me }, { data: contact }, { data: classes }, { data: devices }] = await Promise.all([
+  const [{ data: me }, { data: contact }, { data: classes }, { data: skillRows }, { data: devices }] =
+    await Promise.all([
     client
       .from("person")
-      .select("id, display_name, rating, any_hull, hulls")
+      .select("id, display_name, rating, skills, any_hull, hulls")
       .eq("id", user.id)
       .maybeSingle(),
     client.from("person_contact").select("phone").eq("person_id", user.id).maybeSingle(),
     client.from("boat_class").select("name").order("name"),
+    // 0024's list, ordered by the table's own `sort` — never by RATINGS, which is the skipper's
+    // vocabulary now. A skill the club adds by migration appears here with no code change.
+    client.from("skill").select("code, label, level, sort").order("sort"),
     // 0013's read policy is self-only, so this is the caller's own devices and cannot be
     // anyone else's. The keys are withheld at the grant — the page has no use for them.
     client.from("push_subscription").select("id").eq("person_id", user.id),
   ]);
   if (!me) redirect("/join?error=not-invited");
+  const skills = (skillRows ?? []) as Skill[];
   const { error, saved, linked } = await searchParams;
   // Read on the server and handed down: NEXT_PUBLIC_ is inlined at build time, so a client
   // component reading it directly would bake in whatever the BUILDING machine had rather than
@@ -56,15 +61,29 @@ export default async function ProfilePage({
         Skippers and the ladder go by this. <a href="/board">Back to the board</a>
       </p>
 
-      <ProfileCard person={me} phone={contact?.phone ?? null} viewerId={user.id} />
+      <ProfileCard person={me} phone={contact?.phone ?? null} viewerId={user.id} skills={skills} />
 
       <form action={saveProfile} style={{ display: "grid", gap: "1rem", marginTop: "1.5rem" }}>
+        {/*
+          #68: checkboxes, not one radio. A crew ticks everything they can do and the rung is
+          derived from the highest level among them (levelFromSkills), so the engine and both
+          skipper-side forms go on reading one ordinal while the profile says what the person
+          actually does. `required` is deliberately absent — the browser applies it to a checkbox
+          group per box rather than per group, so it would demand ALL of them; the blank set is
+          refused in the Server Action, where a disabled control is no defence anyway.
+        */}
         <fieldset style={{ display: "grid", gap: "0.25rem" }}>
           <legend>How competent are you?</legend>
-          {RATINGS.map((r) => (
-            <label key={r.value}>
-              <input type="radio" name="rating" value={r.value} defaultChecked={me.rating === r.value} required />{" "}
-              {r.label}
+          <p style={{ margin: 0, fontSize: "0.875rem" }}>Tick everything you can do.</p>
+          {skills.map((s) => (
+            <label key={s.code}>
+              <input
+                type="checkbox"
+                name="skills"
+                value={s.code}
+                defaultChecked={(me.skills ?? []).includes(s.code)}
+              />{" "}
+              {s.label}
             </label>
           ))}
         </fieldset>

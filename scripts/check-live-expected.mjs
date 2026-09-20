@@ -22,6 +22,7 @@ export const EXPECTED_TABLES = [
   "post",
   "push_subscription",
   "race_date",
+  "skill",
   "suggestion",
   "suspension",
   "tick_run",

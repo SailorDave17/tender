@@ -212,6 +212,27 @@ over whatever arrived.
   `githooks/owner-only`) `release`. Enable it once per clone: `git config core.hooksPath githooks`.
   It runs `githooks/checks` before any other push.
 
+## Build stamp
+
+Every page ends in a footer such as `Tender v0.1.0 · 3c7759e · feature/169-build-stamp · built
+2026-09-19` (#169). It answers "is production on the new one yet?" from the page itself rather
+than from the Vercel dashboard, which a member cannot see and the owner cannot see from the water.
+
+- **`v0.1.0` is `package.json`'s `version`, and that field is the one place the number lives.**
+  Bump it in the PR that warrants it — edit the field, or `npm version patch --no-git-tag-version`
+  (the flag matters: the repo has no tags and the promotion flow is a PR, so a tag here would be
+  a second, unread record of the same fact). Nothing else reads the field. Forgetting the bump
+  degrades to "which commit", not "no information", because the next two parts change per build.
+- **The commit** is `VERCEL_GIT_COMMIT_SHA` on Vercel and `git rev-parse` locally. Absent both, the
+  stamp omits it rather than the build failing over a footer.
+- **The branch** appears only off `release`, so a preview deployment cannot pass for production.
+- **The date** is when `next build` evaluated `next.config.ts`, where all four are computed and
+  inlined through `env`. They are baked into the bundle, not read at request time, so the stamp on
+  a page is the stamp of the build serving it — a stale bundle cannot claim a newer one.
+
+A build the config did not stamp — vitest, for one — prints *unstamped build* in words. An empty
+footer would be indistinguishable from a page that has none.
+
 ## Owner runbook — the steps only the owner can do
 
 1. **Create the Supabase project** (Free; region near Ohio). Then apply every
@@ -341,6 +362,24 @@ over whatever arrived.
    attestation from the sign-up form through Google and back to `/auth/callback`. Without it the
    Google sign-up route throws and the callback treats every pass as invalid.
 
+   **What a member sees at Google is the Supabase host, and that is not a misconfiguration**
+   (#77). Google renders the **root domain of the OAuth client's redirect URI**, never the App
+   name from consent-screen branding, so with the callback above every Google screen on the
+   sign-in, sign-up and link flows names `<project-ref>.supabase.co`: the account chooser says
+   *"to continue to `<project-ref>.supabase.co`"* and the consent page says *"Sign in to
+   `<project-ref>.supabase.co`"* and *"Google will allow `<project-ref>.supabase.co` to access this
+   info about you"*. The word *Tender* appears nowhere. *Measured* 2026-08-23, 35 minutes after
+   the client was created, and again 2026-09-20, 27 days on, byte-for-byte the same — with every
+   field on the Google side correct and `GET /auth/v1/settings` reporting `external.google: true`.
+   Do not go hunting for a wrong client; Supabase documents the behaviour and warns it *"does not
+   inspire trust"*. Their remedy is a Custom Domain (priced 2026-08-23 at $10/month on a paid
+   plan, outside the $0 charter). The one this project took is **#173**: sign-in and sign-up move
+   to the Google ID-token flow on our own origin, after which only the `/profile` link flow —
+   redirect-only in GoTrue — still shows the Supabase host. Until #173 ships, this is the screen
+   to warn a new member about. To look at it without granting anything, append `&prompt=consent`
+   to a hand-built `/auth/v1/authorize?provider=google&redirect_to=…` URL — consent is
+   remembered, so an ordinary attempt renders nothing — and press Cancel, never Continue.
+
    **Allow manual linking** (#74) — the table's fourth row, at **Authentication → Sign In /
    Providers → User Signups**, sitting directly under *Allow new users to sign up* and described
    there as *"Enable manual linking APIs for your project"*.
@@ -460,6 +499,43 @@ over whatever arrived.
    then a tap on any of the three buttons is refused (PGRST202, shown as one sentence) and the
    morning-of pass logs a read error and does nothing, while the ladder half still runs — neither
    failure is loud, which is why the order matters. Nothing to enable and no new secret.
+
+2e. **Error email to the owner** (#43). `src/instrumentation.ts` is Next's server error hook, and
+   it is the club's entire observability layer — the charter asks for "errors emailed to the
+   owner; nothing else", Hobby has no email alerting, and it keeps the function log for **one
+   hour**, so an error nobody reads inside that hour is an error nobody ever reads. Two things:
+
+   1. **Set `OWNER_EMAIL`** — the address the reports go to, in Vercel's environment. A **ninth**
+      server-only name beside the eight in steps 1, 2, 2b and 2c. Unset means no email at all:
+      the report goes to the function log with `OWNER_EMAIL unset` on it and expires there in an
+      hour, which is the same as silence. Nothing else breaks, so this failure is quiet by
+      construction — the one to check for deliberately rather than wait to notice.
+   2. **Apply `0025` before promoting the `develop` that carries #43.** It adds
+      `notification_log.signature`, which is how "the same error again" is recognised across
+      Vercel's several instances. Without it the deduplication read fails and the app degrades
+      *quietly rather than loudly*: there is no 500 and no visible symptom, but the only window
+      left is the one held in each running instance's memory, so a cold start or a second
+      instance can send the same report again.
+
+   What lands: one email per distinct error — its name and the **route template** it threw on,
+   `TypeError /post/[id]` — at most once an hour, carrying the method, the path with **any query
+   string removed** (a reset code, an invite code and `/auth/callback`'s PKCE code all live in
+   one, and this text goes to an inbox), and the first 20 lines of the stack. It rides Resend on
+   the same 100/day as everything else and stops at 95, like every other sender; past that the
+   report goes to the function log instead and `notification_log` records an `error_skipped_cap`
+   row.
+
+   **What it cannot see**, so nobody hunts for it here: an error the app has already caught. Every
+   `…Live` wrapper in `src/notify/live.ts` swallows its failure to a console line on purpose, and
+   a swallowed error never throws out of the route, so it never reaches the hook. The same is true
+   of anything that fails *before* the app runs — a bad deployment, a DNS mistake, Vercel itself.
+
+   Confirm it after the first deployment by reading the log rather than waiting for a fault:
+
+   ```sql
+   select sent_at, kind, signature, error from public.notification_log
+    where kind in ('error', 'error_skipped_cap') order by sent_at desc limit 5;
+   ```
 
 3. **Vercel**: import the repo, set the production branch to `release`, add the environment
    variables, turn on Deployment Protection → Standard Protection (previews carry the production
