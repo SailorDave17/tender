@@ -1,5 +1,6 @@
 import { KIND_ANSWER } from "./answer";
 import { KIND_CONFIRMED, KIND_MORNING_OF } from "./confirm";
+import { KIND_ERROR } from "./error";
 import { KIND_INVITE } from "./invite";
 import { KIND_MATCH } from "./match";
 import { KIND_MESSAGE } from "./message";
@@ -17,6 +18,12 @@ import { KIND_RUNG_EMAIL } from "./rung";
  *
  * The rung store's `rung_email`-only count is a recorded deferral from #33 and deliberately not
  * moved onto this list here.
+ *
+ * `error` joined on #43, and it is the second kind here addressed to nobody in the club — the
+ * owner's OWNER_EMAIL inbox. It belongs for the list's own reason rather than by analogy: an
+ * error report is a send on Resend's account like any other, and left off this list it would be
+ * both free of the cap AND invisible to the cap every other sender reads, so a bad Sunday could
+ * spend the club's day on error mail without a single count moving.
  */
 export const EMAIL_ATTEMPT_KINDS: readonly string[] = [
   KIND_RUNG_EMAIL,
@@ -26,4 +33,5 @@ export const EMAIL_ATTEMPT_KINDS: readonly string[] = [
   KIND_MORNING_OF,
   KIND_CONFIRMED,
   KIND_INVITE,
+  KIND_ERROR,
 ];
