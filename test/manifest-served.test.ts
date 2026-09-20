@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import manifest from "@/app/manifest";
+import { manifestFor } from "@/brand/manifest";
 
 /**
  * Story #28 AC 4 — the manifest and the icons as a running build actually serves them.
@@ -50,9 +50,14 @@ if (baseUrl) describe("the built app serves the manifest and its icons (#28 AC 4
     expect(res.headers.get("content-type") ?? "").toContain("manifest+json");
 
     const served = await res.json();
-    // Compared against the source of truth rather than against a copy of its values: this asks
-    // "does the build serve what the function returns", which is the only question left.
-    expect(served).toEqual(JSON.parse(JSON.stringify(manifest())));
+    // Compared against the builder rather than against a copy of its values: this asks "does the
+    // build serve what the function returns", which is the only question left. Since #41 the
+    // route's one input is the club row's disc, which this process cannot read — so the served
+    // `theme_color` is taken as that input and everything else is held to what the builder makes
+    // of it, and the disc itself is held to the row's own shape (0001's constraint). Whether it
+    // is the ROW's value is the live probe's question (`/admin/theme`, then this route).
+    expect(served.theme_color).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    expect(served).toEqual(JSON.parse(JSON.stringify(manifestFor({ disc: served.theme_color }))));
   });
 
   it("every icon the manifest names resolves 200 as an image", async () => {
@@ -106,5 +111,5 @@ it("the served check is present, and still asks for all four artefacts (#28 AC 4
   for (const path of ["/manifest.webmanifest", "/apple-touch-icon.png", "/sw.js", "/icon-193.png"]) {
     expect(self, `the served check no longer requests ${path}`).toContain(`new URL("${path}", baseUrl)`);
   }
-  expect(self, "the served check must assert against the manifest function, not a copy of it").toContain("manifest()");
+  expect(self, "the served check must assert against the manifest builder, not a copy of it").toContain("manifestFor(");
 });

@@ -1,11 +1,15 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import manifest from "@/app/manifest";
-import { BACKGROUND_COLOUR, THEME_COLOUR } from "@/brand/theme";
+import { manifestFor } from "@/brand/manifest";
+import { BACKGROUND_COLOUR, HOOVER_SAILING_CLUB } from "@/brand/theme";
 
 /**
- * Story #28 AC 1 — the manifest, and the icon files it points at.
+ * Story #28 AC 1 — the manifest, and the icon files it points at. Since #41 the manifest is a
+ * function of the club's theme (`manifestFor`), so it is built here from a pair rather than
+ * imported from the route: `src/app/manifest.ts` reads the club row through a `server-only`
+ * module and cannot be imported by a test at all. What the route file does — read the row, call
+ * the builder — is asserted on its source below, the way the layout's import used to be.
  *
  * AC 4 asks for the SERVED artefact, and this file is not that: it reads the function and the
  * files on disk. `test/manifest-served.test.ts` is the one that fetches from a running build,
@@ -20,6 +24,7 @@ import { BACKGROUND_COLOUR, THEME_COLOUR } from "@/brand/theme";
  */
 
 const publicDir = new URL("../public/", import.meta.url);
+const src = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
 /**
  * Width and height straight out of the IHDR chunk, which a valid PNG must carry first: 8-byte
@@ -35,7 +40,7 @@ function pngSize(file: string): { width: number; height: number; bytes: number }
 }
 
 describe("the web app manifest (#28 AC 1)", () => {
-  const m = manifest();
+  const m = manifestFor(HOOVER_SAILING_CLUB);
 
   it("carries the identity and display fields an install needs", () => {
     expect(m.name).toBe("Tender");
@@ -52,21 +57,42 @@ describe("the web app manifest (#28 AC 1)", () => {
     expect(m.scope).toBe("/");
   });
 
-  it("paints the same two colours the browser tab and the stylesheet use", () => {
-    // Three copies of each value exist by construction — this function, `layout.tsx`'s viewport,
-    // and `globals.css` — and only the first two can import a constant. Holding all three equal
-    // here is what stops the installed app's splash screen drifting from the page behind it
-    // (cairn: `a-computable-claim-does-not-belong-in-prose`).
-    expect(m.theme_color).toBe(THEME_COLOUR);
+  it("paints the club's disc as theme_color, from the theme it is built from and never a literal (#41 AC 3)", () => {
+    // Whatever pair it is given is the pair it declares: the value is the club row's, read at
+    // request time by src/app/manifest.ts, so there is no constant for this to drift from.
+    expect(m.theme_color).toBe(HOOVER_SAILING_CLUB.disc);
+    expect(manifestFor({ disc: "#000000" }).theme_color).toBe("#000000");
     expect(m.background_color).toBe(BACKGROUND_COLOUR);
+    // The builder's source carries no colour literal of its own.
+    expect(src("../src/brand/manifest.ts")).not.toMatch(/theme_color:\s*["']#/);
+  });
 
-    const css = readFileSync(fileURLToPath(new URL("../src/app/globals.css", import.meta.url)), "utf8");
-    expect(css.toLowerCase()).toContain(`--hull-green: ${THEME_COLOUR.toLowerCase()}`);
-    expect(css.toLowerCase()).toContain(`--paper: ${BACKGROUND_COLOUR.toLowerCase()}`);
+  it("the route reads the club row and the layout paints the same read, so tab and app agree", () => {
+    // Three copies existed by construction — the manifest, the viewport, and globals.css — and
+    // only one value now: the row. So the check is that each surface takes it from the loader
+    // and that globals.css declares no value of its own (a second copy nothing would hold).
+    const route = src("../src/app/manifest.ts");
+    expect(route, "the route must build from the club theme").toContain("loadClubTheme");
+    expect(route).toContain("manifestFor");
 
-    const layout = readFileSync(fileURLToPath(new URL("../src/app/layout.tsx", import.meta.url)), "utf8");
-    expect(layout, "layout must import the constant rather than repeat the value").toContain("THEME_COLOUR");
+    const layout = src("../src/app/layout.tsx");
+    expect(layout, "the viewport must come from the same loader").toContain("loadClubTheme");
+    expect(layout).toMatch(/themeColor:\s*theme\.disc/);
     expect(layout).not.toMatch(/themeColor:\s*["']#/);
+    expect(layout).toMatch(/"--brand-disc":\s*theme\.disc/);
+    expect(layout).toMatch(/"--brand-mark":\s*theme\.mark/);
+    // The mark is a component in the document, never an <img> — a separate document could not
+    // see the pair (src/brand/TenderMark.tsx's header; cairn: svg-currentcolor-and-movable-holes).
+    expect(layout).toMatch(/<TenderMark\b[^>]*disc=\{theme\.disc\}/);
+    // The JSX shape (`<img … src=`), not the bare tag: the layout's own comment says "never
+    // `<img src>`", and a looser pattern reddened on a correct file (the #39(d) trap).
+    expect(layout).not.toMatch(/<img\b[^>]*\bsrc=/);
+
+    const css = src("../src/app/globals.css");
+    expect(css.toLowerCase()).toContain(`--paper: ${BACKGROUND_COLOUR.toLowerCase()}`);
+    expect(css).not.toMatch(/--brand-(disc|mark)\s*:/); // read via var(), never declared
+    expect(css).toContain("var(--brand-disc)");
+    expect(css).toContain("var(--brand-mark)");
   });
 
   it("declares 192 and 512 icons that are really those sizes", () => {
@@ -107,13 +133,13 @@ describe("the Apple touch icon, which iOS reads instead of the manifest (#28 AC 
     expect(real.height).toBe(180);
     expect(real.bytes).toBeGreaterThan(1000);
 
-    const layout = readFileSync(fileURLToPath(new URL("../src/app/layout.tsx", import.meta.url)), "utf8");
+    const layout = src("../src/app/layout.tsx");
     expect(layout, "iOS ignores the manifest icons; the link must be declared").toContain("/apple-touch-icon.png");
     expect(layout).toMatch(/icons:\s*\{\s*apple:/);
   });
 
   it("is not in the manifest's icon list, where no browser would read it", () => {
-    expect((manifest().icons ?? []).some((i) => i.src.includes("apple"))).toBe(false);
+    expect((manifestFor(HOOVER_SAILING_CLUB).icons ?? []).some((i) => i.src.includes("apple"))).toBe(false);
   });
 
   /**
@@ -126,5 +152,24 @@ describe("the Apple touch icon, which iOS reads instead of the manifest (#28 AC 
     const buf = readFileSync(fileURLToPath(new URL("apple-touch-icon.png", publicDir)));
     const colourType = buf.readUInt8(25);
     expect([0, 2], `colour type ${colourType} carries alpha`).toContain(colourType);
+  });
+});
+
+describe("hull green is retired from src/ (#41 AC 3, as #153 narrowed it)", () => {
+  it("the only 1E5443 left under src/ is rung 1's, which is the ladder's vocabulary and not the brand", () => {
+    // #41 asked for `git grep -n 1E5443 src/` to be empty; #153 (filed later the same day it was
+    // reworded) records the owner declining to re-key the rung colours, so the rung-1 literal is
+    // the one deliberate survivor. Asserted as a corpus scan rather than trusted to a sentence.
+    const root = fileURLToPath(new URL("../src/", import.meta.url));
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = `${dir}/${name}`;
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/1E5443/i.test(readFileSync(p, "utf8"))) hits.push(p.slice(root.length).replace(/\\/g, "/"));
+      }
+    };
+    walk(root.replace(/[\\/]$/, ""));
+    expect(hits).toEqual(["board/post-view.ts"]);
   });
 });

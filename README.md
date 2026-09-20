@@ -259,7 +259,12 @@ footer would be indistinguishable from a page that has none.
    `admin_email` is yours: the person who signs in with that address becomes the admin
    (0009's trigger sets `person.is_admin` on their first sign-in, and on an existing person the
    moment the column is set), so `/admin` loads with no SQL run against `person`. The colours are
-   the Hoover pair (`brand/`); the code is a placeholder you rotate from `/admin` once signed in.
+   the Hoover pair (`brand/`) — the club accepted them on 2026-08-22 (#11, `docs/charter.md`
+   § Forge checks), which is why the seed carries them rather than the mark set's default green.
+   **Changing them afterwards is `/admin/theme`, not an edit to this row** (#41): that screen
+   previews the mark in the pair and shows the contrast, and `set_club_theme()` (0028) refuses a
+   pair under 3:1 at save, which a hand `update` would not. The code is a placeholder you rotate
+   from `/admin` once signed in.
    On a project whose club row already exists, set the address on it instead:
 
    ```sql
@@ -586,7 +591,12 @@ footer would be indistinguishable from a page that has none.
 
 ## Brand
 
-`brand/` holds the mark set and `TenderMark.jsx` from the 2026-08-21 brand work. The four SVGs
-there are the **Hoover-themed** pair (`#395FAC` / `#FCCF0B`); the default-green exports the
-brand README's table names were never exported. Inline the component — never `<img src>` an SVG
-that uses the page's colours.
+`brand/` holds the mark set from the 2026-08-21 brand work. The four SVGs there are the
+**Hoover-themed** pair (`#395FAC` / `#FCCF0B`); the default-green exports the brand README's
+table names were never exported. The component that was `brand/TenderMark.jsx` is
+`src/brand/TenderMark.tsx` since #41 — typed, inside `tsconfig`, one copy — and its contrast
+rule is `src/brand/contrast.ts`, with the same rule spelled in SQL by `set_club_theme()` (0028)
+so it holds at save. Inline the component — never `<img src>` an SVG that uses the page's
+colours. The app's pair is the **club row's** (`brand_disc` / `brand_mark`): the root layout
+reads it on every request and sets `--brand-disc` / `--brand-mark`, the viewport and the manifest
+from it, and the admin changes it on `/admin/theme`.

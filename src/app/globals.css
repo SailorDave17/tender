@@ -1,10 +1,27 @@
+/*
+ * --brand-disc and --brand-mark are NOT declared here. src/app/layout.tsx sets both on <html>
+ * from the club row on every request (story #41), so a value written here would be a second
+ * copy that nothing holds to the first. --paper is a constant and stays one: it is not a club
+ * decision (src/brand/theme.ts). test/manifest.test.ts holds it equal to BACKGROUND_COLOUR.
+ */
 :root {
   color-scheme: light dark;
-  --hull-green: #1e5443;
   --paper: #edf0ea;
 }
 html, body { margin: 0; }
 body { background: var(--paper); color: #1a1a1a; }
 @media (prefers-color-scheme: dark) {
   body { background: #121a17; color: var(--paper); }
+}
+
+/* The brand bar: the club's disc behind its knockout, the same pair the mark is drawn in. */
+[data-brand-bar] {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 2rem;
+  background: var(--brand-disc);
+  color: var(--brand-mark);
+  font-family: system-ui, sans-serif;
+  font-weight: 600;
 }
