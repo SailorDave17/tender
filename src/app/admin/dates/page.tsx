@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { explainRefusal, formatStartsAt } from "@/dates/race-date";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminDatesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; imported?: string; skipped?: string }>;
 }) {
   const client = await supabaseServer();
   const {
@@ -34,7 +35,7 @@ export default async function AdminDatesPage({
     .from("race_date")
     .select("id, starts_at, title, published")
     .order("starts_at");
-  const { error } = await searchParams;
+  const { error, imported, skipped } = await searchParams;
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
@@ -43,6 +44,16 @@ export default async function AdminDatesPage({
         Every race day needs a start time — the ladder counts down to it. Dates are shown on the
         board only once published. <a href="/board">Back to the board</a>
       </p>
+      <p>
+        Have the season as a calendar file?{" "}
+        <Link href="/admin/dates/import">Import the season from an .ics</Link>
+      </p>
+      {imported !== undefined && (
+        <p role="status" data-imported={imported} data-skipped={skipped}>
+          Imported {imported} race {imported === "1" ? "day" : "days"}
+          {skipped && skipped !== "0" ? `; ${skipped} already on the calendar and left as they were` : ""}.
+        </p>
+      )}
 
       <form action={createRaceDate} style={{ display: "grid", gap: "0.75rem" }}>
         <label>
