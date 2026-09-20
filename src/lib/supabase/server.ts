@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { env } from "@/lib/env";
 
 /**
  * The cookie-bound client for Server Components and Route Handlers. Anon key: everything it
@@ -22,10 +23,4 @@ export async function supabaseServer() {
       },
     },
   });
-}
-
-export function env(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`${name} is not set`);
-  return v;
 }

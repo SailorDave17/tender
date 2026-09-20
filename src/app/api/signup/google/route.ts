@@ -3,7 +3,8 @@ import { googleSignup } from "@/auth/join";
 import { PASS_COOKIE, PASS_TTL_MS, signPass } from "@/auth/pass";
 import { startGoogle } from "@/lib/auth/google";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { env, supabaseServer } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
+import { supabaseServer } from "@/lib/supabase/server";
 
 /**
  * Sign up finishing with Google (#70 AC 4). The decision is src/auth/join.ts `googleSignup`;
