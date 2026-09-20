@@ -1,4 +1,4 @@
-import { ratingLabel } from "./profile";
+import { competenceText, type Skill } from "./profile";
 
 /**
  * How a person's profile reads — their own and anyone else's. Pure markup over data, so the
@@ -18,6 +18,8 @@ export type ProfileView = {
   id: string;
   display_name: string;
   rating: number | null;
+  /** The codes ticked (0024). Optional so a caller that predates #68 still type-checks. */
+  skills?: readonly string[] | null;
   any_hull: boolean;
   hulls: readonly string[];
 };
@@ -30,10 +32,17 @@ export function ProfileCard({
   person,
   phone,
   viewerId,
+  skills = [],
 }: {
   person: ProfileView;
   phone: string | null;
   viewerId: string;
+  /**
+   * The `skill` rows (0024), ordered by `sort` — the code-to-label mapping the card needs to
+   * print what a person ticked. Defaulted to empty so a card handed no list falls back to the
+   * single rating word rather than printing raw codes at a skipper.
+   */
+  skills?: readonly Skill[];
 }) {
   const own = viewerId === person.id;
   return (
@@ -41,7 +50,7 @@ export function ProfileCard({
       <dt>Name</dt>
       <dd>{person.display_name}</dd>
       <dt>Competence</dt>
-      <dd>{ratingLabel(person.rating)}</dd>
+      <dd>{competenceText(person, skills)}</dd>
       <dt>Will sail</dt>
       <dd>{hullsText(person)}</dd>
       {own && (

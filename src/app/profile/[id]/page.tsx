@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { ProfileCard } from "@/profile/ProfileCard";
+import type { Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -24,20 +25,26 @@ export default async function PersonProfilePage({ params }: { params: Promise<{ 
   } = await client.auth.getUser();
   if (!user) redirect("/join");
 
-  const [{ data: person }, { data: contact }] = await Promise.all([
+  const [{ data: person }, { data: contact }, { data: skillRows }] = await Promise.all([
     client
       .from("person")
-      .select("id, display_name, rating, any_hull, hulls")
+      .select("id, display_name, rating, skills, any_hull, hulls")
       .eq("id", id)
       .maybeSingle(),
     client.from("person_contact").select("phone").eq("person_id", id).maybeSingle(),
+    client.from("skill").select("code, label, level, sort").order("sort"),
   ]);
   if (!person) notFound();
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
       <h1>{person.display_name}</h1>
-      <ProfileCard person={person} phone={contact?.phone ?? null} viewerId={user.id} />
+      <ProfileCard
+        person={person}
+        phone={contact?.phone ?? null}
+        viewerId={user.id}
+        skills={(skillRows ?? []) as Skill[]}
+      />
       <p>
         <a href="/board">Back to the board</a>
       </p>

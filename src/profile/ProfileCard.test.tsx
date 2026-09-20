@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ProfileCard, hullsText } from "./ProfileCard";
+import type { Skill } from "./profile";
 
 /**
  * Story #18 AC 2: a different signed-in person's view of a profile carries no phone — asserted
@@ -13,6 +14,14 @@ import { ProfileCard, hullsText } from "./ProfileCard";
 // rating 4 is a helm since 0011 (#69) — this fixture was 3 when 3 was the top of the scale.
 const ann = { id: "ann", display_name: "Ann", rating: 4, any_hull: false, hulls: ["Thistle"] };
 const PHONE = "614-555-0100";
+
+/** 0024's seed, as a page reads it — ordered by `sort`, which is the order the labels print in. */
+const SKILLS: Skill[] = [
+  { code: "never-raced", label: "Never raced", level: 1, sort: 1 },
+  { code: "hike-trim", label: "Can hike and trim", level: 2, sort: 2 },
+  { code: "spinnaker", label: "Can fly a spinnaker", level: 3, sort: 3 },
+  { code: "helm", label: "Can helm", level: 4, sort: 4 },
+];
 
 describe("ProfileCard — phone is rendered for the owner only (AC 2)", () => {
   it("a stranger's view has no phone in the HTML at all", () => {
@@ -53,5 +62,42 @@ describe("ProfileCard — phone is rendered for the owner only (AC 2)", () => {
     expect(html).toContain("Not set");
     expect(html).toContain("Any hull");
     expect(hullsText({ any_hull: false, hulls: ["Thistle", "Windmill"] })).toBe("Thistle, Windmill");
+  });
+});
+
+/**
+ * Story #68 AC 5 — a card shows what the person can actually DO, from the rendered HTML rather
+ * than from the props. The whole point of the story is that "Can helm" alone under-reports a
+ * crew who also flies a spinnaker, so the multi-label case is the one that matters.
+ */
+describe("ProfileCard — the ticked skills, in place of the single word (#68 AC 5)", () => {
+  it("names every ticked skill, in the table's sort order", () => {
+    const html = renderToStaticMarkup(
+      <ProfileCard
+        person={{ ...ann, rating: 3, skills: ["spinnaker", "hike-trim"] }}
+        phone={PHONE}
+        viewerId="bo"
+        skills={SKILLS}
+      />,
+    );
+    expect(html).toContain("Can hike and trim, Can fly a spinnaker");
+    // The single rating word is gone: a spinnaker hand who also trims is no longer summarised
+    // as one thing. renderToStaticMarkup emits no `<!-- -->` markers, so a substring check on
+    // the raw HTML is exact here (the probe against a dev page is not — overlay, #19).
+    expect(html).not.toContain("Can helm");
+  });
+
+  it("falls back to the rating word for a pre-backfill row, never 'Not set'", () => {
+    const html = renderToStaticMarkup(
+      <ProfileCard person={{ ...ann, rating: 3, skills: [] }} phone={null} viewerId="bo" skills={SKILLS} />,
+    );
+    expect(html).toContain("Can fly a spinnaker");
+    expect(html).not.toContain("Not set");
+  });
+
+  it("still reads 'Not set' for somebody with neither a rating nor skills", () => {
+    const cy = { id: "cy", display_name: "Cy", rating: null, skills: [], any_hull: true, hulls: [] };
+    const html = renderToStaticMarkup(<ProfileCard person={cy} phone={null} viewerId="ann" skills={SKILLS} />);
+    expect(html).toContain("Not set");
   });
 });
