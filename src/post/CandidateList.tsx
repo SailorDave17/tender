@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { CandidateRow } from "@/board/post-view";
 import { hullsText } from "@/profile/ProfileCard";
-import { ratingLabel } from "@/profile/profile";
+import { competenceText, type Skill } from "@/profile/profile";
 
 /**
  * The skipper's view of who is available for their post's date (story #19 AC 5, owner
@@ -21,6 +21,8 @@ export type CandidatePerson = {
   id: string;
   display_name: string;
   rating: number | null;
+  /** The codes ticked (0024); the labels are what the skipper reads. */
+  skills?: readonly string[] | null;
   any_hull: boolean;
   hulls: readonly string[];
 };
@@ -48,11 +50,14 @@ export function CandidateList({
   rows,
   people,
   accept,
+  skills = [],
 }: {
   rows: readonly CandidateRow[];
   people: ReadonlyMap<string, CandidatePerson>;
   /** Rendered after the 'answered' badge of each answered row — the Accept control. */
   accept?: (personId: string) => ReactNode;
+  /** The `skill` rows (0024) ordered by `sort`, for the code-to-label mapping. */
+  skills?: readonly Skill[];
 }) {
   if (rows.length === 0) return <p data-candidates="0">Nobody has marked this day available yet.</p>;
   return (
@@ -69,7 +74,8 @@ export function CandidateList({
           >
             <RungBadge rung={r.rung} colour={r.colour} />
             <span style={{ flex: 1 }}>
-              <a href={`/profile/${r.id}`}>{p?.display_name ?? "Someone"}</a> — {ratingLabel(p?.rating)},{" "}
+              <a href={`/profile/${r.id}`}>{p?.display_name ?? "Someone"}</a> —{" "}
+              {competenceText({ rating: p?.rating ?? null, skills: p?.skills }, skills)},{" "}
               {p ? hullsText(p).toLowerCase() : "any hull"}
             </span>
             {r.answered && (

@@ -9,7 +9,7 @@ import { CandidateList, RungBadge } from "@/post/CandidateList";
 import { MatchPanel, type Contact, type StatusForm } from "@/post/MatchPanel";
 import { counterpartyOf, explainAcceptRefusal, explainStatusRefusal, matchControls } from "@/post/match-view";
 import { UUID, explainPostRefusal } from "@/post/post-form";
-import { ratingLabel } from "@/profile/profile";
+import { ratingLabel, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
 import { acceptAnswer, answerPost, closePost, setMatchStatus } from "../actions";
 
@@ -49,6 +49,9 @@ export default async function PostPage({
   if (!user) redirect("/join");
 
   const data = await loadBoardData(client);
+  // 0024's list, for the candidate rows' competence text. Read here rather than in loadBoardData
+  // because /board shows no competence label and should not pay for the round trip.
+  const { data: skillRows } = await client.from("skill").select("code, label, level, sort").order("sort");
   const post = data.posts.find((p) => p.id === id);
   if (!post) notFound();
   const boat = data.boats.get(post.boat_id);
@@ -146,6 +149,7 @@ export default async function PostPage({
           <CandidateList
             rows={candidateRows(input, [...pool, ...answerersGone], now, answered)}
             people={data.people}
+            skills={(skillRows ?? []) as Skill[]}
             accept={(personId) => (
               <form action={acceptAnswer} style={{ display: "inline" }}>
                 <input type="hidden" name="post_id" value={post.id} />

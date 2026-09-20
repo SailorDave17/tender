@@ -21,7 +21,12 @@ export type PostRow = {
   /** 0010: the widest rung opened and notified; the view shows max(this, computed). */
   current_rung: 1 | 2 | 3;
 };
-export type PersonView = PersonRow & { display_name: string };
+/**
+ * `skills` sits here rather than on `PersonRow` deliberately: `PersonRow` is the engine's input
+ * (toCrew.ts), and the engine ranks by `rating` alone — #68 AC 6. A skill set on the engine's own
+ * type would invite a reader to think the ladder compares sets.
+ */
+export type PersonView = PersonRow & { display_name: string; skills: string[] };
 export type AvailabilityRow = { person_id: string; race_date_id: string };
 /** Un-withdrawn answers only. RLS hands back the viewer's own and every one on their posts (0007). */
 export type AnswerRow = { post_id: string; person_id: string };
@@ -46,7 +51,7 @@ export async function loadBoardData(client: Client): Promise<BoardData> {
     client.from("race_date").select("id, starts_at, title").eq("published", true).order("starts_at"),
     client.from("boat").select("id, owner_id, name, class, default_minimum"),
     client.from("post").select("id, boat_id, race_date_id, minimum, note, closed_at, current_rung").order("created_at"),
-    client.from("person").select("id, display_name, rating, any_hull, hulls"),
+    client.from("person").select("id, display_name, rating, skills, any_hull, hulls"),
     client.from("availability").select("person_id, race_date_id"),
     client.from("answer").select("post_id, person_id").is("withdrawn_at", null),
     client.from("match").select("id, post_id, skipper_id, crew_id, accepted_at, status"),

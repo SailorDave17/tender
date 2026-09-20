@@ -88,15 +88,18 @@ describe("person and person_contact (0002) — shape", () => {
       { table_name: "person", privilege_type: "SELECT", column_name: "id" },
       { table_name: "person", privilege_type: "SELECT", column_name: "is_admin" },
       { table_name: "person", privilege_type: "SELECT", column_name: "rating" },
+      { table_name: "person", privilege_type: "SELECT", column_name: "skills" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "any_hull" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "display_name" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "hulls" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "rating" },
+      { table_name: "person", privilege_type: "UPDATE", column_name: "skills" },
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "email" },
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "person_id" },
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "phone" },
       { table_name: "person_contact", privilege_type: "UPDATE", column_name: "phone" },
-    ]); // rating/any_hull/hulls and the phone update arrive with 0005 (story #18)
+    ]); // rating/any_hull/hulls and the phone update arrive with 0005 (story #18); skills with
+    // 0024 (story #68), select AND update, beside rating and through the same self-only policy
   });
 
   it("authenticated holds no whole-table privilege on person, person_contact or club", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RUNG_COLOUR } from "@/board/post-view";
 import { CandidateList, RungBadge, type CandidatePerson } from "./CandidateList";
+import type { Skill } from "@/profile/profile";
 
 /**
  * Story #19 AC 5: the skipper's list carries name, rating and hull willingness only — a test
@@ -80,6 +81,45 @@ describe("CandidateList — the 'answered' badge (story #20 AC 4)", () => {
   });
 
   it("still carries no email and no phone", () => {
+    expect(html).not.toContain("hsc-crew.org");
+    expect(html).not.toContain("555");
+  });
+});
+
+/**
+ * Story #68 AC 5 — the skipper's list is the place the multi-select actually pays off: "Can helm"
+ * alone told them nothing about whether the crew can also fly a kite. Asserted from the rendered
+ * HTML, with the fallback arm beside it, because a row written before 0024's backfill carries a
+ * rating and no skills and must not read as somebody who never filled the form in.
+ */
+describe("CandidateList — every ticked skill, in place of the single word (#68 AC 5)", () => {
+  const SKILLS: Skill[] = [
+    { code: "never-raced", label: "Never raced", level: 1, sort: 1 },
+    { code: "hike-trim", label: "Can hike and trim", level: 2, sort: 2 },
+    { code: "spinnaker", label: "Can fly a spinnaker", level: 3, sort: 3 },
+    { code: "helm", label: "Can helm", level: 4, sort: 4 },
+  ];
+  const skilled = new Map<string, Loaded>([
+    ["ann", { ...people.get("ann")!, rating: 4, skills: ["helm", "hike-trim"] }],
+    // The fallback arm: a pre-backfill row, rated and with nothing ticked.
+    ["cy", { ...people.get("cy")!, rating: 2, skills: [] }],
+  ]);
+
+  it("names both of Ann's skills, in the table's sort order", () => {
+    const html = renderToStaticMarkup(<CandidateList rows={rows} people={skilled} skills={SKILLS} />);
+    const annRow = html.slice(html.indexOf('data-candidate="ann"'), html.indexOf('data-candidate="cy"'));
+    expect(annRow).toContain("Can hike and trim, Can helm");
+  });
+
+  it("falls back to the rating word for the pre-backfill row, never 'Not set'", () => {
+    const html = renderToStaticMarkup(<CandidateList rows={rows} people={skilled} skills={SKILLS} />);
+    const cyRow = html.slice(html.indexOf('data-candidate="cy"'));
+    expect(cyRow).toContain("Can hike and trim");
+    expect(cyRow).not.toContain("Not set");
+  });
+
+  it("still carries no email and no phone", () => {
+    const html = renderToStaticMarkup(<CandidateList rows={rows} people={skilled} skills={SKILLS} />);
     expect(html).not.toContain("hsc-crew.org");
     expect(html).not.toContain("555");
   });
