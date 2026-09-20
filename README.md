@@ -500,6 +500,43 @@ footer would be indistinguishable from a page that has none.
    morning-of pass logs a read error and does nothing, while the ladder half still runs — neither
    failure is loud, which is why the order matters. Nothing to enable and no new secret.
 
+2e. **Error email to the owner** (#43). `src/instrumentation.ts` is Next's server error hook, and
+   it is the club's entire observability layer — the charter asks for "errors emailed to the
+   owner; nothing else", Hobby has no email alerting, and it keeps the function log for **one
+   hour**, so an error nobody reads inside that hour is an error nobody ever reads. Two things:
+
+   1. **Set `OWNER_EMAIL`** — the address the reports go to, in Vercel's environment. A **ninth**
+      server-only name beside the eight in steps 1, 2, 2b and 2c. Unset means no email at all:
+      the report goes to the function log with `OWNER_EMAIL unset` on it and expires there in an
+      hour, which is the same as silence. Nothing else breaks, so this failure is quiet by
+      construction — the one to check for deliberately rather than wait to notice.
+   2. **Apply `0025` before promoting the `develop` that carries #43.** It adds
+      `notification_log.signature`, which is how "the same error again" is recognised across
+      Vercel's several instances. Without it the deduplication read fails and the app degrades
+      *quietly rather than loudly*: there is no 500 and no visible symptom, but the only window
+      left is the one held in each running instance's memory, so a cold start or a second
+      instance can send the same report again.
+
+   What lands: one email per distinct error — its name and the **route template** it threw on,
+   `TypeError /post/[id]` — at most once an hour, carrying the method, the path with **any query
+   string removed** (a reset code, an invite code and `/auth/callback`'s PKCE code all live in
+   one, and this text goes to an inbox), and the first 20 lines of the stack. It rides Resend on
+   the same 100/day as everything else and stops at 95, like every other sender; past that the
+   report goes to the function log instead and `notification_log` records an `error_skipped_cap`
+   row.
+
+   **What it cannot see**, so nobody hunts for it here: an error the app has already caught. Every
+   `…Live` wrapper in `src/notify/live.ts` swallows its failure to a console line on purpose, and
+   a swallowed error never throws out of the route, so it never reaches the hook. The same is true
+   of anything that fails *before* the app runs — a bad deployment, a DNS mistake, Vercel itself.
+
+   Confirm it after the first deployment by reading the log rather than waiting for a fault:
+
+   ```sql
+   select sent_at, kind, signature, error from public.notification_log
+    where kind in ('error', 'error_skipped_cap') order by sent_at desc limit 5;
+   ```
+
 3. **Vercel**: import the repo, set the production branch to `release`, add the environment
    variables, turn on Deployment Protection → Standard Protection (previews carry the production
    Supabase host), add the domain `tender.madcowsailing.com` (CNAME per Vercel's per-project

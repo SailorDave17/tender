@@ -39,7 +39,12 @@ const SRC = join(process.cwd(), "src");
  * `remindCrew`/`remindCrewLive`/`morningOfLive` ask a crew to confirm on the race morning and
  * `notifyConfirmed`/`notifyConfirmedLive` tell the skipper they did (story #37);
  * `sendInvites`/`sendInvitesLive` email a pasted list the club's invite code (story #37's lesson
- * applied at filing time — #31).
+ * applied at filing time — #31); `reportError`/`reportErrorLive` email the owner when a route
+ * throws (#43 — added with its call site in the same edit, the same way #31 did it).
+ *
+ * `toReport` is NOT here, and the omission is the same judgement `openRung` got on #25: it
+ * narrows an `unknown` into a struct and cannot cause an email. It is imported by
+ * `instrumentation.ts` beside `reportErrorLive`, which is what puts that file on the list below.
  */
 const SENDERS = [
   "notifyRung",
@@ -59,7 +64,20 @@ const SENDERS = [
   "notifyConfirmedLive",
   "sendInvites",
   "sendInvitesLive",
+  "reportError",
+  "reportErrorLive",
 ];
+
+/**
+ * The one file that may send without being a Server Action or a Route Handler (#43).
+ *
+ * AC 3's claim is that nothing on a RENDER path can send — a board read is a read. Next's error
+ * hook is not a render path: it is reached only after a request has already failed, it is called
+ * by the server rather than by a page, and there is no other place it could live, because the
+ * filename is Next's convention. So it is exempted by name rather than by widening the rule,
+ * and the rule keeps its teeth for every other file.
+ */
+const HOOK = "instrumentation.ts";
 
 async function sourceFiles(): Promise<{ path: string; text: string }[]> {
   const out: { path: string; text: string }[] = [];
@@ -117,29 +135,35 @@ describe("what can send a rung email (AC 3)", () => {
     ]);
   });
 
-  it("exactly the three Server Actions and the tick route can send — no page, no component", async () => {
+  it("exactly the four Server Actions, the tick route and the error hook can send — no page, no component", async () => {
     const files = await sourceFiles();
     expect(files.length).toBeGreaterThan(20);
     // The thread's send action joined this list when `notifyMessage` joined SENDERS (#37 —
     // the name had been missing since #35, so the file was a sender the scan did not count).
     // The admin's invite action joined on #31, with its name added to SENDERS in the same edit —
     // which is #37's lesson (d) applied at filing time rather than found two stories later.
+    // The error hook joined on #43, with `reportErrorLive` added to SENDERS in the same edit.
     expect(sendersAmong(files)).toEqual([
       "app/admin/invite/actions.ts",
       "app/api/ladder/tick/route.ts",
       "app/board/actions.ts",
       "app/post/[id]/thread/actions.ts",
       "app/post/actions.ts",
+      HOOK,
     ]);
-    // A sender is a Server Action or a Route Handler. Both are entered by a request the person
-    // made on purpose; neither is reached by rendering a page, which is the claim AC 3 is about.
+    // A sender is a Server Action or a Route Handler — plus the error hook, exempted by name
+    // above. All three are entered by a request the person made on purpose; none is reached by
+    // rendering a page, which is the claim AC 3 is about.
     for (const p of sendersAmong(files)) {
       const text = files.find((f) => f.path === p)!.text;
-      expect(text.startsWith('"use server";') || /^app\/api\/.*\/route\.ts$/.test(p), `${p} is an action or a route`).toBe(
+      expect(text.startsWith('"use server";') || /^app\/api\/.*\/route\.ts$/.test(p) || p === HOOK, `${p} is an action, a route or the error hook`).toBe(
         true,
       );
       expect(isClientComponent(text), `${p} is not a client component`).toBe(false);
     }
+    // The exemption is for ONE file and it has to exist: a named carve-out whose subject has been
+    // renamed or deleted reads as the rule still covering everything.
+    expect(files.map((f) => f.path)).toContain(HOOK);
   });
 });
 
