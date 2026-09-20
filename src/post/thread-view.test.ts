@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   MESSAGE_BODY_MAX,
+  REMOVED_MESSAGE_NOTE,
   THREAD_CLOSED_NOTE,
   THREAD_OPEN_DAYS,
   explainMessageRefusal,
+  messageText,
   sendMessageRefusal,
   threadClosesAt,
   threadIsOpen,
@@ -133,5 +135,19 @@ describe("explainMessageRefusal", () => {
   it("falls back rather than showing a raw reason code", () => {
     expect(explainMessageRefusal("something_new")).toBe("That could not be sent.");
     expect(explainMessageRefusal("")).toBe("That could not be sent.");
+  });
+});
+
+describe("messageText (#36 AC 2)", () => {
+  it("shows the body of a message that stands", () => {
+    expect(messageText({ body: "D dock, 5pm.", removed_at: null })).toEqual({ text: "D dock, 5pm.", removed: false });
+  });
+
+  it("shows the notice for a removed message, whatever the body still holds", () => {
+    // The row's body is already the notice after 0023's remove_message(); a body that somehow
+    // still held the original must not reach the page either, so the decision is removed_at's.
+    const shown = messageText({ body: "the original words", removed_at: "2027-05-01T12:00:00Z" });
+    expect(shown).toEqual({ text: REMOVED_MESSAGE_NOTE, removed: true });
+    expect(shown.text).not.toContain("original");
   });
 });

@@ -55,6 +55,23 @@ export function threadIsOpen(startsAt: string, now: Date): boolean {
   return now.getTime() < threadClosesAt(startsAt).getTime();
 }
 
+/**
+ * What both parties see in place of a message the admin removed (story #36 AC 2).
+ *
+ * THE SAME SENTENCE IS STORED IN THE ROW. `remove_message()` (0023) moves the original body to
+ * the admin-only `message_removal` and writes this into `message.body`, so a party reading the
+ * table directly — which 0020's read policy lets them do, column by column — gets this and not
+ * what was said. `test/moderation.test.ts` holds the migration's literal equal to this constant.
+ * The page still renders from `removed_at` rather than trusting the body, so the two sources
+ * would have to disagree in the same direction for a removed message to show its old text.
+ */
+export const REMOVED_MESSAGE_NOTE = "Removed by the club admin";
+
+/** What a message row renders as: its body, or the removal notice when the admin removed it. */
+export function messageText(m: { body: string; removed_at: string | null }): { text: string; removed: boolean } {
+  return m.removed_at ? { text: REMOVED_MESSAGE_NOTE, removed: true } : { text: m.body, removed: false };
+}
+
 /** What a closed thread says, so the page and its test agree on one sentence. */
 export const THREAD_CLOSED_NOTE =
   "This thread has closed — it stays here to read, but no more messages can be sent.";

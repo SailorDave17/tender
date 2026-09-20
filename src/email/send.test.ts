@@ -32,6 +32,23 @@ describe("resendTransport", () => {
     expect(FROM).toBe("Tender <tender@tender.madcowsailing.com>");
   });
 
+  it("sends an attachment as Resend's base64 content with its filename and content_type (#34)", async () => {
+    const { calls, impl } = fakeFetch(200, { id: "abc-124" });
+    const ics = "BEGIN:VCALENDAR\r\nSUMMARY:Thistle with Ann — Club\r\nEND:VCALENDAR\r\n";
+    await resendTransport("re_test_key", impl).send({
+      to: "crew@example.org",
+      subject: "Matched",
+      text: "Hello",
+      attachments: [{ filename: "race.ics", content: ics, contentType: "text/calendar; charset=utf-8" }],
+    });
+    const body = JSON.parse(String(calls[0].init.body));
+    expect(body.attachments).toHaveLength(1);
+    expect(body.attachments[0].filename).toBe("race.ics");
+    expect(body.attachments[0].content_type).toBe("text/calendar; charset=utf-8");
+    // Round-trips byte for byte, the em-dash included: encoded as UTF-8, not Latin-1.
+    expect(Buffer.from(body.attachments[0].content, "base64").toString("utf8")).toBe(ics);
+  });
+
   it("throws with the status and the body's head when Resend refuses", async () => {
     const { impl } = fakeFetch(422, { message: "Invalid `to` field" });
     const t = resendTransport("re_test_key", impl);

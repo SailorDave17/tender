@@ -4,7 +4,8 @@ import { formatStartsAt, whenLabel } from "@/dates/race-date";
 import { matchRole } from "@/post/match-view";
 import { UUID } from "@/post/post-form";
 import { SendMessageForm } from "@/post/SendMessageForm";
-import { THREAD_CLOSED_NOTE, threadClosesAt, threadIsOpen } from "@/post/thread-view";
+import { THREAD_CLOSED_NOTE, messageText, threadClosesAt, threadIsOpen } from "@/post/thread-view";
+import { SUSPENDED_NOTE } from "@/moderation/suspension";
 import { supabaseServer } from "@/lib/supabase/server";
 import { sendMessage } from "./actions";
 
@@ -70,8 +71,11 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
     title: string;
   };
 
-  // Removed messages are filtered out rather than shown as removed: the moderation story owns
-  // what a removed message looks like, and until it ships the honest rendering is absence.
+  // Removed messages are READ and shown as removed (#36 AC 2): both parties see "Removed by the
+  // club admin" where the message was, so the conversation keeps its shape and nobody wonders
+  // whether the other person deleted something. The original is not in this row any more —
+  // remove_message() (0023) moved it to the admin-only message_removal — and `messageText` renders
+  // from `removed_at` regardless of what the body holds.
   //
   // THE `error` IS READ, NOT DISCARDED, and that is the point of the throw below. Destructuring
   // only `data` leaves `messages` undefined on a failed read, and this page would then render
@@ -83,11 +87,22 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
   // answer, because "no messages" is a claim this page must only make when it is true.
   const { data: messages, error: messagesError } = await client
     .from("message")
-    .select("id, author_id, body, created_at")
+    .select("id, author_id, body, created_at, removed_at")
     .eq("match_id", match.id)
-    .is("removed_at", null)
     .order("created_at", { ascending: true });
   if (messagesError) throw new Error(`thread: read messages: ${messagesError.message}`);
+
+  // The caller's own suspension row, if any (0023: self or admin). A suspended party still reads
+  // the whole thread — suspension hides nothing — but gets the reason in place of the send box,
+  // rather than a box whose every send the database refuses with a sentence about party rules.
+  // A failed read is not fatal: the database still refuses the write, so the cost is the wrong
+  // sentence on a refusal, not a message that should not exist.
+  const { data: suspension, error: suspensionError } = await client
+    .from("suspension")
+    .select("suspended_at")
+    .eq("person_id", user.id)
+    .maybeSingle();
+  if (suspensionError) console.error(`thread: read suspension: ${suspensionError.message}`);
 
   // Both parties' names, for the attribution line on each message. A failure here is NOT fatal:
   // the fallback is the word "someone" beside a message whose text is already correct, which is
@@ -118,23 +133,33 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
       </p>
 
       <ol data-messages={messages?.length ?? 0} style={{ listStyle: "none", padding: 0 }}>
-        {(messages ?? []).map((m) => (
-          <li
-            key={m.id}
-            data-message={m.id}
-            data-mine={m.author_id === user.id}
-            style={{ margin: "0.75rem 0", padding: "0.5rem 0.75rem", background: m.author_id === user.id ? "#eef3fb" : "#f5f5f5", borderRadius: "0.5rem" }}
-          >
-            <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{m.body}</p>
-            <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "#555" }}>
-              {names.get(m.author_id) ?? "someone"} · {new Date(m.created_at).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })}
-            </p>
-          </li>
-        ))}
+        {(messages ?? []).map((m) => {
+          const shown = messageText(m);
+          return (
+            <li
+              key={m.id}
+              data-message={m.id}
+              data-mine={m.author_id === user.id}
+              data-removed={shown.removed}
+              style={{ margin: "0.75rem 0", padding: "0.5rem 0.75rem", background: m.author_id === user.id ? "#eef3fb" : "#f5f5f5", borderRadius: "0.5rem" }}
+            >
+              {/* A removed message has no control of any kind — no edit, no restore, no resend
+                  (#36 AC 3); the database refuses its author every update regardless. */}
+              <p style={{ margin: 0, whiteSpace: "pre-wrap", fontStyle: shown.removed ? "italic" : undefined }}>{shown.text}</p>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "#555" }}>
+                {names.get(m.author_id) ?? "someone"} · {new Date(m.created_at).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })}
+              </p>
+            </li>
+          );
+        })}
       </ol>
       {(messages?.length ?? 0) === 0 && <p data-status="empty">No messages yet.</p>}
 
-      {open ? (
+      {open && suspension ? (
+        <p data-status="suspended" role="note">
+          {SUSPENDED_NOTE}
+        </p>
+      ) : open ? (
         // The action is bound to the post id here rather than carried in a hidden input: a
         // hidden field is part of the rendered HTML and unencoded, and the action re-derives
         // everything security-relevant from the session and the row regardless.

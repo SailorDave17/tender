@@ -240,10 +240,24 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       "public.admin_from_contact",
       "public.answer_counts",
       "public.current_invite_code",
+      // 0022 (#31) — reads person_contact, which is self-only to every client role, and returns
+      // the subset of the addresses it was GIVEN that are members. It is in no policy, so it is
+      // not in person_contact's read path and the kill condition above is untouched: the two
+      // assertions before this one are what hold that, and they pass. Execute is revoked from
+      // public/anon/authenticated by name and granted to service_role alone, so the only caller is
+      // the invite store. The narrowing it buys: the alternative was selecting every contact row
+      // and matching in the application, and nothing about a member who was not pasted is
+      // learnable through this.
+      "public.members_among",
       // 0013 (#29) — reads push_subscription, which is self-only to every client role, and
       // returns a COUNT per person so an admin learns who has notifications on without any
       // caller ever receiving an endpoint. Admin-gated by raising 42501, like the two above.
       "public.push_install_status",
+      // 0023 (#36) — the one way a message is removed. Definer because authenticated holds no
+      // update on message and must not gain one (an update grant is the author's edit path AC 3
+      // forbids); admin-gated by raising 42501 like the ones above. It reads and writes message
+      // and message_removal only, is in no policy, and so is not in person_contact's read path.
+      "public.remove_message",
       "public.rotate_invite_code",
       // 0021 (#37) — the one client route to a match's status: takes the caller from auth.uid(),
       // refuses the wrong party and the wrong time, and lets the transition trigger decide the rest.

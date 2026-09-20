@@ -5,6 +5,7 @@ import { poolForDate, viewPost } from "@/board/post-view";
 import { formatStartsAt } from "@/dates/race-date";
 import { InstallBanner } from "@/install/InstallBanner";
 import { RegisterServiceWorker } from "@/install/RegisterServiceWorker";
+import { SUSPENDED_NOTE } from "@/moderation/suspension";
 import { RungBadge } from "@/post/CandidateList";
 import { statusLabel } from "@/post/match-view";
 import { explainPostRefusal } from "@/post/post-form";
@@ -45,11 +46,17 @@ export default async function BoardPage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  const [{ data: me }, data] = await Promise.all([
+  const [{ data: me }, data, { data: suspension }] = await Promise.all([
     user
       ? client.from("person").select("display_name, is_admin, rating").eq("id", user.id).maybeSingle()
       : Promise.resolve({ data: null }),
     loadBoardData(client),
+    // Since #36: the caller's own suspension row, if any — 0023 lets a person read theirs and
+    // nobody else's. The board is where sign-in lands (DEFAULT_NEXT), so this is AC 4's "one-line
+    // message at sign-in". The refusal itself is the database's; this is only the sentence.
+    user
+      ? client.from("suspension").select("suspended_at").eq("person_id", user.id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
   const { dates, availability } = data;
   const { error } = await searchParams;
@@ -68,6 +75,11 @@ export default async function BoardPage({
         Signed in as {me?.display_name ?? user?.email ?? "someone"}. <Link href="/profile">Your profile</Link>
       </p>
 
+      {suspension && (
+        <p role="status" data-banner="suspended" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
+          {SUSPENDED_NOTE}
+        </p>
+      )}
       {unrated && (
         <p role="status" data-banner="no-rating" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
           Before you can mark the days you can sail, <Link href="/profile">set your competence on your profile</Link>.
@@ -160,7 +172,8 @@ export default async function BoardPage({
       )}
       {me?.is_admin && (
         <p>
-          <a href="/admin">Admin</a> · <a href="/admin/dates">Edit race dates</a>
+          {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}
+          <a href="/admin">Admin</a> · <Link href="/admin/dates">Edit race dates</Link>
         </p>
       )}
 

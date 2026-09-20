@@ -1,5 +1,7 @@
-import type { Message, Transport } from "@/email/send";
+import type { Attachment, Message, Transport } from "@/email/send";
 import { whenLabel } from "@/dates/race-date";
+import { renderRaceIcs, type RaceIcsInputs } from "@/calendar/read";
+import { ICS_CONTENT_TYPE, ICS_FILENAME } from "@/calendar/race-ics";
 import { EMAIL_SKIP_AT, type LogEntry, type RungPost } from "./rung";
 
 /**
@@ -28,6 +30,14 @@ import { EMAIL_SKIP_AT, type LogEntry, type RungPost } from "./rung";
  * same transaction that writes the match, so by the time this runs closed_at is always set.
  * There is no closed-post guard, on purpose.
  *
+ * THE CREW'S COPY CARRIES THE RACE AS AN .ics (story #34); the skipper's carries none — the
+ * skipper posted the boat for that date and has it already, and either party can download the
+ * same file from /match/[id]/race.ics. The file is built only when the crew's send is actually
+ * about to happen (not for a cap skip or a missing address). If it cannot be built — a read
+ * fails, a field is blank, a date will not parse — the email goes WITHOUT it and a
+ * match_ics_failed row records why (#34 AC 3): the match already stands, and the email already
+ * names the date, so the attachment is the one part that may be lost.
+ *
  * Pure over its inputs: the store, the transport and `now` are injected, so the unit tests run
  * against an in-memory store with a fake transport and count recipients exactly.
  */
@@ -36,8 +46,13 @@ import { EMAIL_SKIP_AT, type LogEntry, type RungPost } from "./rung";
 export const KIND_MATCH = "match";
 /** A send skipped at the daily cap: no email, this row is the record, the match stands (AC 3). */
 export const KIND_MATCH_SKIPPED_CAP = "match_skipped_cap";
+/**
+ * The crew's .ics could not be built, so their match email went without it (#34 AC 3). Not an
+ * attempt on the provider — the `match` row beside it is — so it is not on EMAIL_ATTEMPT_KINDS.
+ */
+export const KIND_MATCH_ICS_FAILED = "match_ics_failed";
 
-export type MatchParties = { skipperId: string; crewId: string };
+export type MatchParties = { id: string; skipperId: string; crewId: string };
 
 export interface MatchStore {
   /** The post as rungMessage() reads it. closed_at is set — accept_answer() closed it. */
@@ -50,6 +65,8 @@ export interface MatchStore {
   email(personId: string): Promise<string | null>;
   /** Email sends attempted so far in the day `now` falls in, all kinds. */
   emailsSentToday(now: Date): Promise<number>;
+  /** What the race .ics is built from (#34) — readRaceIcsInputs() over the service role. May throw. */
+  calendar(matchId: string): Promise<RaceIcsInputs | null>;
   log(entry: LogEntry): Promise<void>;
 }
 
@@ -63,8 +80,12 @@ export type MatchNotifyDeps = {
 
 export type MatchNotifyResult = { sent: number; skippedCap: number; failed: number };
 
-/** What each party reads. Exported so the copy is tested, not so anything else sends it. */
-export function matchMessage(post: RungPost, otherName: string, to: string, siteUrl: string): Message {
+/**
+ * What each party reads. Exported so the copy is tested, not so anything else sends it. With a
+ * `calendar` attachment (the crew's copy, #34) the text says the race is attached; without one it
+ * says nothing about a file, so a copy whose attachment failed does not promise one.
+ */
+export function matchMessage(post: RungPost, otherName: string, to: string, siteUrl: string, calendar?: Attachment): Message {
   const when = whenLabel(post.startsAt);
   return {
     to,
@@ -73,10 +94,26 @@ export function matchMessage(post: RungPost, otherName: string, to: string, site
       `You are matched with ${otherName} on ${post.boatName} (${post.boatClass}) for ${post.dateTitle}, ${when}.`,
       ``,
       `Contact details for both of you are on the post: ${siteUrl}/post/${post.id}`,
+      ...(calendar ? [``, `The race is attached as a calendar file (${calendar.filename}) — open it to add the date to your calendar.`] : []),
       ``,
       `Tender — the crew board.`,
     ].join("\n"),
+    ...(calendar ? { attachments: [calendar] } : {}),
   };
+}
+
+/**
+ * The crew's attachment, or the reason there is none. Never throws: every failure — a store read,
+ * a missing row, a render refusal — comes back as `error`, for notifyMatch to log and send without.
+ */
+async function crewCalendar(store: MatchStore, matchId: string, siteUrl: string): Promise<{ attachment: Attachment } | { error: string }> {
+  try {
+    const inputs = await store.calendar(matchId);
+    if (!inputs) return { error: "ics: match not found for the calendar read" };
+    return { attachment: { filename: ICS_FILENAME, content: renderRaceIcs(inputs, siteUrl), contentType: ICS_CONTENT_TYPE } };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function notifyMatch(postId: string, deps: MatchNotifyDeps): Promise<MatchNotifyResult | null> {
@@ -89,8 +126,8 @@ export async function notifyMatch(postId: string, deps: MatchNotifyDeps): Promis
   const result: MatchNotifyResult = { sent: 0, skippedCap: 0, failed: 0 };
   // Skipper first, then crew — the order the cap's per-send rule falls on when one send is left.
   const pair = [
-    { personId: match.skipperId, otherId: match.crewId },
-    { personId: match.crewId, otherId: match.skipperId },
+    { personId: match.skipperId, otherId: match.crewId, calendar: false },
+    { personId: match.crewId, otherId: match.skipperId, calendar: true },
   ];
 
   let sentToday = await store.emailsSentToday(now);
@@ -109,9 +146,15 @@ export async function notifyMatch(postId: string, deps: MatchNotifyDeps): Promis
       continue;
     }
     const otherName = (await store.name(p.otherId)) ?? "your counterparty";
+    let attachment: Attachment | undefined;
+    if (p.calendar) {
+      const built = await crewCalendar(store, match.id, siteUrl);
+      if ("attachment" in built) attachment = built.attachment;
+      else await store.log({ kind: KIND_MATCH_ICS_FAILED, channel: "email", personId: p.personId, toEmail: to, postId: post.id, providerId: null, error: built.error });
+    }
     sentToday += 1; // counted whether or not the provider accepts it: an attempt is what the cap is about
     try {
-      const { id } = await transport.send(matchMessage(post, otherName, to, siteUrl));
+      const { id } = await transport.send(matchMessage(post, otherName, to, siteUrl, attachment));
       result.sent += 1;
       await store.log({ kind: KIND_MATCH, channel: "email", personId: p.personId, toEmail: to, postId: post.id, providerId: id, error: null });
     } catch (e) {

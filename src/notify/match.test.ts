@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { whenLabel } from "@/dates/race-date";
 import type { Message, Transport } from "@/email/send";
+import type { RaceIcsInputs } from "@/calendar/read";
+import { ICS_CONTENT_TYPE } from "@/calendar/race-ics";
+import { EMAIL_ATTEMPT_KINDS } from "./kinds";
 import {
   KIND_MATCH,
+  KIND_MATCH_ICS_FAILED,
   KIND_MATCH_SKIPPED_CAP,
   matchMessage,
   notifyMatch,
@@ -18,6 +22,7 @@ import { EMAIL_SKIP_AT, type LogEntry, type RungPost } from "./rung";
  */
 
 const POST = "11111111-1111-4111-8111-111111111111";
+const MATCH = "33333333-3333-4333-8333-333333333333";
 const SKIPPER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CREW = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const NOW = new Date("2027-06-06T12:00:00Z");
@@ -62,6 +67,16 @@ class MemoryStore implements MatchStore {
   async emailsSentToday() {
     return this.sentToday;
   }
+  // #34: what the crew's .ics is built from. `calendarError` makes the read throw, the way a
+  // failed service-role query would; `calendarCalls` counts the reads.
+  calendarInputs = new Map<string, RaceIcsInputs>();
+  calendarError: string | null = null;
+  calendarCalls: string[] = [];
+  async calendar(matchId: string) {
+    this.calendarCalls.push(matchId);
+    if (this.calendarError) throw new Error(this.calendarError);
+    return this.calendarInputs.get(matchId) ?? null;
+  }
   async log(entry: LogEntry) {
     this.logs.push(entry);
   }
@@ -80,11 +95,23 @@ class FakeTransport implements Transport {
 function matchedStore(): MemoryStore {
   const store = new MemoryStore();
   store.posts.set(POST, post());
-  store.matches.set(POST, { skipperId: SKIPPER, crewId: CREW });
+  store.matches.set(POST, { id: MATCH, skipperId: SKIPPER, crewId: CREW });
   store.names.set(SKIPPER, "Sam Skipper");
   store.names.set(CREW, "Robin Crew");
   store.emails.set(SKIPPER, "sam@example.org");
   store.emails.set(CREW, "robin@example.org");
+  store.calendarInputs.set(MATCH, {
+    matchId: MATCH,
+    postId: POST,
+    skipperId: SKIPPER,
+    crewId: CREW,
+    acceptedAt: "2027-06-06T11:59:00Z",
+    skipperName: "Sam Skipper",
+    boatClass: "Thistle",
+    note: "Bring gloves",
+    startsAt: "2027-06-13T17:00:00Z",
+    clubName: "Hoover Sailing Club",
+  });
   return store;
 }
 
@@ -197,6 +224,86 @@ describe("notifyMatch — the daily cap (AC 3)", () => {
     expect(result).toEqual({ sent: 1, skippedCap: 1, failed: 0 });
     expect(transport.sent.map((m) => m.to)).toEqual(["sam@example.org"]);
     expect(store.logs.find((l) => l.kind === KIND_MATCH_SKIPPED_CAP)!.personId).toBe(CREW);
+  });
+});
+
+describe("notifyMatch — the crew's copy carries the race .ics, the skipper's none (#34 AC 2)", () => {
+  it("attaches exactly one text/calendar file to the crew's email and nothing to the skipper's", async () => {
+    const store = matchedStore();
+    const transport = new FakeTransport();
+    await notifyMatch(POST, deps(store, transport));
+
+    const toSkipper = transport.sent.find((m) => m.to === "sam@example.org")!;
+    const toCrew = transport.sent.find((m) => m.to === "robin@example.org")!;
+    expect(toSkipper.attachments).toBeUndefined();
+    expect(toSkipper.text).not.toContain("calendar file");
+
+    expect(toCrew.attachments).toHaveLength(1);
+    const [ics] = toCrew.attachments!;
+    expect(ics.filename).toBe("race.ics");
+    expect(ics.contentType).toBe(ICS_CONTENT_TYPE);
+    expect(ics.contentType.startsWith("text/calendar")).toBe(true);
+    // Built from THIS match: its uid, its race, its skipper — and the post URL on this site.
+    expect(ics.content).toContain(`UID:${MATCH}@tender.madcowsailing.com\r\n`);
+    expect(ics.content).toContain("DTSTART:20270613T170000Z\r\n");
+    expect(ics.content).toContain("SUMMARY:Thistle with Sam Skipper — Hoover Sailing Club\r\n");
+    expect(ics.content.replace(/\r\n /g, "")).toContain(`DESCRIPTION:Bring gloves\\n\\n${SITE}/post/${POST}`);
+    expect(toCrew.text).toContain("attached as a calendar file (race.ics)");
+
+    expect(store.calendarCalls).toEqual([MATCH]);
+    expect(store.logs.filter((l) => l.kind === KIND_MATCH_ICS_FAILED)).toHaveLength(0);
+  });
+
+  it("builds no file for a crew send that does not happen — a cap skip or a missing address", async () => {
+    const capped = matchedStore();
+    capped.sentToday = EMAIL_SKIP_AT - 1; // the skipper's goes, the crew's is skipped
+    await notifyMatch(POST, deps(capped, new FakeTransport()));
+    expect(capped.calendarCalls).toEqual([]);
+
+    const noAddress = matchedStore();
+    noAddress.emails.delete(CREW);
+    await notifyMatch(POST, deps(noAddress, new FakeTransport()));
+    expect(noAddress.calendarCalls).toEqual([]);
+  });
+});
+
+describe("notifyMatch — the .ics fails to render (#34 AC 3)", () => {
+  // Three ways the file can fail, each at a different layer: the read throws, the read finds
+  // nothing, and the read succeeds with a value raceIcs() refuses.
+  const cases: Array<[string, (s: MemoryStore) => void, RegExp]> = [
+    ["the calendar read throws", (s) => (s.calendarError = "read club name for ics: permission denied"), /permission denied/],
+    ["the calendar read finds nothing", (s) => s.calendarInputs.clear(), /match not found/],
+    ["the race start does not parse", (s) => (s.calendarInputs.get(MATCH)!.startsAt = "not a date"), /starts_at is not a date/],
+  ];
+
+  for (const [name, breakIt, reason] of cases) {
+    it(`${name}: the crew's email still goes, without the file, and match_ics_failed says why`, async () => {
+      const store = matchedStore();
+      breakIt(store);
+      const transport = new FakeTransport();
+
+      const result = await notifyMatch(POST, deps(store, transport));
+      expect(result).toEqual({ sent: 2, skippedCap: 0, failed: 0 });
+
+      const toCrew = transport.sent.find((m) => m.to === "robin@example.org")!;
+      expect(toCrew.attachments).toBeUndefined();
+      expect(toCrew.text).not.toContain("calendar file"); // does not promise a file it lacks
+      expect(toCrew.text).toContain("Sam Skipper"); // and is otherwise the whole match email
+
+      const failed = store.logs.filter((l) => l.kind === KIND_MATCH_ICS_FAILED);
+      expect(failed).toHaveLength(1);
+      expect(failed[0]).toMatchObject({ channel: "email", personId: CREW, toEmail: "robin@example.org", postId: POST, providerId: null });
+      expect(failed[0].error).toMatch(reason);
+
+      // The send itself is logged as an ordinary accepted match email.
+      const crewSend = store.logs.find((l) => l.kind === KIND_MATCH && l.personId === CREW)!;
+      expect(crewSend.error).toBeNull();
+      expect(crewSend.providerId).toMatch(/^sent-/);
+    });
+  }
+
+  it("match_ics_failed is not an attempt on the provider, so the cap does not count it", () => {
+    expect(EMAIL_ATTEMPT_KINDS).not.toContain(KIND_MATCH_ICS_FAILED);
   });
 });
 
