@@ -40,6 +40,7 @@ npm test           # vitest: the engine (src/engine), the RLS harness (test/), t
 npm run lint
 npm run typecheck
 npm run check:live # read-only probe of the live Supabase project; needs .env.local
+                   # first line: which of the 9 server env names THIS shell has (names only)
 npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
@@ -277,6 +278,20 @@ footer would be indistinguishable from a page that has none.
    `.env.local`, and in Vercel's environment — **all three**: on 2026-08-23 Vercel carried only
    the two public names, and `/api/join` threw a bare 500 ("Something went wrong.") before it
    could read the club row.
+
+   **That failure is no longer silent, and this step now has an instrument** (#65). Every server
+   name below is read through `env()` in `src/lib/env.ts`, which throws `<NAME> is not set` —
+   *measured* on a production build: a POST to `/api/join` with the service-role key absent logs
+   `⨯ Error: SUPABASE_SERVICE_ROLE_KEY is not set` and answers a 500 whose body never carries the
+   name. And **`npm run check:live` prints, as its first line, which of the nine server names the
+   shell running it has** — `present` / `ABSENT`, names only and never values, so it is safe to
+   paste into an issue on this public repo. It reports rather than refuses, because several of
+   these are legitimately absent on a developer's machine.
+
+   The list lives in `scripts/server-env.mjs` and `test/server-env.test.ts` holds it equal to what
+   `src/` actually reads, so a tenth name cannot be added to the app and forgotten here. Four of
+   the nine **degrade** instead of throwing (the VAPID pair, `CRON_SECRET`, `OWNER_EMAIL`) — they
+   are on the report for exactly that reason: nothing else would ever tell you.
    Enable the **Cron** integration and confirm a job can be scheduled on this plan — ADR 004's
    kill condition; its fallback is named there.
 

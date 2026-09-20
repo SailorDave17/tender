@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { redirectFor } from "@/auth/gate";
+import { env } from "@/lib/env";
 
 /**
  * Runs before every non-asset request: refreshes the session cookie if it is due, and sends a
@@ -13,9 +14,14 @@ import { redirectFor } from "@/auth/gate";
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  // env(), not `process.env.X!` — the non-null assertion is a compile-time claim and does
+  // nothing at runtime, so a deployment missing one of these got supabase-js's own
+  // "supabaseUrl is required" instead of the variable's name (story #65). This is the EARLIEST
+  // site either name can be missing at: the proxy runs before every non-asset request, so it
+  // throws ahead of the route that would otherwise be blamed.
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    env("NEXT_PUBLIC_SUPABASE_URL"),
+    env("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     {
       cookies: {
         getAll() {

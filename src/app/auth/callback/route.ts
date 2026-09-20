@@ -5,6 +5,7 @@ import { LINK_DONE, backPathFor, isLinkFlow } from "@/auth/link";
 import { safeNext } from "@/auth/next";
 import { PASS_COOKIE, verifyPass } from "@/auth/pass";
 import { ensurePerson } from "@/auth/person";
+import { env } from "@/lib/env";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -30,7 +31,14 @@ export async function GET(request: NextRequest) {
   // exchangeCodeForSession writes the session cookies via cookies(), and Next merges that store
   // onto the response over any Set-Cookie the handler put there itself (measured 2026-08-23: a
   // response-level clear survived the error path and vanished on the success path).
-  const pass = verifyPass(request.cookies.get(PASS_COOKIE)?.value, process.env.GATE_PASS_SECRET ?? "");
+  // `?? ""` until #65, which made a missing GATE_PASS_SECRET treat every pass as invalid: an
+  // invited member finished Google sign-up, was refused as a stray, and nothing anywhere named
+  // the variable. env() is asked for it ONLY when a pass is actually present — the cookie is set
+  // by /api/signup/google alone, so its presence IS the Google sign-up leg. The password-reset
+  // and identity-link legs carry no pass and need no secret, and throwing on those would turn
+  // one skipped runbook step into a dead /auth/callback for everyone.
+  const passCookie = request.cookies.get(PASS_COOKIE)?.value;
+  const pass = passCookie ? verifyPass(passCookie, env("GATE_PASS_SECRET")) : null;
   (await cookies()).set(PASS_COOKIE, "", { path: "/auth/callback", maxAge: 0 });
   const back = (reason: string) => {
     const url = request.nextUrl.clone();
