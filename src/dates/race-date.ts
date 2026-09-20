@@ -59,10 +59,14 @@ export function parseRaceDateForm(input: RaceDateInput, now: Date): Parsed {
   return { ok: true, startsAt, title };
 }
 
-/** The club-zone wall clock at an instant, as numbers. */
-function wallClock(instant: Date) {
+/**
+ * The wall clock in a zone at an instant, as numbers. The zone is the club's unless a caller
+ * names another — the .ics importer (#40) does, for a DTSTART carrying its own TZID. An
+ * unknown zone name throws RangeError from Intl, which the importer reports by line.
+ */
+function wallClock(instant: Date, zone: string = CLUB_TZ) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: CLUB_TZ,
+    timeZone: zone,
     hourCycle: "h23",
     year: "numeric",
     month: "2-digit",
@@ -82,31 +86,32 @@ function wallClock(instant: Date) {
   };
 }
 
-/** How far (ms) the club zone's wall clock is ahead of UTC at `instantMs` (negative in Ohio). */
-function offsetAt(instantMs: number): number {
-  const w = wallClock(new Date(instantMs));
+/** How far (ms) a zone's wall clock is ahead of UTC at `instantMs` (negative in Ohio). */
+function offsetAt(instantMs: number, zone: string = CLUB_TZ): number {
+  const w = wallClock(new Date(instantMs), zone);
   return Date.UTC(w.y, w.m - 1, w.d, w.h, w.min, w.s) - instantMs;
 }
 
 /**
- * The instant at which the club zone's wall clock reads `date` `time`. Two passes: the offset is
- * read at the naive instant, then re-read at the corrected one, so a time on the day the clocks
- * change resolves with the offset in force at that time rather than at midnight UTC.
+ * The instant at which a zone's wall clock (the club's by default) reads `date` `time`. Two
+ * passes: the offset is read at the naive instant, then re-read at the corrected one, so a time
+ * on the day the clocks change resolves with the offset in force at that time rather than at
+ * midnight UTC.
  */
-export function zonedToUtc(date: string, time: string): Date {
+export function zonedToUtc(date: string, time: string, zone: string = CLUB_TZ): Date {
   const [, y, mo, d] = DATE.exec(date)!;
   const [, h, mi] = TIME.exec(time)!;
   const wall = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
-  const first = offsetAt(wall);
+  const first = offsetAt(wall, zone);
   let utc = wall - first;
-  const second = offsetAt(utc);
+  const second = offsetAt(utc, zone);
   if (second !== first) utc = wall - second;
   return new Date(utc);
 }
 
-/** The calendar date (YYYY-MM-DD) in the club zone at an instant. */
-export function localDate(instant: Date): string {
-  const w = wallClock(instant);
+/** The calendar date (YYYY-MM-DD) in a zone (the club's by default) at an instant. */
+export function localDate(instant: Date, zone: string = CLUB_TZ): string {
+  const w = wallClock(instant, zone);
   return `${w.y}-${String(w.m).padStart(2, "0")}-${String(w.d).padStart(2, "0")}`;
 }
 
@@ -167,6 +172,10 @@ export function explainRefusal(reason: string): string {
       return `Keep the title to ${TITLE_MAX} characters.`;
     case "refused":
       return "The database refused that change. Only the club admin can edit race dates.";
+    case "nothing-selected":
+      return "Tick at least one race day to publish.";
+    case "bad-row":
+      return "The rows sent back could not be read. Upload the file again.";
     default:
       return "That could not be saved.";
   }
