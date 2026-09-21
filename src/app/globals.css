@@ -10,7 +10,8 @@
  *   - `--brand-disc` / `--brand-mark` are NOT declared here. `src/app/layout.tsx` sets both on
  *     `<html>` from the club row on every request (story #41), so a value written here would be a
  *     second copy that nothing holds to the first. They paint the badge and the brand bar — the
- *     club's mark — and `/admin/theme` can change them to any pair at 3:1.
+ *     club's mark — and `/admin/theme` can change them to any pair at 3:1. `--bar-ink`, set on
+ *     `<html>` beside them, is the bar's text colour: white or black by contrast with the disc.
  *   - `--accent` and everything below it are the PRODUCT's palette: the Hoover pair as constants,
  *     the owner's 2026-09-17 reversal recorded in `src/brand/theme.ts`. They are constants rather
  *     than `var(--brand-disc)` because the contrast proof has to be computable: an admin may save
@@ -208,7 +209,10 @@ input[type="radio"] {
   gap: var(--space-2) var(--space-4);
   padding: var(--space-2) var(--space-4);
   background: var(--brand-disc);
-  color: var(--brand-mark);
+  /* The bar's TEXT is --bar-ink — white or black by contrast with the disc, set per request by the
+     layout — and never the mark colour, which is a 3:1 non-text promise (the badge); #155's sweep
+     read that pair at 4.13:1 under this text. The mark keeps the badge and the focus ring. */
+  color: var(--bar-ink);
   font-family: var(--font-body);
   font-weight: 600;
 }
@@ -275,7 +279,7 @@ input[type="radio"] {
     justify-content: space-around;
     padding: var(--space-1) var(--space-2);
     background: var(--brand-disc);
-    color: var(--brand-mark);
+    color: var(--bar-ink);
     box-shadow: 0 -1px 0 var(--brand-mark);
   }
   body:has([data-nav][data-signed-in]) {

@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import { loadClubTheme } from "@/brand/club-theme";
+import { inkOn } from "@/brand/contrast";
 import { TenderMark } from "@/brand/TenderMark";
 import { AppShell } from "@/shell/AppShell";
 import { currentPerson } from "@/shell/session";
@@ -44,10 +45,14 @@ export async function generateViewport(): Promise<Viewport> {
  * into `<TenderMark>` — `test/manifest.test.ts` reads it to prove tab, manifest and mark are one
  * read. The person is read once per request (`currentPerson` is `cache()`d) and is null on the
  * signed-out pages, where the shell shows a way in instead of a way out.
+ *
+ * `--bar-ink` is the TEXT colour on the brand bar, computed from the disc: white or black,
+ * whichever reads better, which always clears 4.5:1 (`inkOn`). The mark colour is the badge's and
+ * the focus ring's — a 3:1 non-text pair by 0028 — and #155's sweep read it at 4.13:1 as text.
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const [theme, person] = await Promise.all([loadClubTheme(), currentPerson()]);
-  const vars = { "--brand-disc": theme.disc, "--brand-mark": theme.mark } as CSSProperties;
+  const vars = { "--brand-disc": theme.disc, "--brand-mark": theme.mark, "--bar-ink": inkOn(theme.disc) } as CSSProperties;
   return (
     <html lang="en" style={vars}>
       <body>

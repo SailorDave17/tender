@@ -16,7 +16,7 @@ import type { ShellPerson } from "@/shell/session";
  * person whose name is nobody's fixture, so a shell that printed a default would go red too.
  */
 const ROW = { name: "Anywhere Yacht Club", disc: "#123456", mark: "#FEDCBA" };
-vi.mock("@/brand/club-theme", () => ({ loadClubTheme: async () => ROW }));
+vi.mock("@/brand/club-theme", () => ({ loadClubTheme: async () => ({ ...ROW }) }));
 
 const PERSON: ShellPerson = { id: "p-1", email: "x@example.test", displayName: "Xenia Q", isAdmin: false };
 let person: ShellPerson | null = PERSON;
@@ -27,9 +27,21 @@ async function render(): Promise<string> {
 }
 
 describe("the root layout paints the club row's pair (#41 AC 3)", () => {
-  it("sets --brand-disc and --brand-mark on <html> from the row", async () => {
+  it("sets --brand-disc and --brand-mark on <html> from the row, and --bar-ink from the disc", async () => {
     const html = await render();
-    expect(html).toMatch(/<html lang="en" style="--brand-disc:#123456;--brand-mark:#FEDCBA">/);
+    // #123456 is dark: white text. The mark colour is NOT the text colour (#155's sweep, 4.13:1).
+    expect(html).toMatch(/<html lang="en" style="--brand-disc:#123456;--brand-mark:#FEDCBA;--bar-ink:#FFFFFF">/);
+  });
+
+  it("chooses black text on a light disc — the ink follows the row, not a constant", async () => {
+    const dark = ROW.disc;
+    ROW.disc = "#FCCF0B";
+    try {
+      const html = await render();
+      expect(html).toMatch(/--brand-disc:#FCCF0B;--brand-mark:#FEDCBA;--bar-ink:#000000"/);
+    } finally {
+      ROW.disc = dark;
+    }
   });
 
   it("renders the mark inline, in the row's pair, titled with the club's name, before the page", async () => {
