@@ -131,9 +131,10 @@ async function signIn(page, baseUrl, person) {
   await page.fill('form[data-form="signin"] input[name="email"]', person.email);
   await page.fill('form[data-form="signin"] input[name="password"]', SMOKE_PASSWORD);
   await Promise.all([page.waitForURL((u) => u.pathname === "/board"), page.click('form[data-form="signin"] button[type="submit"]')]);
-  // Whose board it is, not merely that a board rendered: two contexts, two people.
-  const text = await page.innerText("main");
-  if (!text.includes(`Signed in as ${person.displayName}`)) throw new Error(`the board does not say "Signed in as ${person.displayName}"`);
+  // Whose board it is, not merely that a board rendered: two contexts, two people. Since #154 the
+  // identity line is the shell's, in the header, not the board's <main> — read it where it lives.
+  const who = await page.innerText("header [data-who]");
+  if (!who.includes(`Signed in as ${person.displayName}`)) throw new Error(`the header does not say "Signed in as ${person.displayName}"`);
 }
 
 async function main() {
@@ -196,6 +197,10 @@ async function main() {
         if (!(await p.$('input[name="minimum"]:checked'))) throw new Error("no minimum is checked");
         await p.fill('textarea[name="note"]', "Smoke run: jib trimmer wanted.");
         await Promise.all([p.waitForURL((u) => u.pathname === "/board"), p.click('button:has-text("Post it")')]);
+        // Since #154 the board has a loading route, so the navigation commits with "Loading…" in
+        // <main> and the page streams in after — waitForURL resolves before the race days exist.
+        // Wait for the day itself; a count taken before it is 0 on a correct board (measured on CI).
+        await p.waitForSelector(`li[data-race-date="${date.id}"]`);
         const ids = await p.$$eval(`li[data-race-date="${date.id}"] li[data-post]`, (els) => els.map((e) => e.getAttribute("data-post")));
         if (ids.length !== 1) throw new Error(`expected one post under the race day on the board, found ${ids.length}`);
         postId = ids[0];

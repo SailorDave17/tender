@@ -38,7 +38,7 @@ export default async function AdminDatesPage({
   const { error, imported, skipped } = await searchParams;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <h1>Race dates</h1>
       <p>
         Every race day needs a start time — the ladder counts down to it. Dates are shown on the

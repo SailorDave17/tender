@@ -723,3 +723,10 @@ the pairs a surface may use are the table in `test/tokens.ts`: `test/tokens.test
 one in both schemes and prints the ratio, and `test/reduced-motion.test.ts` reads
 `transitionDuration` in Chrome under `prefers-reduced-motion`. A surface that needs a new pair adds
 it to the table, which adds it to the proof.
+
+Every page renders inside the app shell, `src/shell/AppShell.tsx` (#154): skip link, the mark,
+the signed-in person and sign-out, the navigation (docked to the bottom edge on a phone), the
+page in one frame, the build stamp. A page's `<main>` carries no frame of its own —
+`test/no-inline-frame.test.ts` refuses one — and `data-measure="wide"` is the one knob (tables).
+`test/shell-focus.test.ts` Tabs through the shell in Chrome, prints every stop's ring colour and
+ratio, and measures every target at 390px.

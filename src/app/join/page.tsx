@@ -21,7 +21,7 @@ export default async function JoinPage({
   // (scripts/server-env.mjs says so).
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "28rem" }}>
+    <main>
       <h1>Tender</h1>
       {/* #42: where "Delete my account" lands. `partial` is the auth step having refused after the
           person's rows were gone — the data is deleted, the sign-in record is the admin's to remove. */}

@@ -57,7 +57,7 @@ export default async function ProfilePage({
   const googleLinked = hasGoogleIdentity(user.identities);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <h1>Your profile</h1>
       <p>
         Skippers and the ladder go by this. <a href="/board">Back to the board</a>

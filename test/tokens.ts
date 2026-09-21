@@ -118,6 +118,12 @@ export const PAIRINGS: readonly Pairing[] = [
   { fg: "--accent", bg: "--paper", bar: "non-text", use: "a primary button's fill against the page" },
   { fg: "--accent", bg: "--surface", bar: "non-text", use: "a primary button's fill inside a card" },
   { fg: "--danger", bg: "--paper", bar: "non-text", use: "the left rule on an unsupported import row" },
+  // the focus ring (#154): `outline-offset: 2px` puts the page around it on both sides, so the
+  // adjacent colour is the surface it sits on, never the control's own fill. On the brand bar the
+  // ring is `--brand-mark`, whose 3:1 against the disc is the database's promise (0028).
+  { fg: "--focus", bg: "--paper", bar: "non-text", use: "a focused control on the page" },
+  { fg: "--focus", bg: "--surface", bar: "non-text", use: "a focused control inside a card" },
+  { fg: "--focus", bg: "--accent-soft", bar: "non-text", use: "a focused link in a highlighted row" },
   // NOT a pairing: `--surface` against `--paper`. A card's edge is one step off the page by design
   // (about 1.2:1 in light), and WCAG 1.4.11 binds a boundary only where it is the sole thing that
   // identifies a control — that boundary is `--line`, which is held above. A card that must be

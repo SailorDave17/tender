@@ -116,7 +116,7 @@ export default async function PostPage({
         : explainAnswerRefusal(reason);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <p>
         <Link href="/board">Back to the board</Link>
       </p>

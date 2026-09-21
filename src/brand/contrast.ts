@@ -63,3 +63,24 @@ export function meetsMinimum(ratio: number): boolean {
 export function isValidTheme(disc: string, mark: string): boolean {
   return meetsMinimum(contrastRatio(disc, mark));
 }
+
+/** The two inks `inkOn` chooses between. Pure white and pure black on purpose — see below. */
+export const INK_ON_LIGHT = "#000000";
+export const INK_ON_DARK = "#FFFFFF";
+
+/**
+ * The ink for TEXT on a fill nobody has chosen yet — the club's disc, which an admin may set to
+ * any colour that clears 3:1 against its mark (0028). 3:1 is the badge's bar, not text's, and no
+ * constant can promise 4.5:1 against a colour that does not exist yet. What can: white or black,
+ * whichever reads better. Their two ratios against any colour MULTIPLY to 21 — (1.05 / (L + 0.05))
+ * × ((L + 0.05) / 0.05) — so the larger is always at least √21 ≈ 4.58, and 4.58 > 4.5. That is why
+ * these are pure white and pure black and not the token layer's inks: `#1A1A1A` would make the
+ * product 17.4 and the floor 4.17, which fails the text bar for a mid-tone disc.
+ *
+ * The root layout sets this on `<html>` as `--bar-ink` beside the pair (story #154; the defect was
+ * found by #155's rendered-surface sweep, which read the Hoover pair itself at 4.13:1 under the
+ * header's text). `contrast.test.ts` proves the floor over every colour of the 12-bit space.
+ */
+export function inkOn(fill: string): string {
+  return contrastRatio(INK_ON_DARK, fill) >= contrastRatio(INK_ON_LIGHT, fill) ? INK_ON_DARK : INK_ON_LIGHT;
+}

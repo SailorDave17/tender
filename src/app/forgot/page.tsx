@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  */
 export default function ForgotPage() {
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "28rem" }}>
+    <main>
       <h1>Forgot your password?</h1>
       <p>
         Enter your email and we will send you a link to set a new password. If you have never had

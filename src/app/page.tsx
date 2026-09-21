@@ -29,7 +29,7 @@ export default async function Home({
   const message = explainLanding({ error, error_code, error_description });
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <h1>Tender</h1>
       {message && (
         <p role="alert" data-landing-error>
@@ -38,8 +38,7 @@ export default async function Home({
       )}
       <p>The board that says who still needs a crew for Sunday.</p>
       <p>
-        <a href="/join">Sign in with this season&apos;s invite code</a> — the board itself arrives
-        with the next stories.
+        <a href="/join">Sign in with this season&apos;s invite code</a>
       </p>
     </main>
   );

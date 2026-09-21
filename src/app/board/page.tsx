@@ -67,13 +67,10 @@ export default async function BoardPage({
   const boardPosts = data.posts.filter((p) => p.closed_at === null || data.matches.has(p.id));
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <RegisterServiceWorker />
       <h1>Tender</h1>
       <InstallBanner />
-      <p>
-        Signed in as {me?.display_name ?? user?.email ?? "someone"}. <Link href="/profile" prefetch={false}>Your profile</Link>
-      </p>
 
       {suspension && (
         <p role="status" data-banner="suspended" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
@@ -86,9 +83,6 @@ export default async function BoardPage({
         </p>
       )}
       {error && <p role="alert">{error === "refused" ? explainPostRefusal(error) : explainAvailabilityRefusal(error)}</p>}
-      <p>
-        <Link href="/boats" prefetch={false}>Your boats</Link> · <Link href="/post/new" prefetch={false}>Post a crew need</Link>
-      </p>
 
       <h2>Race days</h2>
       {!dates?.length ? (
@@ -172,16 +166,7 @@ export default async function BoardPage({
           })}
         </ol>
       )}
-      {me?.is_admin && (
-        <p>
-          {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}
-          <a href="/admin">Admin</a> · <Link href="/admin/dates" prefetch={false}>Edit race dates</Link>
-        </p>
-      )}
-
-      <form action="/auth/signout" method="post">
-        <button type="submit">Sign out</button>
-      </form>
+      {/* Since #154 the identity line, sign-out, and the boats / post / admin links are the shell's. */}
     </main>
   );
 }

@@ -59,7 +59,7 @@ export default async function AdminThreadsPage() {
   const threads = threadsByActivity(rows, (messageRead.data ?? []) as ThreadMessage[]);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "40rem" }}>
+    <main data-measure="wide">
       <h1>Match threads</h1>
       <p>
         <Link href="/admin">Back to admin</Link>

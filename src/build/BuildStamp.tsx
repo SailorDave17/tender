@@ -3,8 +3,8 @@ import { describeStamp, readStamp, type BuildStamp as Stamp } from "./stamp";
 /**
  * The footer every page ends in (#169): `Tender v0.1.0 · 3c7759e · feature/x · built 2026-09-19`.
  *
- * Rendered from the root layout, so it needs no page to remember it. The inline frame matches the
- * pages' own `<main>` styling for now; #154's shell replaces both with one frame.
+ * Rendered from the root layout (inside the app shell since #154), so it needs no page to remember
+ * it. Its frame is `globals.css`'s `footer[data-build-stamp]` rule, the same measure as the page.
  *
  * An unstamped build says so in words. Rendering nothing would make "the stamp is missing"
  * indistinguishable from "this page has no footer", and the whole point of the stamp is that the
@@ -13,10 +13,7 @@ import { describeStamp, readStamp, type BuildStamp as Stamp } from "./stamp";
 export function BuildStamp({ stamp = readStamp() }: { stamp?: Stamp }) {
   const r = describeStamp(stamp);
   return (
-    <footer
-      data-build-stamp
-      style={{ padding: "0 2rem 2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem", color: "#555" }}
-    >
+    <footer data-build-stamp>
       <small>
         {r.version === null ? (
           <span data-build-unstamped>Tender · unstamped build</span>

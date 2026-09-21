@@ -37,7 +37,7 @@ export default async function NewPostPage({
   const boat = boatParam && UUID.test(boatParam) ? (boats ?? []).find((b) => b.id === boatParam) : undefined;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <h1>Post a crew need</h1>
       <p>
         <Link href="/board">Back to the board</Link>

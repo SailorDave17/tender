@@ -123,7 +123,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
   const other = partyName(names, otherId, "your counterparty");
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <p>
         <Link href={`/post/${id}`}>Back to the post</Link>
       </p>
