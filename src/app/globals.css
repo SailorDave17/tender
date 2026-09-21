@@ -311,3 +311,285 @@ footer[data-build-stamp] {
     padding: 0 var(--space-8) var(--space-8);
   }
 }
+
+/* ---- the surfaces (#155) ------------------------------------------------------------------ */
+/*
+ * The six member-facing surfaces — /board, /post/[id], /post/new, /join, /profile, /boats — and
+ * the components they render paint from these rules through data-attribute hooks; no page carries
+ * an inline colour, size or spacing any more (`test/surfaces.test.ts` scans for one). The one
+ * survivor is the rung badge's `--rung` / `--rung-dark`, which is the ladder's data and not a
+ * design token (`src/post/CandidateList.tsx`). `test/surfaces.test.ts` renders each surface with
+ * fixtures in Chrome and computes every text element's contrast in both schemes, printed.
+ */
+
+/* type */
+h1 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+}
+h2 {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+main > section {
+  margin-top: var(--space-8);
+}
+main > section > h2 {
+  margin-top: 0;
+  font-size: var(--text-md);
+}
+[data-hint] {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+section > [data-hint] {
+  margin-top: var(--space-2);
+}
+[data-meta] {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+[role="alert"] {
+  color: var(--danger);
+  font-weight: 600;
+}
+blockquote {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 4px solid var(--line);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--surface);
+}
+
+/* layout hooks a surface composes from */
+[data-stack] {
+  display: grid;
+  gap: var(--space-3);
+}
+[data-stack="loose"] {
+  gap: var(--space-4);
+}
+[data-stack="tight"] {
+  gap: var(--space-1);
+}
+[data-stack] > button {
+  justify-self: start;
+}
+[data-row] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
+}
+[data-grow] {
+  flex: 1;
+}
+[data-list] {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-list="stack"] {
+  display: grid;
+  gap: var(--space-2);
+}
+form[data-inline] {
+  display: inline;
+}
+[data-gap-top] {
+  margin-top: var(--space-6);
+}
+[data-indent] {
+  padding-left: var(--space-6);
+}
+[data-pairs] {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+[data-pairs] dt {
+  font-weight: 600;
+}
+[data-pairs] dd {
+  margin: 0;
+}
+
+/* forms: the label above its control, the control full width, a fieldset as a bordered group */
+label > :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-1);
+}
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+textarea {
+  width: 100%;
+}
+fieldset {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+legend {
+  padding: 0 var(--space-1);
+  font-weight: 600;
+}
+button {
+  padding: 0 var(--space-3);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* A pressed toggle (the board's "I can sail this day") reads as a state, not a call. */
+button[aria-pressed="true"],
+[data-toggle] {
+  background: var(--surface);
+  color: var(--accent);
+}
+/* Inactive controls stay legible outdoors — no opacity, which would take the ink under the bar. */
+button:disabled {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+[data-field] {
+  display: grid;
+  gap: var(--space-1);
+}
+[data-field] [data-row] {
+  align-items: stretch;
+}
+[data-field] input {
+  flex: 1;
+  width: auto;
+}
+[data-toggle] {
+  min-width: 4.5rem;
+}
+
+/* the join tabs: the selected one is filled, not merely aria-selected (#155 AC 6) */
+[data-tabs] {
+  display: flex;
+  gap: var(--space-2);
+}
+[role="tab"] {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+[role="tab"][aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* banners: the suspension and no-rating notes, the install offer */
+[data-banner] {
+  padding: var(--space-3);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+[data-banner] p {
+  margin: 0;
+}
+[data-banner="install"] {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+[data-banner] [data-install-action="prompt"] {
+  margin-top: var(--space-2);
+}
+
+/* the board: each race day a card, its posts a ruled list under the day's heading */
+[data-race-date] {
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+[data-day] > strong {
+  font-size: var(--text-lg);
+}
+[data-posts] {
+  flex-basis: 100%;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+[data-post] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  align-items: baseline;
+}
+
+/* the rung badge: the fill is the ladder's data (--rung / --rung-dark from RungBadge), the ink ours */
+[data-badge="rung"] {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--rung);
+  color: var(--accent-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) {
+  [data-badge="rung"] {
+    background: var(--rung-dark);
+  }
+}
+[data-badge="answered"] {
+  padding: 0 var(--space-2);
+  border: 2px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* the thread: a message a card, the member's own tinted */
+[data-message] {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+[data-message][data-mine="true"] {
+  background: var(--accent-soft);
+}
+[data-message] [data-body] {
+  margin: 0;
+  white-space: pre-wrap;
+}
+[data-message][data-removed="true"] [data-body] {
+  font-style: italic;
+}

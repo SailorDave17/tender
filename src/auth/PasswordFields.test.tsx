@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
@@ -305,8 +306,15 @@ describe("AC 11 — the two boxes cannot render at different sizes", () => {
     // Both rows are identical only if the two buttons are: same text, same width floor.
     expect(pw.textContent).toBe("Show");
     expect(cf.textContent).toBe("Show");
-    expect(pw.style.minWidth, "a toggle with no width floor can be sized by its text").not.toBe("");
-    expect(pw.style.minWidth).toBe(cf.style.minWidth);
+    // Since #155 the floor is the stylesheet's (`[data-toggle] { min-width: … }` in globals.css),
+    // which jsdom does not apply — so the claim is read where it lives: both buttons carry the
+    // hook, and the rule behind the hook carries a floor. One rule, so one floor, for both.
+    expect(pw.hasAttribute("data-toggle"), "a toggle with no width floor can be sized by its text").toBe(true);
+    expect(cf.hasAttribute("data-toggle")).toBe(true);
+    // By path from the repo root: under jsdom `import.meta.url` is not a file URL.
+    const css = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");
+    const floor = /\[data-toggle\] \{[^}]*min-width:\s*([^;]+);/.exec(css)?.[1];
+    expect(floor, "globals.css gives [data-toggle] a min-width").toBeTruthy();
 
     // …and it has to hold in the other three states too, not just at rest: the regression
     // this replaces was a LABEL that changed width, so a check at one state proves nothing.

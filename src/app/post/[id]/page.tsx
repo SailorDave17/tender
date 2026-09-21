@@ -96,7 +96,7 @@ export default async function PostPage({
   // definer on the tap. The forms are built here because the action needs a request.
   const controls = match ? matchControls(match, date.starts_at, user.id, now) : undefined;
   const statusForm: StatusForm = (status, label) => (
-    <form action={setMatchStatus} style={{ display: "inline" }}>
+    <form action={setMatchStatus} data-inline>
       <input type="hidden" name="match_id" value={match!.id} />
       <input type="hidden" name="post_id" value={post.id} />
       <input type="hidden" name="status" value={status} />
@@ -157,7 +157,7 @@ export default async function PostPage({
             people={data.people}
             skills={(skillRows ?? []) as Skill[]}
             accept={(personId) => (
-              <form action={acceptAnswer} style={{ display: "inline" }}>
+              <form action={acceptAnswer} data-inline>
                 <input type="hidden" name="post_id" value={post.id} />
                 <input type="hidden" name="person_id" value={personId} />
                 <button type="submit" data-accept={personId}>
@@ -167,7 +167,7 @@ export default async function PostPage({
             )}
           />
           {!closed && (
-            <form action={closePost} style={{ marginTop: "1.5rem" }}>
+            <form action={closePost} data-gap-top>
               <input type="hidden" name="id" value={post.id} />
               <button type="submit">Close this need</button>
             </form>

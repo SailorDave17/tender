@@ -135,7 +135,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
         {boat.name} ({boat.class}), {date.title}, {whenLabel(date.starts_at)}.
       </p>
 
-      <ol data-messages={messages?.length ?? 0} style={{ listStyle: "none", padding: 0 }}>
+      <ol data-messages={messages?.length ?? 0} data-list>
         {(messages ?? []).map((m) => {
           const shown = messageText(m);
           return (
@@ -144,12 +144,11 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
               data-message={m.id}
               data-mine={m.author_id === user.id}
               data-removed={shown.removed}
-              style={{ margin: "0.75rem 0", padding: "0.5rem 0.75rem", background: m.author_id === user.id ? "#eef3fb" : "#f5f5f5", borderRadius: "0.5rem" }}
             >
               {/* A removed message has no control of any kind — no edit, no restore, no resend
                   (#36 AC 3); the database refuses its author every update regardless. */}
-              <p style={{ margin: 0, whiteSpace: "pre-wrap", fontStyle: shown.removed ? "italic" : undefined }}>{shown.text}</p>
-              <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "#555" }}>
+              <p data-body>{shown.text}</p>
+              <p data-meta>
                 {names.get(m.author_id) ?? "someone"} · {new Date(m.created_at).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })}
               </p>
             </li>

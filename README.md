@@ -730,3 +730,12 @@ page in one frame, the build stamp. A page's `<main>` carries no frame of its ow
 `test/no-inline-frame.test.ts` refuses one — and `data-measure="wide"` is the one knob (tables).
 `test/shell-focus.test.ts` Tabs through the shell in Chrome, prints every stop's ring colour and
 ratio, and measures every target at 390px.
+
+The six member-facing surfaces (#155) paint from data-attribute hooks in the same stylesheet —
+`data-stack`, `data-row`, `data-list`, `data-banner`, `data-race-date`, `data-badge` and the rest
+under *the surfaces* — and carry no inline style the tokens could express; the one survivor is the
+rung badge's `--rung` / `--rung-dark`, which is the ladder's data. `test/surfaces.test.ts` renders
+each surface through the real layout with fixtures (`test/surfaces.ts`), then reads it in Chrome
+at 390px in both schemes: every text element's contrast computed and the lowest printed, the
+board's rows and rules, the join tabs' selected state. The rung colours have a dark value each
+(`RUNG_COLOUR[n].dark`), proven in `test/rung-contrast.test.ts`.

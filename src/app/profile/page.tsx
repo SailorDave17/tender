@@ -65,7 +65,7 @@ export default async function ProfilePage({
 
       <ProfileCard person={me} phone={contact?.phone ?? null} viewerId={user.id} skills={skills} />
 
-      <form action={saveProfile} style={{ display: "grid", gap: "1rem", marginTop: "1.5rem" }}>
+      <form action={saveProfile} data-stack="loose" data-gap-top>
         {/*
           #68: checkboxes, not one radio. A crew ticks everything they can do and the rung is
           derived from the highest level among them (levelFromSkills), so the engine and both
@@ -74,9 +74,9 @@ export default async function ProfilePage({
           group per box rather than per group, so it would demand ALL of them; the blank set is
           refused in the Server Action, where a disabled control is no defence anyway.
         */}
-        <fieldset style={{ display: "grid", gap: "0.25rem" }}>
+        <fieldset>
           <legend>How competent are you?</legend>
-          <p style={{ margin: 0, fontSize: "0.875rem" }}>Tick everything you can do.</p>
+          <p data-hint>Tick everything you can do.</p>
           {skills.map((s) => (
             <label key={s.code}>
               <input
@@ -90,7 +90,7 @@ export default async function ProfilePage({
           ))}
         </fieldset>
 
-        <fieldset style={{ display: "grid", gap: "0.25rem" }}>
+        <fieldset>
           <legend>Which hulls will you sail?</legend>
           <label>
             <input type="radio" name="hulls" value="any" defaultChecked={me.any_hull} /> Any hull
@@ -98,7 +98,7 @@ export default async function ProfilePage({
           <label>
             <input type="radio" name="hulls" value="some" defaultChecked={!me.any_hull} /> Only these:
           </label>
-          <div style={{ display: "grid", gap: "0.25rem", paddingLeft: "1.5rem" }}>
+          <div data-stack="tight" data-indent>
             {(classes ?? []).map((c) => (
               <label key={c.name}>
                 <input type="checkbox" name="classes" value={c.name} defaultChecked={me.hulls.includes(c.name)} />{" "}
@@ -116,7 +116,6 @@ export default async function ProfilePage({
             autoComplete="tel"
             maxLength={24}
             defaultValue={contact?.phone ?? ""}
-            style={{ display: "block" }}
           />
         </label>
 
@@ -129,14 +128,14 @@ export default async function ProfilePage({
         VAPID key would otherwise show a button that can only fail, and the honest thing is to
         show nothing rather than a promise the server cannot keep.
       */}
-      <section style={{ marginTop: "2rem" }}>
-        <h2 style={{ fontSize: "1rem" }}>Notifications</h2>
+      <section>
+        <h2>Notifications</h2>
         {vapidPublicKey ? (
           <PushToggle vapidPublicKey={vapidPublicKey} subscribed={(devices ?? []).length > 0} />
         ) : (
           <p>Push notifications are not set up for this club yet. You will still be emailed.</p>
         )}
-        <p style={{ fontSize: "0.875rem" }}>
+        <p data-hint>
           On an iPhone, add Tender to your home screen first — Apple only offers notifications to a
           web app that has been installed.
         </p>
@@ -148,8 +147,8 @@ export default async function ProfilePage({
         email. Linking from here attaches it to the account they already have, so one human keeps
         one auth.uid() — which is what every RLS policy in the schema is keyed on.
       */}
-      <section style={{ marginTop: "2rem" }}>
-        <h2 style={{ fontSize: "1rem" }}>Google sign-in</h2>
+      <section>
+        <h2>Google sign-in</h2>
         {googleLinked ? (
           <p data-google-linked>
             Your Google account is linked. <em>Continue with Google</em> signs you in as you, even
@@ -172,19 +171,19 @@ export default async function ProfilePage({
         What leaves and what stays is said here in the charter's own terms, so nobody ticks it
         expecting their past races to vanish from the season's count.
       */}
-      <section style={{ marginTop: "2rem" }}>
-        <h2 style={{ fontSize: "1rem" }}>Leave the club</h2>
-        <p style={{ fontSize: "0.875rem" }}>
+      <section>
+        <h2>Leave the club</h2>
+        <p data-hint>
           Deleting your account removes your profile, contact details, availability, answers,
           messages and notification devices. Any race you were matched on stays as a nameless row,
           so the season&apos;s count survives without your name.
         </p>
-        <form action={deleteMyAccount} style={{ display: "grid", gap: "0.5rem" }} data-delete-account>
+        <form action={deleteMyAccount} data-stack data-delete-account>
           <label>
             <input type="checkbox" name="confirm" value={CONFIRM_VALUE} required /> I understand, delete my
             account
           </label>
-          <button type="submit" style={{ justifySelf: "start" }}>
+          <button type="submit">
             Delete my account
           </button>
         </form>

@@ -15,11 +15,20 @@ import { toCrew, type PersonRow } from "@/engine/toCrew";
  * when the clock has passed, and never a narrower one (story #23 AC 4).
  */
 
-/** The three rungs as the board colours them. The number is always in text beside the colour. */
-export const RUNG_COLOUR: Record<Rung, { name: "green" | "amber" | "red"; hex: string }> = {
-  1: { name: "green", hex: "#1E5443" },
-  2: { name: "amber", hex: "#8A5A00" },
-  3: { name: "red", hex: "#B42318" },
+/**
+ * The three rungs as the board colours them. The number is always in text beside the colour.
+ *
+ * `hex` is the fill in the light scheme and `dark` the fill in the dark one (#155 AC 5: a badge
+ * fixed light-mode is invisible on the dark page); the ink on both is the token layer's
+ * `--accent-ink`, and `test/rung-contrast.test.ts` computes every pairing. These are the ladder's
+ * vocabulary, not the brand (#153): rung 1's green merely coincided with the retired hull green.
+ * The badge carries them as custom properties (`RungBadge`), so the rung reaches the markup as data
+ * and the stylesheet decides which fill the scheme shows.
+ */
+export const RUNG_COLOUR: Record<Rung, { name: "green" | "amber" | "red"; hex: string; dark: string }> = {
+  1: { name: "green", hex: "#1E5443", dark: "#7FD39A" },
+  2: { name: "amber", hex: "#8A5A00", dark: "#F0B95A" },
+  3: { name: "red", hex: "#B42318", dark: "#FF8A95" },
 };
 
 export type PostInput = {
