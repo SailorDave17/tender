@@ -45,7 +45,7 @@ export default async function InvitePage({
   const unreadable = encoded !== undefined && report === null;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "36rem" }}>
+    <main data-measure="wide">
       <h1>Invite people</h1>
       <p>
         <a href="/admin">Back to admin</a> · <a href="/board">The board</a>

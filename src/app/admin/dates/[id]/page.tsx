@@ -68,7 +68,7 @@ export default async function AdminRaceDayPage({
   const open = rows.filter((r) => r.open).length;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "48rem" }}>
+    <main data-measure="wide">
       <h1>{date.title}</h1>
       <p>
         <strong>{when.date}</strong> · starts {when.time}

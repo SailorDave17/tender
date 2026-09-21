@@ -74,7 +74,7 @@ export default async function AdminPage({
   const usage = await loadEmailUsage(client, now);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "48rem" }}>
+    <main data-measure="wide">
       <h1>Admin</h1>
       <p>
         {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}

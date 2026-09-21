@@ -57,7 +57,7 @@ export default async function AdminPeoplePage({
   const summary = installSummary(rows);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "40rem" }}>
+    <main data-measure="wide">
       <h1>People</h1>
       <p>
         <a href="/admin">Back to admin</a> · <a href="/board">The board</a>

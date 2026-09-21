@@ -28,7 +28,7 @@ export default async function AdminDatesImportPage({
   const { error } = await searchParams;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "40rem" }}>
+    <main data-measure="wide">
       <h1>Import the season calendar</h1>
       <p>
         Upload the club&apos;s .ics and check the race days it holds before they go on the board.

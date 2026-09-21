@@ -35,7 +35,7 @@ export default async function BoatsPage({
   const { error } = await searchParams;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <h1>Your boats</h1>
       <p>
         A boat is what you post a crew need for. <Link href="/board">Back to the board</Link>

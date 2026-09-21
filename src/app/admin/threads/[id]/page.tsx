@@ -88,7 +88,7 @@ export default async function AdminThreadPage({
   const remove = removeMessage.bind(null, match.id);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "36rem" }}>
+    <main data-measure="wide">
       <p>
         <Link href="/admin/threads">All threads</Link>
       </p>

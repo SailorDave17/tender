@@ -2,7 +2,8 @@ import type { CSSProperties, ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import { loadClubTheme } from "@/brand/club-theme";
 import { TenderMark } from "@/brand/TenderMark";
-import { BuildStamp } from "@/build/BuildStamp";
+import { AppShell } from "@/shell/AppShell";
+import { currentPerson } from "@/shell/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -37,22 +38,22 @@ export async function generateViewport(): Promise<Viewport> {
  * INLINE as a component — never `<img src>`, which would be a separate document blind to the
  * page's colours (`src/brand/TenderMark.tsx`'s header).
  *
- * The brand bar is the least shell that puts the mark on a screen. #154 replaces it with the app
- * shell proper (navigation, skip link, identity, sign-out); until then it is one line so that
- * nothing here pre-decides what that story is for.
+ * Since #154 every page renders inside `AppShell`: skip link, mark, product name, the signed-in
+ * person and sign-out, navigation, the frame, the build stamp. The mark is built HERE, from the
+ * row, and handed to the shell as an element, so this file stays the one that puts `theme.disc`
+ * into `<TenderMark>` — `test/manifest.test.ts` reads it to prove tab, manifest and mark are one
+ * read. The person is read once per request (`currentPerson` is `cache()`d) and is null on the
+ * signed-out pages, where the shell shows a way in instead of a way out.
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const theme = await loadClubTheme();
+  const [theme, person] = await Promise.all([loadClubTheme(), currentPerson()]);
   const vars = { "--brand-disc": theme.disc, "--brand-mark": theme.mark } as CSSProperties;
   return (
     <html lang="en" style={vars}>
       <body>
-        <header data-brand-bar>
-          <TenderMark size={36} disc={theme.disc} mark={theme.mark} title={theme.name} />
-          <span>Tender</span>
-        </header>
-        {children}
-        <BuildStamp />
+        <AppShell mark={<TenderMark size={36} disc={theme.disc} mark={theme.mark} title={theme.name} />} person={person}>
+          {children}
+        </AppShell>
       </body>
     </html>
   );
