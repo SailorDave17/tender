@@ -44,6 +44,7 @@ npm run check:live # read-only probe of the live Supabase project; needs .env.lo
 npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
+npm run perf:floor -- --db-container supabase_db_<dir>  # ADR 002's kill condition, re-measured
 ```
 
 Node 24 (`.nvmrc`). Copy `.env.example` to `.env.local` — names only are committed, never values.
@@ -233,6 +234,43 @@ than from the Vercel dashboard, which a member cannot see and the owner cannot s
 
 A build the config did not stamp — vitest, for one — prints *unstamped build* in words. An empty
 footer would be indistinguishable from a page that has none.
+
+## The performance floor
+
+**`npm run perf:floor` re-measures ADR 002's kill condition** with the instrument that ADR names —
+Lighthouse mobile, simulated throttling, against a production build served locally with a fixture
+of 80 people, 45 race dates and 50 posts, signed in through a real session cookie. Method, the
+current reading and the levers already priced are in
+[`docs/performance-floor.md`](docs/performance-floor.md); the short version is that `/board` reads
+**72** and `/post/[id]` reads **83** against a floor of 80, so the condition's *local* antecedent is
+met — but the ADR says *on a mid-range Android*, and a local serve is known to under-read this page
+shape by about eight points, so [ADR 002](docs/adr/002-nextjs-16.md) records the measurement and the
+one run against `release` that would make it decisive.
+
+It **writes** — 80 people, 45 dates, 50 posts — so it refuses any Supabase URL that is not
+loopback before touching a row. It is the opposite shape from `check:live` and `verify:migrations`,
+which are read-only by construction, and it says so rather than relying on the flag being passed.
+
+Two traps it guards, both of which produce a *reassuring* number rather than an error:
+
+- **`next build` inlines `NEXT_PUBLIC_*` into the Edge proxy**, so a build made without them
+  pointed at the local stack silently talks to whatever `.env.local` names. `src/proxy.ts` then
+  finds no valid session and 302s to `/join` — a small static form that scores *well*. The command
+  fetches each route with the cookie before spending two minutes on it and refuses anything but a
+  200, and refuses again afterwards if Lighthouse's own `finalDisplayedUrl` is not what was asked
+  for.
+- **A single Lighthouse run is not a measurement.** `/board`'s three runs span 72–78 and
+  `/post/[id]`'s span 78–90 on identical builds, so the command reports every run beside the median
+  and warns when a route's runs straddle the floor rather than letting a lucky median pass silently.
+  That warning is not hypothetical: `/post/[id]` passes on its median of 83 with one run at 78.
+- **A score is a score of a page, and these pages differ per viewer.** The command CHOOSES who signs
+  in — rated, not the club admin, owner of an open post — because the first version took the first
+  person in the fixture, who is unrated, and so measured a board with all 45 availability forms
+  suppressed. It read 78 that way and 72 correctly.
+
+Everything that decides an outcome is in `scripts/lighthouse-floor-core.mjs`, exercised by
+`test/lighthouse-floor.test.ts` with no stack, no browser and no network — the same split as
+`check-live.mjs` and `verify-migrations.mjs`.
 
 ## Owner runbook — the steps only the owner can do
 

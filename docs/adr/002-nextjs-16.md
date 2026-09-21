@@ -21,3 +21,52 @@ Bundle size is watched on the old-Android target (an accessibility bar, not poli
 
 ## Kill condition
 Lighthouse mobile performance on the board page below 80 on a mid-range Android after the first three stories, unrecoverable by ordinary optimisation — reopen toward SvelteKit.
+
+### Measured 2026-09-21 (#44): the local antecedent is met; the ADR's own condition is NOT yet established
+
+**`/board` reads 72** (72 / 78 / 72) against a floor of 80, on a production build served locally.
+`/post/[id]` reads 83 (90 / 78 / 83) — a median that passes with one run below the floor.
+Accessibility is 96 on both and CLS is within its floor on both. Full method, fixture, control arms
+and the measured-viewer caveat: [`../performance-floor.md`](../performance-floor.md).
+
+The second half of the condition — *unrecoverable by ordinary optimisation* — was tested rather
+than assumed, with three app-level levers each priced as its own arm:
+
+| lever | effect on `/board` |
+|---|---|
+| `prefetch={false}` on every board link (kept; 27 requests → 13) | ~3 points |
+| document cut by 71% (10 dates instead of 45) | **none** |
+| both client components removed entirely | **none** |
+| framework JS blocked — a bound, not a shippable fix | **96** |
+
+The binding constraint is the **455 KB React/Next client runtime**, which Next ships to every route
+regardless of whether the route uses a single client component, and which Lighthouse's simulator
+prices onto the slow-4G critical path because it lands before the observed first paint. That is the
+thing this ADR chose, which is why the reading routes here and not to a board story.
+
+**The condition has not fired, because this instrument cannot fire it.** The ADR says *below 80 on
+a mid-range Android*; what was measured is below 80 on **localhost**, and for this page shape those
+two differ in a known direction. cairn's
+`lighthouse-simulated-scores-race-the-font-files-2026-09-04` records a page of the same shape — one
+where every resource finishes before the observed first paint locally — reading **79 locally and
+87 / 88 / 86 on production**, because localhost has no latency, so everything lands before the paint
+and everything is priced as render-blocking. If that ~8 points carries, `/board` reads about 80 on
+`release` and the condition is not met at all.
+
+So, precisely:
+
+- **Below 80 locally: established** (72, three runs, none near the floor).
+- **Unrecoverable by ordinary optimisation: supported** (three levers priced, two at zero).
+- **Below 80 on a mid-range Android: NOT established**, and not establishable from a local serve.
+
+**What settles it, in order.** Run the same command against the deployed `release` build; that is
+one measurement and it decides whether this section becomes a framework decision or a footnote. Only
+if it confirms sub-80 does the second question arise — what the board costs under a framework that
+ships no client runtime by default, which is the comparison this ADR's option list already names.
+
+One fact that cuts against a framework verdict either way: `/post/[id]` reads 83 carrying the
+identical runtime, so the runtime does not sink a page on its own — it sinks a page that also pays
+a long render.
+
+*Status stays `accepted`. This records a measurement and the one run that would make it decisive,
+not a decision.*

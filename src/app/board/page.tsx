@@ -72,7 +72,7 @@ export default async function BoardPage({
       <h1>Tender</h1>
       <InstallBanner />
       <p>
-        Signed in as {me?.display_name ?? user?.email ?? "someone"}. <Link href="/profile">Your profile</Link>
+        Signed in as {me?.display_name ?? user?.email ?? "someone"}. <Link href="/profile" prefetch={false}>Your profile</Link>
       </p>
 
       {suspension && (
@@ -82,12 +82,12 @@ export default async function BoardPage({
       )}
       {unrated && (
         <p role="status" data-banner="no-rating" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
-          Before you can mark the days you can sail, <Link href="/profile">set your competence on your profile</Link>.
+          Before you can mark the days you can sail, <Link href="/profile" prefetch={false}>set your competence on your profile</Link>.
         </p>
       )}
       {error && <p role="alert">{error === "refused" ? explainPostRefusal(error) : explainAvailabilityRefusal(error)}</p>}
       <p>
-        <Link href="/boats">Your boats</Link> · <Link href="/post/new">Post a crew need</Link>
+        <Link href="/boats" prefetch={false}>Your boats</Link> · <Link href="/post/new" prefetch={false}>Post a crew need</Link>
       </p>
 
       <h2>Race days</h2>
@@ -144,7 +144,7 @@ export default async function BoardPage({
                         return (
                           <li key={p.id} data-post={p.id} data-matched="true" data-match-status={m.status}>
                             <strong>Crewed</strong> —{" "}
-                            <Link href={`/post/${p.id}`}>
+                            <Link href={`/post/${p.id}`} prefetch={false}>
                               {boat.name} ({boat.class})
                             </Link>
                             : {skipper} with {crew}
@@ -157,7 +157,7 @@ export default async function BoardPage({
                       return (
                         <li key={p.id} data-post={p.id} data-rung={v.rung} data-candidates={v.candidateCount} data-answered={answered}>
                           <RungBadge rung={v.rung} colour={v.colour} />{" "}
-                          <Link href={`/post/${p.id}`}>
+                          <Link href={`/post/${p.id}`} prefetch={false}>
                             <strong>{boat.name}</strong> ({boat.class}) needs crew
                           </Link>{" "}
                           — {v.candidateCount} {v.candidateCount === 1 ? "candidate" : "candidates"}
@@ -175,7 +175,7 @@ export default async function BoardPage({
       {me?.is_admin && (
         <p>
           {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}
-          <a href="/admin">Admin</a> · <Link href="/admin/dates">Edit race dates</Link>
+          <a href="/admin">Admin</a> · <Link href="/admin/dates" prefetch={false}>Edit race dates</Link>
         </p>
       )}
 

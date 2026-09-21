@@ -13,7 +13,8 @@
     "migrate:live": "node --env-file-if-exists=.env.local scripts/migrate-live.mjs",
     "verify:migrations": "node --env-file-if-exists=.env.local scripts/verify-migrations.mjs",
     "vapid:keys": "node scripts/vapid-keys.mjs",
-    "icons": "node scripts/render-icons.mjs"
+    "icons": "node scripts/render-icons.mjs",
+    "perf:floor": "node scripts/lighthouse-floor.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
