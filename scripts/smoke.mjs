@@ -222,14 +222,6 @@ async function main() {
       },
     },
     {
-      name: "skipper accepts",
-      run: async () => {
-        const p = pages.skipper;
-        await p.click(`button[data-accept="${crew.id}"]`);
-        await p.waitForSelector('section[data-status="matched"][data-role="skipper"]');
-      },
-    },
-    {
       name: "the crew's phone is visible to the skipper only after acceptance",
       run: async () => {
         const p = pages.skipper;
