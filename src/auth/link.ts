@@ -4,7 +4,8 @@
  * Supabase links a Google identity to an existing auth user **only when the verified email
  * matches** (automatic identity linking). A member who joined as `alice@club.org` and presses
  * *Continue with Google* as `alice@gmail.com` therefore gets a FRESH auth user, which
- * `/auth/callback` deletes (no attestation, no gate pass) — and the advice it used to give
+ * `ensurePerson` deletes (no attestation, no invite gate behind it; since #173 the Google
+ * sign-in route reaches it, not the callback) — and the advice it used to give
  * ("sign up with this season's invite code") produced a SECOND person row for the same human.
  *
  * `linkIdentity()` is the platform's own answer: a signed-in member starts an OAuth round trip

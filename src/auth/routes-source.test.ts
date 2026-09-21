@@ -219,10 +219,10 @@ describe("the link route links and the sign-in route signs in (#74 AC 1)", () =>
     expect(snap).toBeLessThan(start);
   });
 
-  it("/auth/google still starts a SIGN-IN — startGoogle, not the linker (negative control)", async () => {
-    const src = await readFile(new URL("../app/auth/google/route.ts", import.meta.url), "utf8");
-    expect([...new Set(src.match(/startGoogle\w*/g))]).toEqual(["startGoogle"]);
-    expect(src).not.toMatch(/linkIdentity/);
+  it("/api/signin/google still signs IN — the exchange, not the linker (negative control, moved by #173)", async () => {
+    const src = await readFile(new URL("../app/api/signin/google/route.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/exchangeGoogleIdToken/);
+    expect(src).not.toMatch(/linkIdentity|startGoogleLink/);
   });
 
   it("the callback chooses its exit by the flow marker, not by a caller's `next`", async () => {
@@ -257,5 +257,93 @@ describe("the link route links and the sign-in route signs in (#74 AC 1)", () =>
     // a link refusal returns HERE, so this page must be able to say what happened; the ?? is
     // what lets link.ts answer first without either module listing the other's keys
     expect(src).toMatch(/explainLinkReason\(error\)\s*\?\?\s*explainProfileRefusal\(error\)/);
+  });
+});
+
+/**
+ * #173 AC 5. Sign-in and sign-up moved to the ID-token flow so that no Google screen names the
+ * Supabase host; the link flow (#74) is redirect-only in GoTrue and deliberately stays. Which
+ * call each route makes is the whole difference between "the member sees tender.madcowsailing.com"
+ * and "the member sees <ref>.supabase.co", and no unit test reads a route — so the routes are the
+ * subject, and the tree as a whole is the subject for what must be gone.
+ */
+describe("Google sign-in and sign-up are the ID-token flow; only the link still redirects (#173 AC 5)", () => {
+  const SIGNIN = "../app/api/signin/google/route.ts";
+  const SIGNUP = "../app/api/signup/google/route.ts";
+  const LINK = "../app/auth/link/google/route.ts";
+  const LIB = "../lib/auth/google.ts";
+
+  it("the sign-in route's only Supabase sign-in call is signInWithIdToken, through the exchange", async () => {
+    // The route names the exchange; the exchange names the call. Read both ends so a route that
+    // grew a second entry point, or a wrapper that swapped the call, reddens here.
+    const route = await readFile(new URL(SIGNIN, import.meta.url), "utf8");
+    const lib = await readFile(new URL(LIB, import.meta.url), "utf8");
+    expect(route).toMatch(/exchangeGoogleIdToken\(client, token, nonce\)/);
+    expect(route).not.toMatch(/signInWithOAuth|signInWithPassword|exchangeCodeForSession|linkIdentity|createUser|redirect\(/);
+    const exchange = lib.slice(lib.indexOf("export async function exchangeGoogleIdToken"), lib.indexOf("export async function startGoogleLink"));
+    expect(exchange).toMatch(/client\.auth\.signInWithIdToken\(\{ provider: "google", token, nonce \}\)/);
+    expect(exchange.match(/client\.auth\.\w+/g)).toEqual(["client.auth.signInWithIdToken"]);
+  });
+
+  it("neither route starts an OAuth redirect any more, and the sign-up route posts no cookie of its own", async () => {
+    for (const f of [SIGNIN, SIGNUP]) {
+      const src = await readFile(new URL(f, import.meta.url), "utf8");
+      expect(src, f).not.toMatch(/signInWithOAuth|startGoogle\b|NextResponse\.redirect|\/auth\/callback/);
+      expect(src, f).toMatch(/exchangeGoogleIdToken/);
+    }
+    const signup = await readFile(new URL(SIGNUP, import.meta.url), "utf8");
+    // built, not written: the gate-pass scan below walks this file too
+    expect(signup).not.toMatch(new RegExp(["cookies\\.set", "sign" + "Pass", "PASS" + "_COOKIE"].join("|")));
+  });
+
+  it("GET /auth/google is gone from the tree, not merely unlinked", async () => {
+    const files = (await sourceFiles(new URL("../", import.meta.url))).map((u) => u.pathname);
+    expect(files.some((p) => p.endsWith("/app/auth/google/route.ts"))).toBe(false);
+    // ...and the scan can see a route when there is one
+    expect(files.some((p) => p.endsWith("/app/auth/link/google/route.ts"))).toBe(true);
+  });
+
+  it("/auth/link/google is untouched: still the linker, still a redirect", async () => {
+    const src = await readFile(new URL(LINK, import.meta.url), "utf8");
+    expect([...new Set(src.match(/startGoogle\w*/g))]).toEqual(["startGoogleLink"]);
+    expect(src).toMatch(/NextResponse\.redirect\(decision\.url\)/);
+    expect(src).not.toMatch(/signInWithIdToken|exchangeGoogleIdToken/);
+  });
+});
+
+/**
+ * #173 AC 3's second half: the gate pass was retired WITH its secret and every copy of its name.
+ * A cookie nothing sets, a secret nothing reads and a README line still asking for it are three
+ * ways the next runbook run wastes an hour, so the tree is scanned rather than trusted.
+ */
+describe("the gate pass is gone — cookie, secret and every spelling of the name (#173 AC 3)", () => {
+  // Built, never written: this file is under src/ and would otherwise report itself.
+  const NEEDLES = ["GATE_PASS" + "_SECRET", "tender" + "_gate", "sign" + "Pass(", "verify" + "Pass(", "PASS" + "_COOKIE"];
+
+  it("no file under src/ names the secret, the cookie, or the pass functions", async () => {
+    const files = await sourceFiles(new URL("../", import.meta.url));
+    expect(files.length, "the scan really walked src/").toBeGreaterThan(40);
+    const hits: string[] = [];
+    for (const f of files) {
+      const text = await readFile(f, "utf8");
+      for (const n of NEEDLES) if (text.includes(n)) hits.push(`${f.pathname}: ${n}`);
+    }
+    expect(hits).toEqual([]);
+    // the needles really match the shapes they are built from — the fixtures are built the same
+    // way, because the first run of this test found its own control assertion (the #39(d) trap)
+    expect(`env("${"GATE_PASS" + "_SECRET"}")`).toContain(NEEDLES[0]);
+    expect(`store.set("${"tender" + "_gate"}", "")`).toContain(NEEDLES[1]);
+  });
+
+  it("the env registry no longer declares it, and the README no longer asks for it", async () => {
+    const registry = await readFile(new URL("../../scripts/server-env.mjs", import.meta.url), "utf8");
+    const readme = await readFile(new URL("../../README.md", import.meta.url), "utf8");
+    // Both may MENTION the retirement in prose; neither may still ask for the value. In the
+    // registry that is a `name:` entry; in the README it is the bold-code form every runbook
+    // variable is introduced with.
+    expect(registry).not.toMatch(new RegExp(`name:\\s*"${NEEDLES[0]}"`));
+    expect(readme).not.toMatch(new RegExp(`\\*\\*\`${NEEDLES[0]}\``));
+    // ...and the scan would see the runbook form if it were there
+    expect("   **`GATE_PASS" + "_SECRET`**, any long random string").toMatch(new RegExp(`\\*\\*\`${NEEDLES[0]}\``));
   });
 });

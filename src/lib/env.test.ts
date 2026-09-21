@@ -16,15 +16,15 @@ import { env } from "./env";
 describe("env: a missing server name is reported by name (AC 1)", () => {
   const full = Object.fromEntries(THROWING_NAMES.map((n: string) => [n, `value-of-${n}`]));
 
-  it("the declared throwing set is the five the story names", () => {
+  it("the declared throwing set is the four left after #173 retired the gate pass", () => {
     // Spelled out ONCE, here, so the registry cannot silently drift from the acceptance
-    // criterion it was written against. A sixth throwing name is a deliberate edit to this line.
+    // criterion it was written against. The story named five; #173 retired the gate-pass secret
+    // with the Google redirect flow. A fifth throwing name is a deliberate edit to this line.
     expect(THROWING_NAMES).toEqual([
       "NEXT_PUBLIC_SUPABASE_URL",
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_SERVICE_ROLE_KEY",
       "RESEND_API_KEY",
-      "GATE_PASS_SECRET",
     ]);
   });
 
@@ -50,6 +50,6 @@ describe("env: a missing server name is reported by name (AC 1)", () => {
     // a fixed string would pass every case above and fail this one.
     const empty = {};
     expect(() => env("SUPABASE_SERVICE_ROLE_KEY", empty)).toThrow("SUPABASE_SERVICE_ROLE_KEY is not set");
-    expect(() => env("GATE_PASS_SECRET", empty)).toThrow("GATE_PASS_SECRET is not set");
+    expect(() => env("RESEND_API_KEY", empty)).toThrow("RESEND_API_KEY is not set");
   });
 });

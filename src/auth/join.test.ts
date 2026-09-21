@@ -462,65 +462,147 @@ describe("the comparison is constant-time — a property only the source can sho
 
 // ---------------------------------------------------------------------------------------------
 
+import { NOT_VERIFIED, NO_CREDENTIAL } from "./google-signin";
 import { googleSignup, type GoogleSignupDeps } from "./join";
 
-function googleFakes(overrides: Partial<GoogleSignupDeps> = {}) {
-  const calls = { inviteCode: 0, setPass: 0, startOAuth: 0 };
-  const passes: Parameters<GoogleSignupDeps["setPass"]>[0][] = [];
+/**
+ * #70 AC 4, re-taken on the ID-token flow by #173 (AC 3). The gate's negative cases are the same
+ * zero-effect claims as `join()`'s: a wrong code or an unticked box must exchange no token and
+ * touch no store. The recorder counts every dep by name, so the claim is about the whole list.
+ */
+function googleFakes(overrides: Partial<GoogleSignupDeps> & { exists?: boolean } = {}) {
+  const calls: string[] = [];
+  const exchanged: string[] = [];
+  const inserted: { display_name: string; adult_attested_at: string; email: string }[] = [];
+  const metadata: { display_name: string; adult_attested_at: string }[] = [];
+  const deleted: string[] = [];
+  const { exists, ...depOverrides } = overrides;
   const deps: GoogleSignupDeps = {
     inviteCode: async () => {
-      calls.inviteCode++;
+      calls.push("inviteCode");
       return "HSC-2027";
     },
-    setPass: async (p) => {
-      calls.setPass++;
-      passes.push(p);
+    exchange: async (credential, nonce) => {
+      calls.push("exchange");
+      exchanged.push(`${credential}|${nonce}`);
+      return {
+        user: { id: "g-1", email: "Bob@Example.org", user_metadata: { full_name: "Bob Example" } },
+      };
     },
-    startOAuth: async () => {
-      calls.startOAuth++;
-      return { url: "https://accounts.google.invalid/o/oauth2/auth?state=x" };
+    person: {
+      exists: async () => {
+        calls.push("exists");
+        return exists ?? false;
+      },
+      insert: async (row) => {
+        calls.push("insert");
+        inserted.push({ display_name: row.display_name, adult_attested_at: row.adult_attested_at, email: row.email });
+        return {};
+      },
+      setMetadata: async (_id, meta) => {
+        calls.push("setMetadata");
+        metadata.push(meta);
+        return {};
+      },
+      deleteUser: async (id) => {
+        calls.push("deleteUser");
+        deleted.push(id);
+        return {};
+      },
+    },
+    signOut: async () => {
+      calls.push("signOut");
     },
     now: () => new Date("2026-08-23T10:00:00Z"),
-    ...overrides,
+    ...depOverrides,
   };
-  return { deps, calls, passes };
+  return { deps, calls, exchanged, inserted, metadata, deleted };
 }
 
-const googleGood = { displayName: " Bob ", code: "HSC-2027", attested: true };
+const googleGood = {
+  displayName: " Bob ",
+  code: "HSC-2027",
+  attested: true,
+  credential: "eyJ.id.token",
+  nonce: "raw-nonce",
+};
 
-describe("googleSignup — the gate, then a pass and a redirect (#70 AC 4)", () => {
-  it("checks the code, sets the pass from the clock, starts OAuth, answers the URL", async () => {
-    const { deps, calls, passes } = googleFakes();
+describe("googleSignup — the gate, then the exchange and the row, in one request (#173 AC 3)", () => {
+  it("checks the code, exchanges the token WITH the nonce, mints the row from the form, answers the board", async () => {
+    const { deps, calls, exchanged, inserted, metadata } = googleFakes();
     const r = await googleSignup(googleGood, deps);
-    expect(r).toEqual({ status: 200, body: { url: "https://accounts.google.invalid/o/oauth2/auth?state=x" } });
-    expect(calls).toEqual({ inviteCode: 1, setPass: 1, startOAuth: 1 });
-    expect(passes).toEqual([
-      { display_name: "Bob", adult_attested_at: "2026-08-23T10:00:00.000Z", issued_at: "2026-08-23T10:00:00.000Z" },
+    expect(r).toEqual({ status: 200, body: { redirect: "/board" } });
+    expect(calls).toEqual(["inviteCode", "exchange", "exists", "setMetadata", "insert"]);
+    expect(exchanged).toEqual(["eyJ.id.token|raw-nonce"]);
+    // The row is minted from the FORM's name and the gate's clock — not from whatever Google put
+    // in the user's metadata (`full_name` above is not consulted).
+    expect(metadata).toEqual([{ display_name: "Bob", adult_attested_at: "2026-08-23T10:00:00.000Z" }]);
+    expect(inserted).toEqual([
+      { display_name: "Bob", adult_attested_at: "2026-08-23T10:00:00.000Z", email: "bob@example.org" },
     ]);
   });
 
-  it("wrong code: 403, no pass set, no redirect started", async () => {
+  it("wrong code: 403, no exchange, nothing touched", async () => {
     const { deps, calls } = googleFakes();
     const r = await googleSignup({ ...googleGood, code: "HSC-2026" }, deps);
     expect(r.status).toBe(403);
-    expect(calls).toEqual({ inviteCode: 1, setPass: 0, startOAuth: 0 });
+    expect(calls).toEqual(["inviteCode"]);
   });
 
   it("attestation unticked: 400, and the code is not even read", async () => {
     const { deps, calls } = googleFakes();
     const r = await googleSignup({ ...googleGood, attested: false }, deps);
     expect(r.status).toBe(400);
-    expect(calls).toEqual({ inviteCode: 0, setPass: 0, startOAuth: 0 });
+    expect(calls).toEqual([]);
   });
 
   it("empty name: 400 before the code is read", async () => {
     const { deps, calls } = googleFakes();
     expect((await googleSignup({ ...googleGood, displayName: "  " }, deps)).status).toBe(400);
-    expect(calls).toEqual({ inviteCode: 0, setPass: 0, startOAuth: 0 });
+    expect(calls).toEqual([]);
   });
 
-  it("500 when OAuth cannot start", async () => {
-    const { deps } = googleFakes({ startOAuth: async () => ({ error: "provider not enabled" }) });
+  it("no token, or no nonce: 400 before the code is read — a hand-built post touches nothing", async () => {
+    for (const patch of [{ credential: "" }, { nonce: "" }, { credential: undefined }, { nonce: 7 }]) {
+      const { deps, calls } = googleFakes();
+      const r = await googleSignup({ ...googleGood, ...patch }, deps);
+      expect(r).toEqual({ status: 400, body: { message: NO_CREDENTIAL } });
+      expect(calls, JSON.stringify(patch)).toEqual([]);
+    }
+  });
+
+  it("the recorder really would catch a dep — the control for the empty lists above", async () => {
+    const { deps, calls } = googleFakes();
+    await deps.inviteCode();
+    await deps.exchange("t", "n");
+    expect(calls).toEqual(["inviteCode", "exchange"]);
+  });
+
+  it("a refused exchange: 401 in plain words, no row, nobody signed out (there is no session)", async () => {
+    const { deps, calls } = googleFakes({
+      exchange: async () => ({ error: { code: "bad_oidc", message: "nonce mismatch" } }),
+    });
+    expect(await googleSignup(googleGood, deps)).toEqual({ status: 401, body: { message: NOT_VERIFIED } });
+    expect(calls).toEqual(["inviteCode"]);
+  });
+
+  it("a member already holding a person row simply signs in — nothing written", async () => {
+    const { deps, calls, inserted, metadata } = googleFakes({ exists: true });
+    expect(await googleSignup(googleGood, deps)).toEqual({ status: 200, body: { redirect: "/board" } });
+    expect(calls).toEqual(["inviteCode", "exchange", "exists"]);
+    expect(inserted).toEqual([]);
+    expect(metadata).toEqual([]);
+  });
+
+  it("signs the session back out and answers 500 when the row cannot be minted", async () => {
+    const { deps, calls, deleted } = googleFakes();
+    deps.person.insert = async () => {
+      calls.push("insert");
+      return { error: "42501" };
+    };
     expect((await googleSignup(googleGood, deps)).status).toBe(500);
+    expect(calls).toEqual(["inviteCode", "exchange", "exists", "setMetadata", "insert", "signOut"]);
+    // The gate always hands over its attestation, so the delete branch is unreachable from here.
+    expect(deleted).toEqual([]);
   });
 });

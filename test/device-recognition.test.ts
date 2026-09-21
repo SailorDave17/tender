@@ -59,6 +59,8 @@ const { POST: signinPOST } = await import("@/app/api/signin/route");
 const { POST: joinPOST } = await import("@/app/api/join/route");
 const { GET: callbackGET } = await import("@/app/auth/callback/route");
 const { POST: signoutPOST } = await import("@/app/auth/signout/route");
+const { POST: googleSigninPOST } = await import("@/app/api/signin/google/route");
+const { POST: googleSignupPOST } = await import("@/app/api/signup/google/route");
 
 /**
  * One awaitable stand-in for a PostgREST query builder. Every chain these three routes build
@@ -94,6 +96,12 @@ function healthyStack(overrides: { personExists?: boolean } = {}) {
     },
     auth: {
       signInWithPassword: async () => ({ data: { user: { id: "u1" } }, error: null }),
+      // #173: a Google-created user carries no attestation of ours. On sign-in that is a stray
+      // unless a person row exists; on sign-up the gate hands the attestation over itself.
+      signInWithIdToken: async () => ({
+        data: { user: { id: "u1", email: "ann@example.test", user_metadata: { full_name: "Ann" } } },
+        error: null,
+      }),
       exchangeCodeForSession: async () => ({
         data: { user: { id: "u1", email: "ann@example.test", user_metadata: { adult_attested_at: "2026-01-01T00:00:00.000Z" } } },
         error: null,
@@ -221,14 +229,6 @@ describe("the OAuth callback remembers the device (#123 AC 4)", () => {
     expect(remembered()?.options.httpOnly).toBe(true);
   });
 
-  it("still clears the gate pass — the new cookie did not displace the old one", async () => {
-    // Both go through the same store, which is the one mechanism this handler uses. If the two
-    // had been split across store and response, one of them would be silently lost.
-    await callbackGET(new NextRequest("https://tender.test/auth/callback?code=abc123"));
-    expect(jar.get("tender_gate")?.value).toBe("");
-    expect(jar.get("tender_gate")?.options.maxAge).toBe(0);
-  });
-
   it("remembers nothing when the exchange fails", async () => {
     supabase = {
       ...healthyStack(),
@@ -263,6 +263,84 @@ describe("the OAuth callback remembers the device (#123 AC 4)", () => {
   });
 });
 
+/**
+ * #173: the two ID-token routes are the fourth and fifth paths that produce a session, and both
+ * write the session through `cookies()` (`signInWithIdToken` on the cookie-bound client), which
+ * is exactly the path where a response-level marker vanishes. Same subject, same instrument.
+ */
+describe("the Google ID-token routes remember the device (#123 AC 4, extended by #173)", () => {
+  const GOOD = { credential: "eyJ.id.token", nonce: "raw-nonce" };
+
+  it("sign-in writes the marker through the store when the member has a person row", async () => {
+    const res = await googleSigninPOST(post("https://tender.test/api/signin/google", GOOD));
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toEqual({ redirect: "/board" });
+    expect(remembered()?.value).toBe(RECOGNITION_VALUE);
+    expect(remembered()?.options.path).toBe("/");
+  });
+
+  it("sign-in remembers nothing for a stray — deleted and signed back out (#173 AC 2)", async () => {
+    supabase = healthyStack({ personExists: false });
+    const deleted: string[] = [];
+    (supabase.auth as { admin: { deleteUser: (id: string) => unknown } }).admin.deleteUser = async (id: string) => {
+      deleted.push(id);
+      return { error: null };
+    };
+    const res = await googleSigninPOST(post("https://tender.test/api/signin/google", GOOD));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ message: expect.stringMatching(/not linked to a member here/) });
+    expect(deleted).toEqual(["u1"]);
+    expect(remembered()).toBeUndefined();
+  });
+
+  it("sign-in with no token makes no call and remembers nothing", async () => {
+    let touched = 0;
+    // `await supabaseServer()` reads `then` off whatever it is handed — that is the await, not a
+    // Supabase call, so it is the one key the counter ignores.
+    supabase = new Proxy(healthyStack(), {
+      get: (_t, key) => {
+        if (key !== "then") touched++;
+        return undefined;
+      },
+    }) as Record<string, unknown>;
+    const res = await googleSigninPOST(post("https://tender.test/api/signin/google", {}));
+    expect(res.status).toBe(400);
+    expect(touched).toBe(0);
+    expect(remembered()).toBeUndefined();
+  });
+
+  it("sign-up writes the marker through the store when the gate mints the row", async () => {
+    supabase = healthyStack({ personExists: false });
+    const res = await googleSignupPOST(post("https://tender.test/api/signup/google", {
+      displayName: "Ann Crew",
+      code: INVITE,
+      attested: true,
+      ...GOOD,
+    }));
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toEqual({ redirect: "/board" });
+    expect(remembered()?.value).toBe(RECOGNITION_VALUE);
+  });
+
+  it("sign-up remembers nothing when the invite code is refused, and never reaches the exchange", async () => {
+    supabase = healthyStack({ personExists: false });
+    let exchanged = 0;
+    (supabase.auth as { signInWithIdToken: () => unknown }).signInWithIdToken = async () => {
+      exchanged++;
+      return { data: { user: null }, error: null };
+    };
+    const res = await googleSignupPOST(post("https://tender.test/api/signup/google", {
+      displayName: "Ann Crew",
+      code: "NOT-THIS-SEASON",
+      attested: true,
+      ...GOOD,
+    }));
+    expect(res.status).toBe(403);
+    expect(exchanged).toBe(0);
+    expect(remembered()).toBeUndefined();
+  });
+});
+
 describe("signing out does not forget the device (#123 AC 5)", () => {
   it("leaves the recognition cookie exactly where it was", async () => {
     // The single line that separates this story from reading the `sb-*` cookies: those are cleared
@@ -290,11 +368,11 @@ describe("signing out does not forget the device (#123 AC 5)", () => {
 });
 
 describe("this file really ran (#41's import-death guard)", () => {
-  it("imported all four handlers", () => {
+  it("imported all six handlers", () => {
     // A suite that dies at import leaves NO failure and NO pending test — its cases simply vanish
     // from the total. Naming the imports in an assertion is the cheapest thing that cannot pass
     // while the file is dead.
-    for (const handler of [signinPOST, joinPOST, callbackGET, signoutPOST]) {
+    for (const handler of [signinPOST, joinPOST, callbackGET, signoutPOST, googleSigninPOST, googleSignupPOST]) {
       expect(typeof handler).toBe("function");
     }
   });

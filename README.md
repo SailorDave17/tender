@@ -403,7 +403,7 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    |---|---|
    | Site URL | `https://tender.madcowsailing.com` |
    | Redirect URLs | `https://tender.madcowsailing.com/**` and `http://localhost:3000/**` |
-   | Allow new users to sign up | **ON** (since #70, 2026-08-23 — it read OFF until then, and was never actually in force: the toggle did not persist, #12/#50). Tender is still invite-only, but the refusal moved out of the dashboard: a Google sign-up has to be allowed to create the auth user, so `/auth/callback` deletes any new auth user that arrives without a valid gate pass (`src/auth/person.ts`). Switching this OFF breaks *Continue with Google* for new members. Its cost is **stray auth users**, which since #85 the invite gate handles — see below |
+   | Allow new users to sign up | **ON** (since #70, 2026-08-23 — it read OFF until then, and was never actually in force: the toggle did not persist, #12/#50). Tender is still invite-only, but the refusal moved out of the dashboard: a Google sign-up has to be allowed to create the auth user, so `ensurePerson` deletes any new auth user that arrives with no attestation and no invite gate behind it — the Google sign-in route and `/auth/callback` both reach it that way (`src/auth/person.ts`). Switching this OFF breaks *Continue with Google* for new members. Its cost is **stray auth users**, which since #85 the invite gate handles — see below |
    | Allow manual linking | **ON** — *set and read back 2026-08-24 on #74; it had been OFF, the vendor default, since the project was created.* Without it *Link a Google account* on `/profile` cannot work, and a member whose Google address differs from the one they joined with has no way to be recognised. Detail, and how to check it, under **Google provider** below |
 
    Check it without the dashboard: `GET /auth/v1/settings` reports `disable_signup: false` and
@@ -461,35 +461,58 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    does not hold and should not — so it is a thing the owner can run, not a probe for
    `check:live`.
 
-   **Google provider** (#70). In Google Cloud, an OAuth client of type *Web application* with
-   `https://<project-ref>.supabase.co/auth/v1/callback` as its authorised redirect URI; its client
-   id and secret go under **Authentication → Providers → Google** in Supabase. A member whose
-   account the email gate created and who later signs in with a Google account carrying the same
-   verified address is linked to the existing user by Supabase (automatic identity linking) — #70's
-   AC 6 is where that is measured. **A different address is not linked**, which is what *Allow
-   manual linking* below is for. And a fifth server-only name beside the four above:
-   **`GATE_PASS_SECRET`**, any long random string (`openssl rand -base64 32`), in `.env.local` and in
-   Vercel's environment — it signs the ten-minute gate pass that carries a new member's name and
-   attestation from the sign-up form through Google and back to `/auth/callback`. Without it the
-   Google sign-up route throws and the callback treats every pass as invalid.
+   **Google provider** (#70, moved to the ID-token flow by #173). In Google Cloud, one OAuth
+   client of type *Web application* serves all three Google flows, and it needs **both** of these
+   on it:
 
-   **What a member sees at Google is the Supabase host, and that is not a misconfiguration**
-   (#77). Google renders the **root domain of the OAuth client's redirect URI**, never the App
-   name from consent-screen branding, so with the callback above every Google screen on the
-   sign-in, sign-up and link flows names `<project-ref>.supabase.co`: the account chooser says
-   *"to continue to `<project-ref>.supabase.co`"* and the consent page says *"Sign in to
-   `<project-ref>.supabase.co`"* and *"Google will allow `<project-ref>.supabase.co` to access this
-   info about you"*. The word *Tender* appears nowhere. *Measured* 2026-08-23, 35 minutes after
-   the client was created, and again 2026-09-20, 27 days on, byte-for-byte the same — with every
-   field on the Google side correct and `GET /auth/v1/settings` reporting `external.google: true`.
-   Do not go hunting for a wrong client; Supabase documents the behaviour and warns it *"does not
-   inspire trust"*. Their remedy is a Custom Domain (priced 2026-08-23 at $10/month on a paid
-   plan, outside the $0 charter). The one this project took is **#173**: sign-in and sign-up move
-   to the Google ID-token flow on our own origin, after which only the `/profile` link flow —
-   redirect-only in GoTrue — still shows the Supabase host. Until #173 ships, this is the screen
-   to warn a new member about. To look at it without granting anything, append `&prompt=consent`
-   to a hand-built `/auth/v1/authorize?provider=google&redirect_to=…` URL — consent is
-   remembered, so an ordinary attempt renders nothing — and press Cancel, never Continue.
+   - **Authorised JavaScript origins**: `https://tender.madcowsailing.com`, and
+     `http://localhost:3000` for `next dev`. Sign-in and sign-up render Google Identity Services'
+     button on our own page (`src/auth/GoogleButton.tsx`) and obtain the ID token there, and GIS
+     refuses to render for an origin that is not listed — the browser console says
+     *"The given origin is not allowed for the given client ID"* and the page shows no button.
+   - **Authorised redirect URI**: `https://<project-ref>.supabase.co/auth/v1/callback`, still —
+     the `/profile` link flow (#74) goes through it, and so does nothing else since #173.
+
+   Its client id and secret go under **Authentication → Providers → Google** in Supabase, and
+   the client id ALSO goes in the app's environment as **`NEXT_PUBLIC_GOOGLE_CLIENT_ID`**, in
+   `.env.local` and in Vercel's — it is public (every page carries it), and it is what the button
+   renders with. Unset, `/join` shows no Google option on either tab and nothing says why
+   (`npm run check:live`'s first line does). Leave **Skip nonce checks** OFF on the provider
+   (#70 left it off; #173 relies on it): the page hashes a fresh random nonce per render (SHA-256,
+   hex) and hands the hash to GIS, the route sends the raw value with `signInWithIdToken`, and
+   Supabase refuses a token whose nonce claim does not hash to it — measured, see #173.
+
+   A member whose account the email gate created and who later signs in with a Google account
+   carrying the same verified address is linked to the existing user by Supabase (automatic
+   identity linking) — #70's AC 6 measured it on the redirect flow, #173's AC 4 on this one. **A
+   different address is not linked**, which is what *Allow manual linking* below is for.
+
+   **The gate pass is gone.** Until #173 a fifth server-only name, `GATE_PASS_SECRET`, signed a
+   ten-minute cookie that carried a new member's name and attestation across the Google
+   redirect to `/auth/callback`. The ID token now arrives in the same request as the form, so the
+   sign-up route checks the code, exchanges the token and mints the person row in one step, and
+   the cookie, the secret and the callback leg were all retired together. Remove the variable
+   from Vercel; nothing reads it.
+
+   **What a member sees at Google, flow by flow** (#77, #173). Google's screens name the
+   **origin that asked** — for the redirect flow that is the root domain of the OAuth client's
+   redirect URI, never the App name from consent-screen branding, which is why #77 measured
+   *"Sign in to `<project-ref>.supabase.co`"* on every flow with every Google-side field correct
+   (2026-08-23 and again 27 days on, byte-for-byte). Supabase documents it and warns it *"does not
+   inspire trust"*; their remedy, a Custom Domain, is $10/month on a paid plan and outside the $0
+   charter. #173 took the other route, and the three flows now differ:
+
+   - **Sign in** and **Sign up** (`/join`, both tabs): the GIS popup, bound to our origin — it
+     names `tender.madcowsailing.com` (and *Tender*, the App name, where the popup shows one).
+     The exact heading text is recorded on #173.
+   - **Link a Google account** (`/profile`): still the redirect through Supabase, because
+     GoTrue's identity-link endpoint is redirect-only — `@supabase/auth-js` has no ID-token form
+     of `linkIdentity`. So this one screen still says *"to continue to
+     `<project-ref>.supabase.co`"*, and that is not a misconfiguration; a member linking is
+     already signed in, which is why it was left. To look at it without granting anything,
+     append `&prompt=consent` to a hand-built `/auth/v1/authorize?provider=google&redirect_to=…`
+     URL — consent is remembered, so an ordinary attempt renders nothing — and press Cancel,
+     never Continue.
 
    **Allow manual linking** (#74) — the table's fourth row, at **Authentication → Sign In /
    Providers → User Signups**, sitting directly under *Allow new users to sign up* and described
@@ -513,7 +536,8 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    (measured 2026-08-21). Point Auth → SMTP at Resend, sending from `tender.madcowsailing.com`;
    add Resend's DNS records in the Cloudflare zone. **And a Resend API key as `RESEND_API_KEY`**
    in `.env.local` and in Vercel's environment (server-only, a fourth name beside step 1's
-   three — and `GATE_PASS_SECRET` under the Google provider above is the fifth): since #23 the app sends the rung notifications itself, by Resend's REST API from
+   three — `GATE_PASS_SECRET` was a fifth until #173 retired it; the Google client id under the
+   provider above is public, not server-only): since #23 the app sends the rung notifications itself, by Resend's REST API from
    `tender@tender.madcowsailing.com`, and without the key the notification step fails before
    any send — the post still stands, the failure goes to the function log, nobody is emailed
    (#65 is where a missing name becomes a startup error). Both kinds of mail share Resend Free's 100/day;

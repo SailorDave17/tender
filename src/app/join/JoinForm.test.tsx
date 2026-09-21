@@ -37,6 +37,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * #173: *Continue with Google* is Google Identity Services' own iframe, which jsdom cannot render
+ * and no test should drive. The stand-in is a plain button that hands the form a fixed token and
+ * nonce the way GIS's callback would — so what these tests exercise is everything on OUR side of
+ * that callback: which route is posted to, with what, and what the two password boxes may not do
+ * to it. The real component's own contract (the nonce it generates, the hash it hands GIS) is
+ * `src/auth/GoogleButton.test.ts`.
+ */
+vi.mock("@/auth/GoogleButton", () => ({
+  GoogleButton: ({ flow, onCredential }: { flow: string; onCredential: (c: string, n: string) => void }) => (
+    <button type="button" data-google={flow} onClick={() => onCredential("fake-id-token", "fake-raw-nonce")}>
+      Continue with Google
+    </button>
+  ),
+}));
+
+const CLIENT_ID = "727868912920-test.apps.googleusercontent.com";
+
 const GOOD = "correct-horse-battery";
 
 /** Fill everything the sign-up form requires, then set the two password boxes. */
@@ -56,12 +74,13 @@ function submitSignUp(container: HTMLElement) {
 }
 
 /** Records every request the form makes, whatever its path, and answers the way the route does. */
-function recordFetch(answer: () => { ok: boolean; body: unknown }) {
+function recordFetch(answer: () => { ok: boolean; body: unknown }, bodies: unknown[] = []) {
   const calls: string[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: unknown) => {
+    vi.fn(async (input: unknown, init?: { body?: string }) => {
       calls.push(String(input));
+      if (init?.body) bodies.push(JSON.parse(init.body));
       const { ok, body } = answer();
       return { ok, json: async () => body } as unknown as Response;
     }),
@@ -98,9 +117,10 @@ describe("AC 5 — the Sign up arm carries the shared two boxes", () => {
     expect(q.getByRole("button", { name: "Show confirm password" })).toBeInstanceOf(HTMLButtonElement);
   });
 
-  it("still lets Continue with Google submit with both boxes empty", async () => {
-    const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }));
-    const { container } = render(<JoinForm initialMode="signup" />);
+  it("still lets Continue with Google go through with both boxes empty, carrying the token and the nonce", async () => {
+    const bodies: unknown[] = [];
+    const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }), bodies);
+    const { container } = render(<JoinForm initialMode="signup" googleClientId={CLIENT_ID} />);
     const q = within(container);
     fireEvent.change(q.getByLabelText("Your name"), { target: { value: "Ann Crew" } });
     fireEvent.change(q.getByLabelText("Invite code"), { target: { value: "rotate-me" } });
@@ -108,9 +128,42 @@ describe("AC 5 — the Sign up arm carries the shared two boxes", () => {
 
     fireEvent.click(q.getByRole("button", { name: "Continue with Google" }));
 
-    // The Google arm must reach its route without an email or a password; if either box became
-    // `required`, jsdom (like a browser) would refuse the submit and this list would stay empty.
+    // The Google arm must reach its route without an email or a password; since #173 it checks
+    // the form's constraints itself with `reportValidity`, so a `required` on either box would
+    // make that call refuse and this list would stay empty.
     await waitFor(() => expect(calls).toEqual(["/api/signup/google"]));
+    expect(bodies).toEqual([
+      { displayName: "Ann Crew", code: "rotate-me", attested: true, credential: "fake-id-token", nonce: "fake-raw-nonce" },
+    ]);
+  });
+
+  it("posts nothing to the Google route while the name, code or 18+ box is missing (#173 AC 3)", async () => {
+    const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }));
+    const { container } = render(<JoinForm initialMode="signup" googleClientId={CLIENT_ID} />);
+    const q = within(container);
+    fireEvent.change(q.getByLabelText("Your name"), { target: { value: "Ann Crew" } });
+    // code and the box left empty
+    fireEvent.click(q.getByRole("button", { name: "Continue with Google" }));
+    await waitFor(() => expect(q.getByRole("alert").textContent).toMatch(/invite code and the 18\+ box/));
+    expect(calls).toEqual([]);
+  });
+
+  it("the Sign in tab's Google button posts the token and nonce to the sign-in route", async () => {
+    const bodies: unknown[] = [];
+    const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }), bodies);
+    const { container } = render(<JoinForm initialMode="signin" googleClientId={CLIENT_ID} />);
+    fireEvent.click(within(container).getByRole("button", { name: "Continue with Google" }));
+    await waitFor(() => expect(calls).toEqual(["/api/signin/google"]));
+    expect(bodies).toEqual([{ credential: "fake-id-token", nonce: "fake-raw-nonce" }]);
+  });
+
+  it("with no client id there is no Google option on either tab — the degrade, not an error", () => {
+    for (const mode of ["signin", "signup"] as const) {
+      const { container, unmount } = render(<JoinForm initialMode={mode} />);
+      expect(within(container).queryByRole("button", { name: "Continue with Google" })).toBeNull();
+      expect(container.querySelector("[data-google]")).toBeNull();
+      unmount();
+    }
   });
 });
 
