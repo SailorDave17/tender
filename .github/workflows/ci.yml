@@ -30,3 +30,71 @@ jobs:
       # credentials, so a green step here would have been evidence about nothing.
       - run: npm test -- --reporter=verbose
       - run: npm run build
+
+  # Story #45 — ADR 006's "Playwright smoke once screens exist". The core path, driven through a
+  # real browser against a real GoTrue and PostgREST: sign in, mark a day, post, answer, accept, and
+  # the crew's phone reaching the skipper only after the acceptance. It exists for the class of
+  # defect the job above is structurally blind to — a Server Component's query, a redirect, a
+  # cookie GoTrue actually wrote, the proxy refusing a session. The steps are in scripts/smoke.mjs;
+  # the half that decides anything is scripts/smoke-core.mjs, tested by `npm test` above.
+  #
+  # PULL REQUESTS ONLY (AC 3), and the `if` is what says so: the workflow also runs on pushes to
+  # develop and release, and a merged PR has already been through this. timeout-minutes is AC 3's
+  # eight-minute budget as a limit rather than a hope — over it, the job is cancelled red.
+  # test/smoke.test.ts holds both lines.
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Pinned to the version measured on this story; `latest` would move the stack under the job.
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.117.0
+      - run: npm ci
+      # In a scratch directory, never the checkout: `supabase init` writes a config.toml the repo
+      # does not carry. The directory's name is the project id, so the database container is
+      # supabase_db_smoke. Only db, auth, rest and kong are started; the rest is image pulls the
+      # smoke never talks to.
+      - name: start a local Supabase stack from supabase/migrations
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
+          supabase init --force --with-intellij-settings=false --with-vscode-settings=false
+          rm -rf supabase/migrations && cp -r "$GITHUB_WORKSPACE/supabase/migrations" supabase/migrations
+          supabase start -x studio,imgproxy,edge-runtime,logflare,vector,postgres-meta,supavisor,realtime,storage-api,mailpit
+          supabase status -o json > "$RUNNER_TEMP/stack.json"
+          # A healthy stack is not a current one: count what was applied against what is on disk.
+          files=$(ls supabase/migrations/*.sql | wc -l)
+          applied=$(docker exec supabase_db_smoke psql -U postgres -Atc "select count(*) from supabase_migrations.schema_migrations")
+          echo "migrations: $applied applied of $files on disk"
+          test "$applied" -eq "$files"
+      # The same three names the app reads, so the build, the server and the smoke all see the stack.
+      # They must be set for the BUILD: `next build` inlines NEXT_PUBLIC_* into the proxy, and a build
+      # without them talks to a different project and refuses every session (README, Working on it).
+      - name: point the build, the server and the smoke at the stack
+        run: |
+          echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL "$RUNNER_TEMP/stack.json")" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY "$RUNNER_TEMP/stack.json")" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY "$RUNNER_TEMP/stack.json")" >> "$GITHUB_ENV"
+      - run: npm run build
+      # No RESEND_API_KEY here, deliberately: every send fails at transport construction and the
+      # ...Live wrappers catch it, so the log carries one "RESEND_API_KEY is not set" line per
+      # notify (rung, answer, match) and nobody is emailed. Those lines are expected.
+      - name: serve the build
+        run: nohup npm start > "$RUNNER_TEMP/next.log" 2>&1 &
+      - run: npm run smoke -- --db-container supabase_db_smoke --out "$RUNNER_TEMP/smoke-output"
+      - name: what the server said
+        if: failure()
+        run: cat "$RUNNER_TEMP/next.log"
+      # smoke.mjs saves each person's page as it stood when a step failed.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: smoke-output
+          path: ${{ runner.temp }}/smoke-output
+          if-no-files-found: ignore

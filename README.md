@@ -45,6 +45,7 @@ npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- 
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
 npm run perf:floor -- --db-container supabase_db_<dir>  # ADR 002's kill condition, re-measured
+npm run smoke -- --db-container supabase_db_<dir>       # the core path in a real browser (CI runs it on every PR)
 ```
 
 Node 24 (`.nvmrc`). Copy `.env.example` to `.env.local` — names only are committed, never values.
@@ -271,6 +272,58 @@ Two traps it guards, both of which produce a *reassuring* number rather than an 
 Everything that decides an outcome is in `scripts/lighthouse-floor-core.mjs`, exercised by
 `test/lighthouse-floor.test.ts` with no stack, no browser and no network — the same split as
 `check-live.mjs` and `verify-migrations.mjs`.
+
+## The smoke
+
+**CI's `smoke` job drives the core path through a real browser on every pull request** (#45, ADR
+006's "Playwright smoke later"): two people seeded pre-confirmed with `auth.admin.createUser`, each
+signing in through `/join`; the crew marks a race day on `/board`; the skipper posts a need; the crew
+answers "I can"; the skipper accepts. It then checks that the crew's phone reached the skipper
+**only after** the acceptance: it is absent from the skipper's page before, raw HTML and flight
+data included, and present after in the same read and in the contact panel. The job starts a local
+Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
+pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
+`test/smoke.test.ts` holds both of those lines.
+
+Sign-in is by **password**, not the admin-generated magic link #45 was filed with. #99 removed the
+magic link from the app, and an admin link could now reach a session only by injecting cookies
+around the sign-in screen (owner decision, 2026-09-21).
+
+To run it locally, start a stack in a scratch directory (never the checkout), build against it,
+serve the build, then run the smoke with the same three variables set:
+
+```
+npx supabase init --force --with-intellij-settings=false --with-vscode-settings=false
+rm -rf supabase/migrations && cp -r <tender>/supabase/migrations supabase/migrations
+npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,postgres-meta,supavisor,realtime,storage-api,mailpit
+# in the checkout, with NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and
+# SUPABASE_SERVICE_ROLE_KEY set to the stack's printed values:
+npm run build && npx next start -p 3145 &
+npm run smoke -- --db-container supabase_db_<dir> --base-url http://localhost:3145
+```
+
+It **writes**: it deletes and re-creates its two users, their race day and their boat, so it refuses
+any Supabase URL that is not loopback, and its npm script loads no `.env.local`. A re-run starts from
+the state CI does. The browser is the machine's own Chrome through `playwright-core`
+(`channel: "chrome"`): nothing is downloaded, and CI's Chrome is whatever `ubuntu-latest` ships,
+so it is **not pinned**. On a red run it saves each person's page to `--out` (CI uploads it as the
+`smoke-output` artifact) and names the step that broke. The steps after that one print as
+*not reached*, never as failed.
+
+What it cannot see:
+
+- **Email.** CI sets no `RESEND_API_KEY`, so every send fails at transport construction and is
+  caught: the log carries one `RESEND_API_KEY is not set` line each for the rung, answer and match
+  notifications, which also shows each notify call was reached.
+- **The hosted project's grants.** The stack is the CLI's image, whose default privileges differ
+  from the live project's. That seam is `check:live`'s and #48's, not this job's.
+- **Google sign-up, the invite gate, and the password reset.** Those are the other entrances to a
+  session; this job exercises the one a returning member uses.
+
+Everything that decides an outcome is in `scripts/smoke-core.mjs`, exercised with no stack and no
+browser. The steps themselves were proven against a local stack by three mutations, each red at the
+predicted step and nowhere earlier: the accept step deleted from the smoke, `acceptAnswer` never
+calling `accept_answer()`, and the contact policy narrowed back to self-only.
 
 ## Owner runbook — the steps only the owner can do
 
