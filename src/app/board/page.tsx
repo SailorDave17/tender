@@ -67,34 +67,28 @@ export default async function BoardPage({
   const boardPosts = data.posts.filter((p) => p.closed_at === null || data.matches.has(p.id));
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <RegisterServiceWorker />
       <h1>Tender</h1>
       <InstallBanner />
-      <p>
-        Signed in as {me?.display_name ?? user?.email ?? "someone"}. <Link href="/profile" prefetch={false}>Your profile</Link>
-      </p>
 
       {suspension && (
-        <p role="status" data-banner="suspended" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
+        <p role="status" data-banner="suspended">
           {SUSPENDED_NOTE}
         </p>
       )}
       {unrated && (
-        <p role="status" data-banner="no-rating" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
+        <p role="status" data-banner="no-rating">
           Before you can mark the days you can sail, <Link href="/profile" prefetch={false}>set your competence on your profile</Link>.
         </p>
       )}
       {error && <p role="alert">{error === "refused" ? explainPostRefusal(error) : explainAvailabilityRefusal(error)}</p>}
-      <p>
-        <Link href="/boats" prefetch={false}>Your boats</Link> · <Link href="/post/new" prefetch={false}>Post a crew need</Link>
-      </p>
 
       <h2>Race days</h2>
       {!dates?.length ? (
         <p>The season has no dates yet.</p>
       ) : (
-        <ol style={{ listStyle: "none", padding: 0, display: "grid", gap: "0.5rem" }}>
+        <ol data-list="stack" data-race-days>
           {dates.map((d) => {
             const f = formatStartsAt(d.starts_at);
             const s = byDate.get(d.id) ?? { count: 0, mine: false };
@@ -108,9 +102,9 @@ export default async function BoardPage({
                 data-race-date={d.id}
                 data-past={past}
                 data-available={s.mine}
-                style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}
+                data-row
               >
-                <span style={{ flex: 1 }}>
+                <span data-grow data-day>
                   <strong>{f.date}</strong> {f.time} — {d.title}
                   <br />
                   <small data-available-count={s.count}>
@@ -128,7 +122,7 @@ export default async function BoardPage({
                   </form>
                 )}
                 {posts.length > 0 && (
-                  <ul data-posts={posts.length} style={{ flexBasis: "100%", listStyle: "none", padding: "0 0 0 1rem", margin: 0, display: "grid", gap: "0.35rem" }}>
+                  <ul data-posts={posts.length}>
                     {posts.map((p) => {
                       const boat = data.boats.get(p.boat_id);
                       if (!boat) return null;
@@ -172,16 +166,7 @@ export default async function BoardPage({
           })}
         </ol>
       )}
-      {me?.is_admin && (
-        <p>
-          {/* /admin/dates has had a dynamic child since #38, so Next requires <Link> here. */}
-          <a href="/admin">Admin</a> · <Link href="/admin/dates" prefetch={false}>Edit race dates</Link>
-        </p>
-      )}
-
-      <form action="/auth/signout" method="post">
-        <button type="submit">Sign out</button>
-      </form>
+      {/* Since #154 the identity line, sign-out, and the boats / post / admin links are the shell's. */}
     </main>
   );
 }

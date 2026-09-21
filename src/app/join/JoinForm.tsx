@@ -174,8 +174,8 @@ export function JoinForm({
   const google = googleClientId.length > 0;
 
   return (
-    <div style={{ display: "grid", gap: "1rem" }}>
-      <div role="tablist" aria-label="Sign in or sign up" style={{ display: "flex", gap: "0.5rem" }}>
+    <div data-stack="loose">
+      <div role="tablist" aria-label="Sign in or sign up" data-tabs>
         <button
           type="button"
           role="tab"
@@ -203,7 +203,7 @@ export function JoinForm({
       </div>
 
       {mode === "signin" ? (
-        <form onSubmit={onSignIn} data-form="signin" style={{ display: "grid", gap: "0.75rem" }}>
+        <form onSubmit={onSignIn} data-form="signin" data-stack>
           <p>Already a member? Sign in with your email and password — no invite code needed.</p>
           <label>
             Email
@@ -224,7 +224,7 @@ export function JoinForm({
           </a>
         </form>
       ) : (
-        <form ref={signUpForm} onSubmit={onSignUp} data-form="signup" style={{ display: "grid", gap: "0.75rem" }}>
+        <form ref={signUpForm} onSubmit={onSignUp} data-form="signup" data-stack>
           <p>New here? You need this season&apos;s invite code from the club.</p>
           <label>
             Your name
@@ -237,7 +237,7 @@ export function JoinForm({
           <label>
             <input name="attested" type="checkbox" required /> I am 18 or over
           </label>
-          <fieldset style={{ display: "grid", gap: "0.5rem" }}>
+          <fieldset>
             <legend>Finish with</legend>
             <label>
               Email
@@ -260,7 +260,7 @@ export function JoinForm({
             </button>
             {google && (
               <>
-                <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                <p data-hint>
                   Or skip the password and use Google — nothing else to fill in:
                 </p>
                 <GoogleButton clientId={googleClientId} text="signup_with" flow="signup" onCredential={onGoogleSignUp} />

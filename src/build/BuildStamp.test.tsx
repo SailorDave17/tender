@@ -16,6 +16,8 @@ import { BuildStamp } from "./BuildStamp";
 vi.mock("@/brand/club-theme", () => ({
   loadClubTheme: async () => ({ name: "Hoover Sailing Club", ...HOOVER_SAILING_CLUB }),
 }));
+// Since #154 the layout also reads the session, through `next/headers`, which has no request here.
+vi.mock("@/shell/session", () => ({ currentPerson: async () => null }));
 const FULL = { version: "0.1.0", sha: "3c7759e", ref: "feature/169-build-stamp", builtAt: "2026-09-19T14:03:22.000Z" };
 
 /** The text inside `<span data-x>`, or undefined when the span is absent. */

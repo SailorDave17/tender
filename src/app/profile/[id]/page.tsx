@@ -37,7 +37,7 @@ export default async function PersonProfilePage({ params }: { params: Promise<{ 
   if (!person) notFound();
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <h1>{person.display_name}</h1>
       <ProfileCard
         person={person}

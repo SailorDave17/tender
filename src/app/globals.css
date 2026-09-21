@@ -1,27 +1,595 @@
 /*
- * --brand-disc and --brand-mark are NOT declared here. src/app/layout.tsx sets both on <html>
- * from the club row on every request (story #41), so a value written here would be a second
- * copy that nothing holds to the first. --paper is a constant and stays one: it is not a club
- * decision (src/brand/theme.ts). test/manifest.test.ts holds it equal to BACKGROUND_COLOUR.
+ * THE TOKEN LAYER (story #153). Every colour, type size, space and duration the app paints with
+ * is a custom property declared here, in the Hoover pair, and nowhere else. Until #153 this file
+ * was ten lines, `--hull-green` was declared and painted nowhere, and every screen carried its
+ * own `padding: 2rem; fontFamily: system-ui; maxWidth: 32rem` inline — eleven copies of one
+ * decision. #154 (the shell) and #155 (the surfaces) read from here; they do not add colours.
+ *
+ * TWO PALETTES MEET HERE, AND THEY ARE DELIBERATELY NOT THE SAME THING.
+ *
+ *   - `--brand-disc` / `--brand-mark` are NOT declared here. `src/app/layout.tsx` sets both on
+ *     `<html>` from the club row on every request (story #41), so a value written here would be a
+ *     second copy that nothing holds to the first. They paint the badge and the brand bar — the
+ *     club's mark — and `/admin/theme` can change them to any pair at 3:1. `--bar-ink`, set on
+ *     `<html>` beside them, is the bar's text colour: white or black by contrast with the disc.
+ *   - `--accent` and everything below it are the PRODUCT's palette: the Hoover pair as constants,
+ *     the owner's 2026-09-17 reversal recorded in `src/brand/theme.ts`. They are constants rather
+ *     than `var(--brand-disc)` because the contrast proof has to be computable: an admin may save
+ *     any disc that clears 3:1 against its mark, and nothing at save time asks whether white text
+ *     reads on it, so a product accent that followed the row could not promise 4.5:1 to anyone.
+ *     `test/tokens.test.ts` holds `--accent` equal to `HOOVER_SAILING_CLUB.disc` and `--paper`
+ *     to `BACKGROUND_COLOUR`, so the CSS and `theme.ts` cannot drift apart.
+ *
+ * EVERY COLOUR TOKEN HAS A DARK VALUE. The dark block below redeclares each one, and
+ * `test/tokens.test.ts` refuses a colour token that is missing there or that merely repeats its
+ * light value — the state this file was in before #153, where every border and badge in the app
+ * was fixed light-mode (`#ccc` table rules near-invisible on the dark background).
+ *
+ * THE PAIRINGS ARE THE CONTRACT. Not every token may sit on every other: `--ink-muted` on
+ * `--accent` is nobody's promise, and `--line` is a boundary, not a text colour. The pairs a
+ * surface may use are listed in `test/tokens.ts` (`PAIRINGS`), and the test computes every one of
+ * them in both schemes with the WCAG formula from `src/brand/contrast.ts` — 4.5:1 for text, 3:1 for
+ * non-text — and prints the ratios on pass as well as on fail, so a value drifting toward the line
+ * is visible before it crosses it. A surface that needs a pair not listed adds it to the table
+ * (and so to the proof), never to the page.
+ *
+ * `--dur` is re-pointed to `0s` under `prefers-reduced-motion`. That alone is enough ONLY while
+ * this file carries no blanket `* { transition-duration: 0.01ms !important }` reset — a token
+ * loses to an `!important` it cannot see, and reads back `0s` while the property reads `1e-05s`
+ * (cairn: `a-token-loses-to-an-important-it-cannot-see`). So `test/reduced-motion.test.ts` reads
+ * `getComputedStyle(el).transitionDuration` in a real Chrome, never the custom property, and it
+ * is that reading which would catch such a reset being added later.
  */
 :root {
   color-scheme: light dark;
+
+  /* ---- colour, light scheme ------------------------------------------------------------- */
+  /* The page. `BACKGROUND_COLOUR` in theme.ts; the manifest's splash colour behind the icon. */
   --paper: #edf0ea;
+  /* A card, a table cell, a message bubble — one step off the page. */
+  --surface: #ffffff;
+  /* Body text. */
+  --ink: #1a1a1a;
+  /* Secondary text: timestamps, hints, the build stamp. Text-grade on paper AND surface. */
+  --ink-muted: #4f5a55;
+  /* Control boundaries and table rules. Non-text grade (3:1) on paper AND surface, both schemes —
+     which is what a `#ccc` rule never was, in either. */
+  --line: #6f7a75;
+  /* Hoover blue: links, the primary fill. Text-grade on paper and surface; the fill under --accent-ink. */
+  --accent: #395fac;
+  /* Text on an accent fill. */
+  --accent-ink: #ffffff;
+  /* A tint of the accent for a highlighted row or the member's own message; --ink reads on it. */
+  --accent-soft: #e4eaf6;
+  /* An error, as text and as a border. */
+  --danger: #b00020;
+  /* The field behind an error line; --danger reads on it. */
+  --danger-soft: #fde8e8;
+  /* A warning, as text: the amber that clears 4.5:1 on paper (EmailUsage's reason, kept). */
+  --warn: #8a5a00;
+  /* Confirmation, as text. */
+  --ok: #1e6b3a;
+  /* The focus ring (#154). With `outline-offset: 2px` its adjacent colour is the surface around
+     the control, so it is held to 3:1 on paper, surface and accent-soft; on the brand bar the ring
+     is --brand-mark instead, whose 3:1 against the disc is 0028's promise. */
+  --focus: #395fac;
+
+  /* ---- type ------------------------------------------------------------------------------ */
+  --font-body: system-ui, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --leading: 1.5;
+  --leading-tight: 1.2;
+
+  /* ---- space ----------------------------------------------------------------------------- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  /* The reading measure a page's content sits in, and the wide one for tables. */
+  --measure: 32rem;
+  --measure-wide: 48rem;
+  --radius: 0.5rem;
+  --radius-pill: 999px;
+
+  /* ---- motion ---------------------------------------------------------------------------- */
+  --dur: 150ms;
+  --ease: ease-out;
 }
-html, body { margin: 0; }
-body { background: var(--paper); color: #1a1a1a; }
+
 @media (prefers-color-scheme: dark) {
-  body { background: #121a17; color: var(--paper); }
+  :root {
+    --paper: #121a17;
+    --surface: #1c2622;
+    --ink: #edf0ea;
+    --ink-muted: #b3bdb8;
+    --line: #8a948f;
+    --accent: #9db6ec;
+    --accent-ink: #0f1c36;
+    --accent-soft: #24304a;
+    --danger: #ff8a95;
+    --danger-soft: #3a1a1e;
+    --warn: #f0b95a;
+    --ok: #7fd39a;
+    --focus: #9db6ec;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0s;
+  }
+}
+
+html,
+body {
+  margin: 0;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: var(--leading);
+}
+a {
+  color: var(--accent);
+  transition: color var(--dur) var(--ease);
+}
+
+/* ---- the app shell (#154) ------------------------------------------------------------------ */
+
+/*
+ * Every control shows the same ring on keyboard focus, and it is the PROPERTY that decides it —
+ * test/shell-focus.test.ts reads getComputedStyle(el).outlineColor in Chrome after a real Tab and
+ * prints it beside the surface it sits on, pass or fail. `outline-offset: 2px` puts the surface
+ * on both sides of the ring, which is why --focus is proven against surfaces and not fills.
+ */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Controls are at least 44 CSS px tall (WCAG 2.5.5, the charter's "phone, often outdoors"). */
+button,
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  font: inherit;
+  min-height: 2.75rem;
+}
+button {
+  min-width: 2.75rem;
+}
+/* A box or a radio is a target through its label, so the label is the 44px thing. */
+label:has(> input[type="checkbox"]),
+label:has(> input[type="radio"]) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0;
+}
+
+/* The skip link: off-screen until it is focused, then the first thing on the page. */
+[data-skip] {
+  position: absolute;
+  top: -100vh;
+  left: var(--space-4);
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+[data-skip]:focus-visible {
+  top: var(--space-2);
 }
 
 /* The brand bar: the club's disc behind its knockout, the same pair the mark is drawn in. */
 [data-brand-bar] {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 2rem;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4);
   background: var(--brand-disc);
-  color: var(--brand-mark);
-  font-family: system-ui, sans-serif;
+  /* The bar's TEXT is --bar-ink — white or black by contrast with the disc, set per request by the
+     layout — and never the mark colour, which is a 3:1 non-text promise (the badge); #155's sweep
+     read that pair at 4.13:1 under this text. The mark keeps the badge and the focus ring. */
+  color: var(--bar-ink);
+  font-family: var(--font-body);
   font-weight: 600;
+}
+[data-brand-bar] a {
+  color: inherit;
+  text-decoration: none;
+}
+/* On the disc the ring is the club's own knockout colour: 0028 holds that pair to 3:1 at save. */
+[data-brand-bar] :focus-visible {
+  outline-color: var(--brand-mark);
+}
+[data-home] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  font-size: var(--text-lg);
+}
+[data-identity] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-inline-start: auto;
+  font-weight: 400;
+  font-size: var(--text-sm);
+}
+[data-identity] form {
+  display: contents;
+}
+[data-signout] {
+  padding: 0 var(--space-3);
+  border: 2px solid currentColor;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+[data-nav] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+[data-nav] a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+}
+[data-nav] a[data-primary] {
+  border: 2px solid currentColor;
+}
+/* On a phone the navigation docks to the bottom edge, where a thumb is. */
+@media (max-width: 39.99rem) {
+  [data-nav][data-signed-in] {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    justify-content: space-around;
+    padding: var(--space-1) var(--space-2);
+    background: var(--brand-disc);
+    color: var(--bar-ink);
+    box-shadow: 0 -1px 0 var(--brand-mark);
+  }
+  body:has([data-nav][data-signed-in]) {
+    padding-bottom: 3.5rem;
+  }
+}
+
+/* The frame every page's <main> sits in — the twenty inline copies this replaced were 2rem all
+   round at 32rem; on a phone the sides come in so a 390px screen keeps its measure. */
+[data-frame] > main {
+  max-width: var(--measure);
+  padding: var(--space-6) var(--space-4);
+}
+[data-frame] > main[data-measure="wide"] {
+  max-width: var(--measure-wide);
+}
+@media (min-width: 40rem) {
+  [data-frame] > main {
+    padding: var(--space-8);
+  }
+}
+footer[data-build-stamp] {
+  max-width: var(--measure);
+  padding: 0 var(--space-4) var(--space-6);
+  color: var(--ink-muted);
+}
+@media (min-width: 40rem) {
+  footer[data-build-stamp] {
+    padding: 0 var(--space-8) var(--space-8);
+  }
+}
+
+/* ---- the surfaces (#155) ------------------------------------------------------------------ */
+/*
+ * The six member-facing surfaces — /board, /post/[id], /post/new, /join, /profile, /boats — and
+ * the components they render paint from these rules through data-attribute hooks; no page carries
+ * an inline colour, size or spacing any more (`test/surfaces.test.ts` scans for one). The one
+ * survivor is the rung badge's `--rung` / `--rung-dark`, which is the ladder's data and not a
+ * design token (`src/post/CandidateList.tsx`). `test/surfaces.test.ts` renders each surface with
+ * fixtures in Chrome and computes every text element's contrast in both schemes, printed.
+ */
+
+/* type */
+h1 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+}
+h2 {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+main > section {
+  margin-top: var(--space-8);
+}
+main > section > h2 {
+  margin-top: 0;
+  font-size: var(--text-md);
+}
+[data-hint] {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+section > [data-hint] {
+  margin-top: var(--space-2);
+}
+[data-meta] {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+[role="alert"] {
+  color: var(--danger);
+  font-weight: 600;
+}
+blockquote {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 4px solid var(--line);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--surface);
+}
+
+/* layout hooks a surface composes from */
+[data-stack] {
+  display: grid;
+  gap: var(--space-3);
+}
+[data-stack="loose"] {
+  gap: var(--space-4);
+}
+[data-stack="tight"] {
+  gap: var(--space-1);
+}
+[data-stack] > button {
+  justify-self: start;
+}
+[data-row] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
+}
+[data-grow] {
+  flex: 1;
+}
+[data-list] {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-list="stack"] {
+  display: grid;
+  gap: var(--space-2);
+}
+form[data-inline] {
+  display: inline;
+}
+[data-gap-top] {
+  margin-top: var(--space-6);
+}
+[data-indent] {
+  padding-left: var(--space-6);
+}
+[data-pairs] {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+[data-pairs] dt {
+  font-weight: 600;
+}
+[data-pairs] dd {
+  margin: 0;
+}
+
+/* forms: the label above its control, the control full width, a fieldset as a bordered group */
+label > :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-1);
+}
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+textarea {
+  width: 100%;
+}
+fieldset {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+legend {
+  padding: 0 var(--space-1);
+  font-weight: 600;
+}
+button {
+  padding: 0 var(--space-3);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* A pressed toggle (the board's "I can sail this day") reads as a state, not a call. */
+button[aria-pressed="true"],
+[data-toggle] {
+  background: var(--surface);
+  color: var(--accent);
+}
+/* Inactive controls stay legible outdoors — no opacity, which would take the ink under the bar. */
+button:disabled {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+[data-field] {
+  display: grid;
+  gap: var(--space-1);
+}
+[data-field] [data-row] {
+  align-items: stretch;
+}
+[data-field] input {
+  flex: 1;
+  width: auto;
+}
+[data-toggle] {
+  min-width: 4.5rem;
+}
+
+/* the join tabs: the selected one is filled, not merely aria-selected (#155 AC 6) */
+[data-tabs] {
+  display: flex;
+  gap: var(--space-2);
+}
+[role="tab"] {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+[role="tab"][aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* banners: the suspension and no-rating notes, the install offer */
+[data-banner] {
+  padding: var(--space-3);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+[data-banner] p {
+  margin: 0;
+}
+[data-banner="install"] {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+[data-banner] [data-install-action="prompt"] {
+  margin-top: var(--space-2);
+}
+
+/* the board: each race day a card, its posts a ruled list under the day's heading */
+[data-race-date] {
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+[data-day] > strong {
+  font-size: var(--text-lg);
+}
+[data-posts] {
+  flex-basis: 100%;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+[data-post] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  align-items: baseline;
+}
+
+/* the rung badge: the fill is the ladder's data (--rung / --rung-dark from RungBadge), the ink ours */
+[data-badge="rung"] {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--rung);
+  color: var(--accent-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) {
+  [data-badge="rung"] {
+    background: var(--rung-dark);
+  }
+}
+[data-badge="answered"] {
+  padding: 0 var(--space-2);
+  border: 2px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* the thread: a message a card, the member's own tinted */
+[data-message] {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+[data-message][data-mine="true"] {
+  background: var(--accent-soft);
+}
+[data-message] [data-body] {
+  margin: 0;
+  white-space: pre-wrap;
+}
+[data-message][data-removed="true"] [data-body] {
+  font-style: italic;
 }

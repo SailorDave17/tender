@@ -715,3 +715,27 @@ so it holds at save. Inline the component — never `<img src>` an SVG that uses
 colours. The app's pair is the **club row's** (`brand_disc` / `brand_mark`): the root layout
 reads it on every request and sets `--brand-disc` / `--brand-mark`, the viewport and the manifest
 from it, and the admin changes it on `/admin/theme`.
+
+The **product's** palette, type scale, spacing scale and motion are the token layer in
+`src/app/globals.css` (#153) — constants in the Hoover pair, not the row, because a pair an admin
+may save at 3:1 cannot promise 4.5:1 to the text on it. Every colour token has a dark value, and
+the pairs a surface may use are the table in `test/tokens.ts`: `test/tokens.test.ts` computes each
+one in both schemes and prints the ratio, and `test/reduced-motion.test.ts` reads
+`transitionDuration` in Chrome under `prefers-reduced-motion`. A surface that needs a new pair adds
+it to the table, which adds it to the proof.
+
+Every page renders inside the app shell, `src/shell/AppShell.tsx` (#154): skip link, the mark,
+the signed-in person and sign-out, the navigation (docked to the bottom edge on a phone), the
+page in one frame, the build stamp. A page's `<main>` carries no frame of its own —
+`test/no-inline-frame.test.ts` refuses one — and `data-measure="wide"` is the one knob (tables).
+`test/shell-focus.test.ts` Tabs through the shell in Chrome, prints every stop's ring colour and
+ratio, and measures every target at 390px.
+
+The six member-facing surfaces (#155) paint from data-attribute hooks in the same stylesheet —
+`data-stack`, `data-row`, `data-list`, `data-banner`, `data-race-date`, `data-badge` and the rest
+under *the surfaces* — and carry no inline style the tokens could express; the one survivor is the
+rung badge's `--rung` / `--rung-dark`, which is the ladder's data. `test/surfaces.test.ts` renders
+each surface through the real layout with fixtures (`test/surfaces.ts`), then reads it in Chrome
+at 390px in both schemes: every text element's contrast computed and the lowest printed, the
+board's rows and rules, the join tabs' selected state. The rung colours have a dark value each
+(`RUNG_COLOUR[n].dark`), proven in `test/rung-contrast.test.ts`.

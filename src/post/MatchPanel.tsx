@@ -98,7 +98,7 @@ export function MatchPanel({
           After the race: {statusForm("sailed", "Sailed")} {statusForm("no_show", "Did not show")}
         </p>
       )}
-      <dl data-contact={otherId} style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.25rem 1rem" }}>
+      <dl data-contact={otherId} data-pairs>
         <dt>Email</dt>
         <dd>{contact ? <a href={`mailto:${contact.email}`}>{contact.email}</a> : <em>not available</em>}</dd>
         <dt>Phone</dt>

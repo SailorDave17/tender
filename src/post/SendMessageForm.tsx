@@ -34,8 +34,8 @@ export function SendMessageForm({
   const [state, formAction, pending] = useActionState(action, { error: null });
 
   return (
-    <form action={formAction} data-send-message={postId} style={{ marginTop: "1.5rem" }}>
-      <label htmlFor="body" style={{ display: "block", marginBottom: "0.25rem" }}>
+    <form action={formAction} data-send-message={postId} data-gap-top data-stack="tight">
+      <label htmlFor="body">
         Send a message
       </label>
       <textarea
@@ -51,7 +51,6 @@ export function SendMessageForm({
         defaultValue={state.error ? (state.body ?? "") : ""}
         aria-describedby={state.error ? "send-error" : undefined}
         aria-invalid={state.error ? true : undefined}
-        style={{ width: "100%", fontFamily: "inherit", fontSize: "inherit" }}
       />
       {state.error && (
         <p id="send-error" role="alert" data-error={state.error} aria-live="polite">

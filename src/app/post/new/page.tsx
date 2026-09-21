@@ -37,7 +37,7 @@ export default async function NewPostPage({
   const boat = boatParam && UUID.test(boatParam) ? (boats ?? []).find((b) => b.id === boatParam) : undefined;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "32rem" }}>
+    <main>
       <h1>Post a crew need</h1>
       <p>
         <Link href="/board">Back to the board</Link>
@@ -63,14 +63,14 @@ export default async function NewPostPage({
       ) : open.length === 0 ? (
         <p data-no-dates>There is no upcoming race day to post against.</p>
       ) : (
-        <form action={createPost} style={{ display: "grid", gap: "0.75rem" }}>
+        <form action={createPost} data-stack>
           <input type="hidden" name="boat_id" value={boat.id} />
           <p>
             <strong>{boat.name}</strong> — {boat.class} (<Link href="/post/new">change boat</Link>)
           </p>
           <label>
             Race day
-            <select name="race_date_id" required defaultValue="" style={{ display: "block" }}>
+            <select name="race_date_id" required defaultValue="">
               <option value="" disabled>
                 Pick a race day
               </option>
@@ -84,7 +84,7 @@ export default async function NewPostPage({
               })}
             </select>
           </label>
-          <fieldset style={{ display: "grid", gap: "0.25rem" }}>
+          <fieldset>
             <legend>Minimum competence for this day</legend>
             {RATINGS.map((r) => (
               <label key={r.value}>
@@ -95,7 +95,7 @@ export default async function NewPostPage({
           </fieldset>
           <label>
             Note (optional)
-            <textarea name="note" maxLength={280} rows={3} placeholder="Jib trimmer wanted; we launch at noon" style={{ display: "block", width: "100%" }} />
+            <textarea name="note" maxLength={280} rows={3} placeholder="Jib trimmer wanted; we launch at noon" />
           </label>
           <button type="submit">Post it</button>
         </form>

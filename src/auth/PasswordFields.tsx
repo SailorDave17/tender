@@ -10,8 +10,6 @@ import { useId, useState } from "react";
  * viewport they were 173x36 and 173x52. Two boxes whose whole purpose is to be compared by eye
  * cannot be different shapes.
  */
-const TOGGLE = { minWidth: "4.5rem" } as const;
-
 export type PasswordFieldsProps = {
   /** `name` for the first box — what the FormData key will be. */
   passwordName: string;
@@ -86,9 +84,9 @@ export function PasswordFields({
 
   return (
     <>
-      <div style={{ display: "grid", gap: "0.25rem" }}>
+      <div data-field>
         <label htmlFor={passwordId}>Password</label>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div data-row>
           <input
             id={passwordId}
             name={passwordName}
@@ -96,7 +94,6 @@ export function PasswordFields({
             autoComplete="new-password"
             minLength={minLength}
             required={required}
-            style={{ flex: 1 }}
           />
           <button
             type="button"
@@ -108,16 +105,16 @@ export function PasswordFields({
             // wider than its neighbour and dragged the two boxes out of alignment.
             aria-label={showPassword ? "Hide password" : "Show password"}
             onClick={() => setShowPassword((v) => !v)}
-            style={TOGGLE}
+            data-toggle
           >
             {showPassword ? "Hide" : "Show"}
           </button>
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: "0.25rem" }}>
+      <div data-field>
         <label htmlFor={confirmId}>Confirm password</label>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div data-row>
           <input
             id={confirmId}
             name={confirmName}
@@ -125,7 +122,6 @@ export function PasswordFields({
             autoComplete="new-password"
             minLength={minLength}
             required={required}
-            style={{ flex: 1 }}
           />
           <button
             type="button"
@@ -133,7 +129,7 @@ export function PasswordFields({
             aria-controls={confirmId}
             aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
             onClick={() => setShowConfirm((v) => !v)}
-            style={TOGGLE}
+            data-toggle
           >
             {showConfirm ? "Hide" : "Show"}
           </button>

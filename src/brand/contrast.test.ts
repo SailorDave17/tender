@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   GOOD_CONTRAST,
+  INK_ON_DARK,
+  INK_ON_LIGHT,
   MIN_CONTRAST,
   contrastRatio,
+  inkOn,
   isHexColour,
   isValidTheme,
   meetsMinimum,
@@ -72,6 +75,30 @@ describe("contrastRatio (#41 AC 1)", () => {
     // The .jsx returned NaN here, which `>= 3` reads as false — a refusal that names nothing.
     expect(() => contrastRatio("navy", "#FFFFFF")).toThrow(/navy is not a hex colour/);
     expect(() => relativeLuminance("#GGGGGG")).toThrow(/not a hex colour/);
+  });
+});
+
+describe("inkOn — text on a fill nobody has chosen yet (#154, from #155's sweep)", () => {
+  it("clears 4.5:1 against EVERY colour of the 12-bit space, and the floor is √21", () => {
+    // The identity (white ratio × black ratio = 21) is stated in the docstring; this is the
+    // exhaustive check of it, 4096 colours, with the worst case printed.
+    let worst = { hex: "", ratio: Infinity };
+    for (let n = 0; n < 4096; n++) {
+      const hex = `#${n.toString(16).padStart(3, "0")}`;
+      const r = contrastRatio(inkOn(hex), hex);
+      if (r < worst.ratio) worst = { hex, ratio: r };
+    }
+    console.log(`inkOn worst case ${worst.hex} → ${worst.ratio.toFixed(3)}:1 (floor √21 = ${Math.sqrt(21).toFixed(3)})`);
+    expect(worst.ratio).toBeGreaterThanOrEqual(4.5);
+    expect(worst.ratio).toBeGreaterThanOrEqual(Math.sqrt(21) - 1e-9);
+  });
+
+  it("chooses white on the Hoover disc and black on the Hoover mark", () => {
+    expect(inkOn(HOOVER_SAILING_CLUB.disc)).toBe(INK_ON_DARK);
+    expect(inkOn(HOOVER_SAILING_CLUB.mark)).toBe(INK_ON_LIGHT);
+    // …and the reason the inks are pure: the token layer's #1A1A1A would floor at 4.17
+    expect(INK_ON_LIGHT).toBe("#000000");
+    expect(INK_ON_DARK).toBe("#FFFFFF");
   });
 });
 

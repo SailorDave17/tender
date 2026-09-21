@@ -30,7 +30,7 @@ export default async function ResetPasswordPage({
   const { error } = await searchParams;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "28rem" }}>
+    <main>
       <h1>Set a new password</h1>
       <p>Choose a new password for your account. You are signed in from your reset link.</p>
       <form action={setNewPassword} style={{ display: "grid", gap: "0.75rem" }}>
