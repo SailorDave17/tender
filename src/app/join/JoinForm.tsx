@@ -20,6 +20,13 @@ type Mode = "signin" | "signup";
  * #99 AC 7 asks for its button to be asserted from the rendered HTML. It earns its place beyond
  * that: /join?mode=signup deep-links an invited member straight to the form they need.
  *
+ * Since #123 the page always passes it, and the `= "signin"` default below is a fallback rather
+ * than the app's answer: `src/auth/recognition.ts` decides, from the URL first and the device's
+ * recognition cookie second, so a browser that has never signed in here opens on **Sign up**. The
+ * paragraph above described the only two reasons the prop existed, and that is what made Sign in
+ * look chosen when it was the else-branch of a ternary — do not read the default here as a
+ * decision.
+ *
  * A response carrying `then: "signin"` moves the member to the Sign in tab **without clearing the
  * message** — the two answers that use it (an address that already has an account, and an account
  * created whose sign-in did not follow) are both "you have an account, use it", and the Sign in

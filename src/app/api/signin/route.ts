@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { passwordSignIn } from "@/auth/password";
+import { rememberDevice } from "@/auth/recognition";
 import { supabaseServer } from "@/lib/supabase/server";
 
 /**
@@ -37,6 +39,13 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+
+  // #123: this device has now signed in, so /join opens on Sign in next time. Through the cookie
+  // STORE — `signInWithPassword` above wrote the session cookies through `cookies()`, and Next
+  // applies that store over this response's own Set-Cookie headers, so `res.cookies.set` would
+  // vanish on exactly this path and work on every failing one. 200 only: the 403 arm has just
+  // signed the session back out, and a device that was refused is not a device that signed in.
+  if (result.status === 200) rememberDevice(await cookies(), request.nextUrl.protocol === "https:");
 
   return NextResponse.json(result.body, { status: result.status });
 }
