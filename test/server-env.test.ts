@@ -40,7 +40,7 @@ function envCalls(text: string): string[] {
 
 describe("the env() scan", () => {
   it("finds a call, ignores a bare process.env read and a lookalike identifier", () => {
-    expect(envCalls(`const a = env("GATE_PASS_SECRET");\n`)).toEqual(["GATE_PASS_SECRET"]);
+    expect(envCalls(`const a = env("RESEND_API_KEY");\n`)).toEqual(["RESEND_API_KEY"]);
     expect(envCalls(`env('SUPABASE_SERVICE_ROLE_KEY')\n`)).toEqual(["SUPABASE_SERVICE_ROLE_KEY"]);
     // A direct read is NOT an assertion — it is the thing this story replaced — so the scan must
     // not count it, or a file that degrades silently would look covered.
@@ -71,10 +71,16 @@ describe("the registry agrees with src/ (AC 1)", () => {
     }
   });
 
-  it("the degrading names are the four the runbook numbers beyond the five", () => {
+  it("the degrading names are the five the runbook numbers beyond the four (#173 moved one each way)", () => {
     expect(
       (SERVER_ENV as { name: string; fails: string }[]).filter((e) => e.fails === "degrades").map((e) => e.name),
-    ).toEqual(["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "CRON_SECRET", "OWNER_EMAIL"]);
+    ).toEqual([
+      "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
+      "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
+      "VAPID_PRIVATE_KEY",
+      "CRON_SECRET",
+      "OWNER_EMAIL",
+    ]);
   });
 
   it("no file reads a THROWING name straight off process.env, by any spelling", async () => {
@@ -85,7 +91,8 @@ describe("the registry agrees with src/ (AC 1)", () => {
     //     and came back as "supabaseUrl is required", naming no variable of ours.
     //   process.env.GATE_PASS_SECRET ?? ""           src/auth/callback — worse than a throw: an
     //     invited member finished Google sign-up, was refused as a stray, and no log line
-    //     anywhere named the variable.
+    //     anywhere named the variable. (#173 retired that name with the redirect flow; the
+    //     shape is what this scan is for.)
     //
     // A degrading name read this way is fine and deliberate — that is what degrading MEANS — so
     // the scan is scoped to the throwing set rather than to every declared name.
@@ -103,10 +110,10 @@ describe("the registry agrees with src/ (AC 1)", () => {
   it("the fixture proves that scan can fail", () => {
     // A grep-shaped guard passes happily on a corpus that simply has no offender in it, so the
     // pattern is exercised on one that does before the real corpus is trusted.
-    const fixture = `const a = process.env.GATE_PASS_SECRET ?? "";\nconst b = process.env.NEXT_PUBLIC_SUPABASE_URL!;\n`;
+    const fixture = `const a = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";\nconst b = process.env.NEXT_PUBLIC_SUPABASE_URL!;\n`;
     expect((THROWING_NAMES as string[]).filter((n) => new RegExp(`process\\.env\\.${n}\\b`).test(fixture))).toEqual([
       "NEXT_PUBLIC_SUPABASE_URL",
-      "GATE_PASS_SECRET",
+      "SUPABASE_SERVICE_ROLE_KEY",
     ]);
     // And a degrading name in the same shape is NOT an offender.
     expect((THROWING_NAMES as string[]).filter((n) => new RegExp(`process\\.env\\.${n}\\b`).test(`process.env.OWNER_EMAIL`))).toEqual([]);

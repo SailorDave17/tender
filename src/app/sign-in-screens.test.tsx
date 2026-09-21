@@ -148,6 +148,58 @@ describe("/join opens on the tab the device has earned (#123 AC 1-3)", () => {
   });
 });
 
+/**
+ * #173. The Google option on both tabs is Google Identity Services' button, rendered into a slot
+ * the page marks `data-google`, and the page passes the client id from its own environment — so
+ * with the variable set both tabs carry the slot, and with it unset neither does and nothing on
+ * the page points at the old redirect route. Read off the HTML, as the tabs above are.
+ */
+describe("Continue with Google is the ID-token slot, on both tabs, only with a client id (#173)", () => {
+  const CLIENT_ID = "727868912920-test.apps.googleusercontent.com";
+
+  async function withClientId<T>(value: string | undefined, body: () => Promise<T>): Promise<T> {
+    const was = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (value === undefined) delete process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    else process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID = value;
+    try {
+      return await body();
+    } finally {
+      if (was === undefined) delete process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+      else process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID = was;
+    }
+  }
+
+  it("with the client id, each tab carries its own slot and neither links to /auth/google", async () => {
+    await withClientId(CLIENT_ID, async () => {
+      const signin = await join({}, true);
+      const signup = await join({ mode: "signup" }, false);
+      expect(signin).toContain('data-google="signin"');
+      expect(signin).not.toContain('data-google="signup"');
+      expect(signup).toContain('data-google="signup"');
+      expect(signup).not.toContain('data-google="signin"');
+      for (const html of [signin, signup]) {
+        expect(html).not.toContain('href="/auth/google"');
+        expect(html).not.toContain("supabase.co");
+        // The old sign-up arm was a submit button; the slot is not one, so the form's only submit
+        // on that tab is the password one and Google cannot be reached by pressing Enter.
+        expect(html).not.toMatch(/<button[^>]*value="google"/);
+      }
+    });
+  });
+
+  it("without the client id there is no Google option at all — the degrade, and no dead link", async () => {
+    await withClientId(undefined, async () => {
+      for (const html of [await join({}, true), await join({ mode: "signup" }, false)]) {
+        expect(html).not.toContain("data-google");
+        // ...and no sentence promising it: the intro's ", or with Google" goes with the button
+        expect(html).not.toMatch(/with Google|use Google/);
+      }
+      // the control: with the id, the intro does promise it
+      await withClientId(CLIENT_ID, async () => expect(await join({}, true)).toMatch(/, or with Google/));
+    });
+  });
+});
+
 describe("neither screen promises an emailed way in (#99 AC 7)", () => {
   it("no sentence on /join, either tab, or on /forgot offers to email a sign-in link", async () => {
     for (const [name, html] of [

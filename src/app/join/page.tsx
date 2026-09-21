@@ -14,6 +14,12 @@ export default async function JoinPage({
   // not after hydration, so the right tab is in the first byte of HTML and nothing flips under
   // the person this is for. `dynamic = "force-dynamic"` above is what makes that legal.
   const recognized = isRecognized((await cookies()).get(RECOGNITION_COOKIE)?.value);
+  // #173: the public web client id GIS renders its button with. Read here, on the server, rather
+  // than inlined into the client bundle, so a Vercel environment missing it degrades to a /join
+  // with no Google option — and no sentence promising one — instead of a button that opens a
+  // Google error. Not through env(): its absence is a quiet degrade, not a throw
+  // (scripts/server-env.mjs says so).
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "28rem" }}>
       <h1>Tender</h1>
@@ -32,10 +38,10 @@ export default async function JoinPage({
         </p>
       )}
       <p>
-        Members sign in with their email and password, or with Google. New to Tender? Sign up with
-        this season&apos;s invite code.
+        Members sign in with their email and password{googleClientId ? ", or with Google" : ""}. New
+        to Tender? Sign up with this season&apos;s invite code.
       </p>
-      <JoinForm initialError={error} initialMode={initialMode(mode, recognized)} />
+      <JoinForm initialError={error} initialMode={initialMode(mode, recognized)} googleClientId={googleClientId} />
     </main>
   );
 }

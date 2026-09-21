@@ -189,7 +189,7 @@ describe("verifierCookies / restoreVerifiers — a refused link must not eat a p
       { name: SLOT, value: "2" },
       { name: INDEX, value: "3" },
       { name: "sb-proj-auth-token", value: "session" },
-      { name: "tender_gate", value: "pass" },
+      { name: "tender_seen", value: "1" },
       { name: "code-verifier-decoy", value: "x" },
     ];
     expect(verifierCookies(all).map((c) => c.name)).toEqual([K, SLOT, INDEX]);

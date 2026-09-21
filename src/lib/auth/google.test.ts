@@ -2,14 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import { restoreVerifiers, verifierCookies } from "@/auth/link";
-import { startGoogle, startGoogleLink } from "./google";
+import { exchangeGoogleIdToken, startGoogleLink } from "./google";
 
 /**
- * #74. The whole story is which Supabase call is made: `signInWithOAuth` authenticates a browser
- * and, when the Google address does not match the member's, mints a SECOND auth user;
- * `linkIdentity` attaches the identity to the session's existing user. Both hand back a URL to
- * redirect to, so the OUTCOME is identical and only the mechanism differs — which is why these
- * tests assert on which method was called, and record that the other was not.
+ * #74, re-taken by #173. The whole story is which Supabase call is made: `signInWithIdToken`
+ * exchanges a token the browser obtained on OUR origin (so the Google screen named our host);
+ * `signInWithOAuth` — gone since #173 — redirected through Supabase's host; `linkIdentity`
+ * attaches an identity to the session's existing user and is still a redirect. The tests
+ * assert on which method was called and record that the others were not.
  */
 
 type Call = { method: string; args: unknown };
@@ -20,6 +20,10 @@ function fakeClient(answers: Record<string, unknown>): { client: SupabaseClient;
     signInWithOAuth: async (args: unknown) => {
       calls.push({ method: "signInWithOAuth", args });
       return answers.signInWithOAuth ?? { data: { url: null }, error: null };
+    },
+    signInWithIdToken: async (args: unknown) => {
+      calls.push({ method: "signInWithIdToken", args });
+      return answers.signInWithIdToken ?? { data: { user: null, session: null }, error: null };
     },
     linkIdentity: async (args: unknown) => {
       calls.push({ method: "linkIdentity", args });
@@ -32,7 +36,7 @@ function fakeClient(answers: Record<string, unknown>): { client: SupabaseClient;
 const OK = { data: { provider: "google", url: "https://accounts.google.com/o/oauth2/v2/auth?x=1", flowId: null }, error: null };
 
 describe("startGoogleLink — links, and does not sign in (#74 AC 1)", () => {
-  it("calls linkIdentity and never signInWithOAuth", async () => {
+  it("calls linkIdentity and never signInWithOAuth or signInWithIdToken", async () => {
     const { client, calls } = fakeClient({ linkIdentity: OK });
     await startGoogleLink(client, "https://tender.example");
     expect(calls.map((c) => c.method)).toEqual(["linkIdentity"]);
@@ -148,19 +152,38 @@ describe("a refused link start must not eat a pending reset link (#74, kept by #
   });
 });
 
-describe("startGoogle — the sign-in path is untouched by #74 (negative control)", () => {
-  it("still calls signInWithOAuth and never linkIdentity", async () => {
-    const { client, calls } = fakeClient({ signInWithOAuth: OK });
-    const out = await startGoogle(client, "https://tender.example");
-    expect(calls.map((c) => c.method)).toEqual(["signInWithOAuth"]);
-    expect(out).toEqual({ url: OK.data.url });
+/**
+ * #173 AC 2 / AC 6. The exchange is the one Supabase call on the sign-in and sign-up paths, and
+ * the nonce is what it must carry: with *Skip nonce checks* OFF, GoTrue hashes the raw value
+ * given here and compares it with the token's claim, so a call that dropped it would be refused
+ * on the live project — and a test that did not assert it would pass on that call.
+ */
+describe("exchangeGoogleIdToken — one call, with the nonce, and never a redirect (#173)", () => {
+  const USER = { id: "u-1", email: "bob@example.org", user_metadata: {} };
+  const SESSION = { data: { user: USER, session: { access_token: "x" } }, error: null };
+
+  it("calls signInWithIdToken for google with the token AND the raw nonce, and nothing else", async () => {
+    const { client, calls } = fakeClient({ signInWithIdToken: SESSION });
+    const out = await exchangeGoogleIdToken(client, "eyJ.id.token", "raw-nonce");
+    expect(calls.map((c) => c.method)).toEqual(["signInWithIdToken"]);
+    expect(calls[0].args).toEqual({ provider: "google", token: "eyJ.id.token", nonce: "raw-nonce" });
+    expect(out).toEqual({ user: USER });
   });
 
-  it("carries no flow marker, so its callback returns to /join as before", async () => {
-    const { client, calls } = fakeClient({ signInWithOAuth: OK });
-    await startGoogle(client, "https://tender.example");
-    const redirectTo = (calls[0].args as { options: { redirectTo: string } }).options.redirectTo;
-    expect(new URL(redirectTo).searchParams.get("flow")).toBeNull();
-    expect(new URL(redirectTo).searchParams.get("next")).toBe("/board");
+  it("passes GoTrue's refusal on with its code — a nonce mismatch is one of them", async () => {
+    const { client } = fakeClient({
+      signInWithIdToken: {
+        data: { user: null, session: null },
+        error: { code: "bad_oidc", message: "Passed nonce and nonce in id_token should either both exist or not.", status: 400 },
+      },
+    });
+    expect(await exchangeGoogleIdToken(client, "t", "n")).toEqual({
+      error: { code: "bad_oidc", message: "Passed nonce and nonce in id_token should either both exist or not." },
+    });
+  });
+
+  it("a success carrying no user is an error, not a session", async () => {
+    const { client } = fakeClient({ signInWithIdToken: { data: { user: null, session: null }, error: null } });
+    expect(await exchangeGoogleIdToken(client, "t", "n")).toEqual({ error: { message: "no user on the exchanged session" } });
   });
 });

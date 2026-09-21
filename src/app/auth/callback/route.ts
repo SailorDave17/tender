@@ -3,45 +3,35 @@ import { NextResponse, type NextRequest } from "next/server";
 import { decideCallback } from "@/auth/callback";
 import { LINK_DONE, backPathFor, isLinkFlow } from "@/auth/link";
 import { safeNext } from "@/auth/next";
-import { PASS_COOKIE, verifyPass } from "@/auth/pass";
 import { ensurePerson } from "@/auth/person";
 import { rememberDevice } from "@/auth/recognition";
-import { env } from "@/lib/env";
+import { adminPersonStore } from "@/lib/auth/person-store";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
 /**
- * Where the Google redirect and the emailed reset link both land — the magic link was the third
- * leg until #99 removed it, and a sign-up now finishes without coming back here at all (the
- * invite gate calls `ensurePerson` itself). Exchanges the PKCE code for a session
- * (the cookie-bound client writes the session cookies), makes sure the person rows exist — or,
- * for a Google-created user with no gate pass, deletes the auth user and the session (#70) —
- * and redirects to a sanitised `next`. Any failure goes back to a reason the page can show;
- * nothing here ever redirects off this origin (src/auth/next.ts).
+ * Where the emailed reset link lands, and where the return leg of an identity link (#74,
+ * `flow=link`) lands. Two legs, down from four: the magic link went with #99, and the Google
+ * sign-in and sign-up redirects went with #173 — both finish on our own origin now, with the ID
+ * token posted to a route, so no Google flow comes back here except the link. Exchanges the
+ * PKCE code for a session (the cookie-bound client writes the session cookies), makes sure the
+ * person rows exist — or, for an auth user with no attestation, deletes it (#70) — and redirects
+ * to a sanitised `next`. Any failure goes back to a reason the page can show; nothing here ever
+ * redirects off this origin (src/auth/next.ts).
  *
- * Since #74 there is a third leg: the return from `linkIdentity`, marked `flow=link`. It differs
- * only in where it lands — a member who was already signed in and linking must not be dropped on
- * /join and told to sign in. `ensurePerson` is reached with a person row that already exists, so
- * it writes nothing; the delete branch is unreachable on this leg by construction.
+ * The link leg differs only in where it lands — a member who was already signed in and linking
+ * must not be dropped on /join and told to sign in. `ensurePerson` is reached with a person row
+ * that already exists, so it writes nothing; the delete branch is unreachable on this leg by
+ * construction.
+ *
+ * Until #173 this handler also verified a gate pass — the signed cookie that carried a Google
+ * sign-up's name and attestation across the redirect. That leg and its secret are gone; the
+ * `ensurePerson` call below takes no gate, which is exactly the rule that deletes a stray.
  */
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams;
   const next = safeNext(q.get("next"));
   const flow = q.get("flow");
-  // The pass is single-use: clear it on every exit. Through the cookie STORE, not the response —
-  // exchangeCodeForSession writes the session cookies via cookies(), and Next merges that store
-  // onto the response over any Set-Cookie the handler put there itself (measured 2026-08-23: a
-  // response-level clear survived the error path and vanished on the success path).
-  // `?? ""` until #65, which made a missing GATE_PASS_SECRET treat every pass as invalid: an
-  // invited member finished Google sign-up, was refused as a stray, and nothing anywhere named
-  // the variable. env() is asked for it ONLY when a pass is actually present — the cookie is set
-  // by /api/signup/google alone, so its presence IS the Google sign-up leg. The password-reset
-  // and identity-link legs carry no pass and need no secret, and throwing on those would turn
-  // one skipped runbook step into a dead /auth/callback for everyone.
-  const passCookie = request.cookies.get(PASS_COOKIE)?.value;
-  const pass = passCookie ? verifyPass(passCookie, env("GATE_PASS_SECRET")) : null;
-  const store = await cookies();
-  store.set(PASS_COOKIE, "", { path: "/auth/callback", maxAge: 0 });
   const back = (reason: string) => {
     const url = request.nextUrl.clone();
     url.pathname = backPathFor(flow);
@@ -61,39 +51,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await client.auth.exchangeCodeForSession(decision.code);
   if (error || !data.user) return back("link-invalid");
 
-  const admin = supabaseAdmin();
-  const ensured = await ensurePerson(
-    data.user,
-    {
-      exists: async (id) => {
-        const { count, error: e } = await admin
-          .from("person")
-          .select("id", { count: "exact", head: true })
-          .eq("id", id);
-        if (e) throw new Error(e.message);
-        return (count ?? 0) > 0;
-      },
-      insert: async (row) => {
-        const p = await admin.from("person").insert({
-          id: row.id,
-          display_name: row.display_name,
-          adult_attested_at: row.adult_attested_at,
-        });
-        if (p.error) return { error: p.error.message };
-        const c = await admin.from("person_contact").insert({ person_id: row.id, email: row.email });
-        return c.error ? { error: c.error.message } : {};
-      },
-      setMetadata: async (id, meta) => {
-        const { error: e } = await admin.auth.admin.updateUserById(id, { user_metadata: meta });
-        return e ? { error: e.message } : {};
-      },
-      deleteUser: async (id) => {
-        const { error: e } = await admin.auth.admin.deleteUser(id);
-        return e ? { error: e.message } : {};
-      },
-    },
-    pass,
-  );
+  const ensured = await ensurePerson(data.user, adminPersonStore(supabaseAdmin()));
   if ("refused" in ensured) {
     // The session cookies were just written for a user that no longer (or never should) exist.
     await client.auth.signOut().catch(() => undefined);
@@ -102,10 +60,11 @@ export async function GET(request: NextRequest) {
 
   // #123: the exchange above wrote a session on this device, so /join opens on Sign in next time.
   // After the refusal branch, never before it — a stray whose auth user was just deleted and whose
-  // session was just signed out has not signed in here. All three legs that reach this line (Google
-  // sign-up, the password reset, the identity link) are a session, so all three remember. Same
-  // store as the pass clear above, which is the one mechanism this handler uses for cookies.
-  rememberDevice(store, request.nextUrl.protocol === "https:");
+  // session was just signed out has not signed in here. Through the cookie STORE, not the
+  // response: exchangeCodeForSession writes the session cookies via cookies(), and Next merges
+  // that store onto the response over any Set-Cookie the handler put there itself (measured
+  // 2026-08-23: a response-level write survived the error path and vanished on the success path).
+  rememberDevice(await cookies(), request.nextUrl.protocol === "https:");
 
   const url = request.nextUrl.clone();
   // A link that succeeded lands back on the profile carrying the marker that page confirms on,

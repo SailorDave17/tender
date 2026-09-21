@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FoundUser } from "./find-user";
-import type { PassPayload } from "./pass";
+import type { ExchangeIdToken } from "./google-signin";
+import { NO_CREDENTIAL, NOT_VERIFIED, hasCredential } from "./google-signin";
 import { validatePassword } from "./password";
 import { ensurePerson, type PersonStore } from "./person";
 
@@ -10,7 +11,7 @@ import { ensurePerson, type PersonStore } from "./person";
  * The route handler supplies the side effects; everything that decides whether they run lives
  * here so a unit test with fakes can assert the negative cases — a wrong code or a missing
  * attestation must reach neither the user store nor the person store (story #15 AC 3), and on the
- * Google path must set no pass and start no redirect (story #70 AC 4).
+ * Google path must exchange no token and mint nothing (story #70 AC 4, re-taken by #173).
  *
  * Since #99 this path **sends no email at all**. The invite code, the ticked box and a chosen
  * password are the whole of a sign-up: everything the emailed link went on to establish was
@@ -25,8 +26,8 @@ import { ensurePerson, type PersonStore } from "./person";
  * longer refuses to create a user on its own — *Allow new users to sign up* is ON so that Google
  * sign-up can work (epic #7 decision E, dashboard half reversed 2026-08-23) — so creating the
  * user here is what puts the attestation in its metadata, and that attestation is what
- * `ensurePerson` acts on. An auth user that reaches /auth/callback with no attestation and no
- * gate pass is still deleted there (src/auth/person.ts); this path never produces one.
+ * `ensurePerson` acts on. An auth user that reaches `ensurePerson` with no attestation and no
+ * invite gate behind it is still deleted there (src/auth/person.ts); this path never produces one.
  *
  * Which is why, since #85, `createUser` reporting that the address is taken is not the end of the
  * story. Signups being ON, the public anon key can mint an attestation-less auth user against any
@@ -196,26 +197,40 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
 }
 
 // ---------------------------------------------------------------------------------------------
-// Sign up finishing with Google (#70 AC 4): the same gate, a different exit.
+// Sign up finishing with Google (#70 AC 4, moved to the ID-token flow by #173): the same gate,
+// a different exit.
+//
+// The browser has already been to Google — the GIS button on our own origin handed it an ID
+// token — and posts the token, the raw nonce and the three form values together. So the gate
+// checks what it always checked, in the same order, and then does in ONE request what the
+// redirect flow spread across two: exchange the token for a session, and mint the person row
+// through `ensurePerson` from the name and the tick on this very submission. The gate pass — the
+// signed cookie that used to carry those two values across the Google round trip to
+// /auth/callback — has no round trip to carry them across any more, and is gone with its secret.
 
 export type GoogleSignupInput = {
   displayName: string;
   code: string;
   attested: boolean;
+  /** The ID token from GIS and the raw nonce the browser generated for it. */
+  credential?: unknown;
+  nonce?: unknown;
 };
 
 export type GoogleSignupDeps = {
   inviteCode: () => Promise<string>;
-  /** Sets the signed gate-pass cookie on the response. */
-  setPass: (payload: PassPayload) => Promise<void>;
-  /** Starts the OAuth redirect; resolves to the URL the browser must go to. */
-  startOAuth: () => Promise<{ url: string } | { error: string }>;
+  /** `signInWithIdToken` through the cookie-bound client: the session lands on the response. */
+  exchange: ExchangeIdToken;
+  /** The person store `ensurePerson` writes through — the same one every other caller supplies. */
+  person: PersonStore;
+  /** Undo the session the exchange wrote, when the person row could not be minted. */
+  signOut: () => Promise<void>;
   now?: () => Date;
 };
 
 export type GoogleSignupResult =
-  | { status: 200; body: { url: string } }
-  | { status: 400 | 403 | 500; body: { message: string } };
+  | { status: 200; body: { redirect: string } }
+  | { status: 400 | 401 | 403 | 500; body: { message: string } };
 
 export async function googleSignup(
   input: GoogleSignupInput,
@@ -228,16 +243,33 @@ export async function googleSignup(
   if (displayName.length < 1 || displayName.length > 80) {
     return { status: 400, body: { message: "Enter your name." } };
   }
+  // Before the token is present nothing is asked of Supabase, and the code is not read either:
+  // a post with no credential is a hand-built one, not a member whose code needs checking.
+  if (!hasCredential(input)) return { status: 400, body: { message: NO_CREDENTIAL } };
   if (!codesMatch(input.code, await deps.inviteCode())) {
     return { status: 403, body: { message: "That invite code is not this season's." } };
   }
 
-  const issued = (deps.now ?? (() => new Date()))().toISOString();
-  await deps.setPass({ display_name: displayName, adult_attested_at: issued, issued_at: issued });
+  // The attestation is stamped at the moment the gate accepted the submission — the same clock
+  // the password path reads for `adult_attested_at`.
+  const attestedAt = (deps.now ?? (() => new Date()))().toISOString();
 
-  const started = await deps.startOAuth();
-  if ("error" in started) {
-    return { status: 500, body: { message: "Could not start Google sign-in. Try again in a minute." } };
+  const exchanged = await deps.exchange(input.credential, input.nonce);
+  if ("error" in exchanged) return { status: 401, body: { message: NOT_VERIFIED } };
+
+  // One writer, one predicate. A Google-created user carries no attestation of ours, so the gate
+  // hands `ensurePerson` the two facts this submission proved; a user that already has a person
+  // row (a member on the Sign up tab) simply signs in. The delete branch is reachable only when
+  // the gate is absent, which from here it never is.
+  const ensured = await ensurePerson(exchanged.user, deps.person, {
+    display_name: displayName,
+    adult_attested_at: attestedAt,
+  });
+  if ("refused" in ensured) {
+    // Nobody is signed in on a refusal: a session with no membership behind it is exactly what
+    // the Google sign-in route refuses a moment later, and it would only hide the failure.
+    await deps.signOut();
+    return CANNOT_START;
   }
-  return { status: 200, body: { url: started.url } };
+  return { status: 200, body: { redirect: AFTER_SIGNUP } };
 }
