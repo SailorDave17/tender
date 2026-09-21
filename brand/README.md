@@ -52,8 +52,10 @@ is therefore two hex values on the `clubs` row, not a design engagement:
 clubs   ...  brand_disc  brand_mark
 ```
 
-Use `TenderMark.jsx` for anything in-app. It takes `disc`, `mark`, `variant`,
-and `size`.
+Use `src/brand/TenderMark.tsx` for anything in-app (it was `TenderMark.jsx` in
+this directory until #41 moved it into `tsconfig` and typed it). It takes `disc`,
+`mark`, `variant` and `size`; `disc` and `mark` are required, and the app passes
+the club row's pair.
 
 **Inline the component — never `<img src="mark.svg">`.** An SVG loaded through
 `<img>` is a separate document and cannot see the page's colors or CSS
@@ -71,8 +73,10 @@ Above 4.5 is comfortable. Between 3.0 and 4.5, advise but allow — HSC's own
 burgee colors land at 4.13, and a threshold that rejects the pilot club's
 actual colors is the wrong threshold.
 
-`TenderMark` warns in development; the admin console should reject anything
-below 3.0 at save time rather than let a club ship something illegible.
+The rule is enforced at save (#41): `set_club_theme()` in
+`supabase/migrations/0028_club_theme.sql` computes the same ratio in SQL and
+refuses a pair below 3.0, so `/admin/theme` disabling Save is the courtesy and
+the database is the wall. The TypeScript copy is `src/brand/contrast.ts`.
 
 ### Burgees with three colors
 
@@ -105,7 +109,9 @@ device on blue field — so the app badge and the club burgee read as related
 without the app copying the club's mark. Keep them distinguishable: the burgee
 is the club's, the badge is the app's.
 
-Import `HOOVER_SAILING_CLUB` from `TenderMark.jsx`.
+Import `HOOVER_SAILING_CLUB` from `src/brand/theme.ts`. It is the seed value
+README's owner runbook writes into the club row; the running app reads the row,
+never this constant.
 
 
 

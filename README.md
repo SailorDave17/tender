@@ -44,6 +44,8 @@ npm run check:live # read-only probe of the live Supabase project; needs .env.lo
 npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
+npm run perf:floor -- --db-container supabase_db_<dir>  # ADR 002's kill condition, re-measured
+npm run smoke -- --db-container supabase_db_<dir>       # the core path in a real browser (CI runs it on every PR)
 ```
 
 Node 24 (`.nvmrc`). Copy `.env.example` to `.env.local` — names only are committed, never values.
@@ -234,6 +236,95 @@ than from the Vercel dashboard, which a member cannot see and the owner cannot s
 A build the config did not stamp — vitest, for one — prints *unstamped build* in words. An empty
 footer would be indistinguishable from a page that has none.
 
+## The performance floor
+
+**`npm run perf:floor` re-measures ADR 002's kill condition** with the instrument that ADR names —
+Lighthouse mobile, simulated throttling, against a production build served locally with a fixture
+of 80 people, 45 race dates and 50 posts, signed in through a real session cookie. Method, the
+current reading and the levers already priced are in
+[`docs/performance-floor.md`](docs/performance-floor.md); the short version is that `/board` reads
+**72** and `/post/[id]` reads **83** against a floor of 80, so the condition's *local* antecedent is
+met — but the ADR says *on a mid-range Android*, and a local serve is known to under-read this page
+shape by about eight points, so [ADR 002](docs/adr/002-nextjs-16.md) records the measurement and the
+one run against `release` that would make it decisive.
+
+It **writes** — 80 people, 45 dates, 50 posts — so it refuses any Supabase URL that is not
+loopback before touching a row. It is the opposite shape from `check:live` and `verify:migrations`,
+which are read-only by construction, and it says so rather than relying on the flag being passed.
+
+Two traps it guards, both of which produce a *reassuring* number rather than an error:
+
+- **`next build` inlines `NEXT_PUBLIC_*` into the Edge proxy**, so a build made without them
+  pointed at the local stack silently talks to whatever `.env.local` names. `src/proxy.ts` then
+  finds no valid session and 302s to `/join` — a small static form that scores *well*. The command
+  fetches each route with the cookie before spending two minutes on it and refuses anything but a
+  200, and refuses again afterwards if Lighthouse's own `finalDisplayedUrl` is not what was asked
+  for.
+- **A single Lighthouse run is not a measurement.** `/board`'s three runs span 72–78 and
+  `/post/[id]`'s span 78–90 on identical builds, so the command reports every run beside the median
+  and warns when a route's runs straddle the floor rather than letting a lucky median pass silently.
+  That warning is not hypothetical: `/post/[id]` passes on its median of 83 with one run at 78.
+- **A score is a score of a page, and these pages differ per viewer.** The command CHOOSES who signs
+  in — rated, not the club admin, owner of an open post — because the first version took the first
+  person in the fixture, who is unrated, and so measured a board with all 45 availability forms
+  suppressed. It read 78 that way and 72 correctly.
+
+Everything that decides an outcome is in `scripts/lighthouse-floor-core.mjs`, exercised by
+`test/lighthouse-floor.test.ts` with no stack, no browser and no network — the same split as
+`check-live.mjs` and `verify-migrations.mjs`.
+
+## The smoke
+
+**CI's `smoke` job drives the core path through a real browser on every pull request** (#45, ADR
+006's "Playwright smoke later"): two people seeded pre-confirmed with `auth.admin.createUser`, each
+signing in through `/join`; the crew marks a race day on `/board`; the skipper posts a need; the crew
+answers "I can"; the skipper accepts. It then checks that the crew's phone reached the skipper
+**only after** the acceptance: it is absent from the skipper's page before, raw HTML and flight
+data included, and present after in the same read and in the contact panel. The job starts a local
+Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
+pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
+`test/smoke.test.ts` holds both of those lines.
+
+Sign-in is by **password**, not the admin-generated magic link #45 was filed with. #99 removed the
+magic link from the app, and an admin link could now reach a session only by injecting cookies
+around the sign-in screen (owner decision, 2026-09-21).
+
+To run it locally, start a stack in a scratch directory (never the checkout), build against it,
+serve the build, then run the smoke with the same three variables set:
+
+```
+npx supabase init --force --with-intellij-settings=false --with-vscode-settings=false
+rm -rf supabase/migrations && cp -r <tender>/supabase/migrations supabase/migrations
+npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,postgres-meta,supavisor,realtime,storage-api,mailpit
+# in the checkout, with NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and
+# SUPABASE_SERVICE_ROLE_KEY set to the stack's printed values:
+npm run build && npx next start -p 3145 &
+npm run smoke -- --db-container supabase_db_<dir> --base-url http://localhost:3145
+```
+
+It **writes**: it deletes and re-creates its two users, their race day and their boat, so it refuses
+any Supabase URL that is not loopback, and its npm script loads no `.env.local`. A re-run starts from
+the state CI does. The browser is the machine's own Chrome through `playwright-core`
+(`channel: "chrome"`): nothing is downloaded, and CI's Chrome is whatever `ubuntu-latest` ships,
+so it is **not pinned**. On a red run it saves each person's page to `--out` (CI uploads it as the
+`smoke-output` artifact) and names the step that broke. The steps after that one print as
+*not reached*, never as failed.
+
+What it cannot see:
+
+- **Email.** CI sets no `RESEND_API_KEY`, so every send fails at transport construction and is
+  caught: the log carries one `RESEND_API_KEY is not set` line each for the rung, answer and match
+  notifications, which also shows each notify call was reached.
+- **The hosted project's grants.** The stack is the CLI's image, whose default privileges differ
+  from the live project's. That seam is `check:live`'s and #48's, not this job's.
+- **Google sign-up, the invite gate, and the password reset.** Those are the other entrances to a
+  session; this job exercises the one a returning member uses.
+
+Everything that decides an outcome is in `scripts/smoke-core.mjs`, exercised with no stack and no
+browser. The steps themselves were proven against a local stack by three mutations, each red at the
+predicted step and nowhere earlier: the accept step deleted from the smoke, `acceptAnswer` never
+calling `accept_answer()`, and the contact policy narrowed back to self-only.
+
 ## Owner runbook — the steps only the owner can do
 
 1. **Create the Supabase project** (Free; region near Ohio). Then apply every
@@ -259,7 +350,12 @@ footer would be indistinguishable from a page that has none.
    `admin_email` is yours: the person who signs in with that address becomes the admin
    (0009's trigger sets `person.is_admin` on their first sign-in, and on an existing person the
    moment the column is set), so `/admin` loads with no SQL run against `person`. The colours are
-   the Hoover pair (`brand/`); the code is a placeholder you rotate from `/admin` once signed in.
+   the Hoover pair (`brand/`) — the club accepted them on 2026-08-22 (#11, `docs/charter.md`
+   § Forge checks), which is why the seed carries them rather than the mark set's default green.
+   **Changing them afterwards is `/admin/theme`, not an edit to this row** (#41): that screen
+   previews the mark in the pair and shows the contrast, and `set_club_theme()` (0028) refuses a
+   pair under 3:1 at save, which a hand `update` would not. The code is a placeholder you rotate
+   from `/admin` once signed in.
    On a project whose club row already exists, set the address on it instead:
 
    ```sql
@@ -586,7 +682,12 @@ footer would be indistinguishable from a page that has none.
 
 ## Brand
 
-`brand/` holds the mark set and `TenderMark.jsx` from the 2026-08-21 brand work. The four SVGs
-there are the **Hoover-themed** pair (`#395FAC` / `#FCCF0B`); the default-green exports the
-brand README's table names were never exported. Inline the component — never `<img src>` an SVG
-that uses the page's colours.
+`brand/` holds the mark set from the 2026-08-21 brand work. The four SVGs there are the
+**Hoover-themed** pair (`#395FAC` / `#FCCF0B`); the default-green exports the brand README's
+table names were never exported. The component that was `brand/TenderMark.jsx` is
+`src/brand/TenderMark.tsx` since #41 — typed, inside `tsconfig`, one copy — and its contrast
+rule is `src/brand/contrast.ts`, with the same rule spelled in SQL by `set_club_theme()` (0028)
+so it holds at save. Inline the component — never `<img src>` an SVG that uses the page's
+colours. The app's pair is the **club row's** (`brand_disc` / `brand_mark`): the root layout
+reads it on every request and sets `--brand-disc` / `--brand-mark`, the viewport and the manifest
+from it, and the admin changes it on `/admin/theme`.

@@ -17,5 +17,7 @@ The first option. The scaffold's one real test is the rung selector, with its pr
 ## Consequences
 Every policy gets a failing-then-passing pglite case; every negative assertion states the window it observed (the fourteenth and fifteenth outcomes in cairn's *prove-a-guard-test-can-fail*); CI runs both suites on every PR. The pglite harness's overstatement is recorded in the repo README, not discovered.
 
+**The Playwright smoke shipped 2026-09-21 (story #45).** CI's `smoke` job drives sign-in → availability → post → answer → accept through the machine's Chrome (`playwright-core`) against a local Supabase stack built from `supabase/migrations`, on pull requests only, capped at eight minutes. Sign-in is by password, because #99 removed the magic link the story was filed with. It does **not** discharge the kill condition below: that condition is about the *live* project, and a local stack carries the CLI image's grants, not the hosted project's. README, *The smoke*, lists what it cannot see.
+
 ## Kill condition
 A class of defect reaching production that the suites were structurally unable to see — reopen toward a live-project integration suite run against a throwaway Supabase project, priced against the 2-project Free limit.

@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { findAuthUser } from "@/auth/find-user";
 import { join } from "@/auth/join";
+import { rememberDevice } from "@/auth/recognition";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -95,6 +97,12 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+
+  // #123: a sign-up that finished here IS a sign-in on this device — `join()` ends by calling
+  // `signInWithPassword` through the cookie-bound client — so the next visit to /join opens on
+  // Sign in. Through the store, for the reason /api/signin states. 200 only: the 409 and the 500
+  // both carry `then: "signin"` and neither has a session behind it.
+  if (result.status === 200) rememberDevice(await cookies(), request.nextUrl.protocol === "https:");
 
   return NextResponse.json(result.body, { status: result.status });
 }

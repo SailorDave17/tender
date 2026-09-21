@@ -358,8 +358,17 @@ describe("0027 — AC 4: every security definer runs after the deletion", () => 
       "push_install_status",
       "remove_message",
       "rotate_invite_code",
+      "set_club_theme",
       "set_match_status",
     ]);
+  });
+
+  it("set_club_theme: the admin still sets the pair after the deletion, and it lands on the row", async () => {
+    // 0028 reads person.is_admin through is_admin() and writes club only; a deleted member is
+    // nowhere in its path, so this is the proof that it is not — read back rather than assumed.
+    await as(db, "authenticated", `select public.set_club_theme('#000000', '#FFFFFF')`, ADMIN);
+    const theme = await db.query<{ brand_disc: string; brand_mark: string }>(`select brand_disc, brand_mark from public.club`);
+    expect(theme.rows).toEqual([{ brand_disc: "#000000", brand_mark: "#FFFFFF" }]);
   });
 
   it("accept_answer: Sam accepts Di on the post Lee also answered — the leaver's answer is gone, the live one is taken", async () => {

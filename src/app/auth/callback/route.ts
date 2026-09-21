@@ -5,6 +5,7 @@ import { LINK_DONE, backPathFor, isLinkFlow } from "@/auth/link";
 import { safeNext } from "@/auth/next";
 import { PASS_COOKIE, verifyPass } from "@/auth/pass";
 import { ensurePerson } from "@/auth/person";
+import { rememberDevice } from "@/auth/recognition";
 import { env } from "@/lib/env";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -39,7 +40,8 @@ export async function GET(request: NextRequest) {
   // one skipped runbook step into a dead /auth/callback for everyone.
   const passCookie = request.cookies.get(PASS_COOKIE)?.value;
   const pass = passCookie ? verifyPass(passCookie, env("GATE_PASS_SECRET")) : null;
-  (await cookies()).set(PASS_COOKIE, "", { path: "/auth/callback", maxAge: 0 });
+  const store = await cookies();
+  store.set(PASS_COOKIE, "", { path: "/auth/callback", maxAge: 0 });
   const back = (reason: string) => {
     const url = request.nextUrl.clone();
     url.pathname = backPathFor(flow);
@@ -97,6 +99,13 @@ export async function GET(request: NextRequest) {
     await client.auth.signOut().catch(() => undefined);
     return back("not-invited");
   }
+
+  // #123: the exchange above wrote a session on this device, so /join opens on Sign in next time.
+  // After the refusal branch, never before it — a stray whose auth user was just deleted and whose
+  // session was just signed out has not signed in here. All three legs that reach this line (Google
+  // sign-up, the password reset, the identity link) are a session, so all three remember. Same
+  // store as the pass clear above, which is the one mechanism this handler uses for cookies.
+  rememberDevice(store, request.nextUrl.protocol === "https:");
 
   const url = request.nextUrl.clone();
   // A link that succeeded lands back on the profile carrying the marker that page confirms on,

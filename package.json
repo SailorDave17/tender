@@ -13,7 +13,9 @@
     "migrate:live": "node --env-file-if-exists=.env.local scripts/migrate-live.mjs",
     "verify:migrations": "node --env-file-if-exists=.env.local scripts/verify-migrations.mjs",
     "vapid:keys": "node scripts/vapid-keys.mjs",
-    "icons": "node scripts/render-icons.mjs"
+    "icons": "node scripts/render-icons.mjs",
+    "perf:floor": "node scripts/lighthouse-floor.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -35,6 +37,7 @@
     "eslint-config-next": "16.3.5",
     "ical.js": "2.2.1",
     "jsdom": "^30.1.0",
+    "playwright-core": "1.63.0",
     "sharp": "^0.35.4",
     "typescript": "^5",
     "vitest": "5.0.1"
