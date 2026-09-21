@@ -715,3 +715,11 @@ so it holds at save. Inline the component — never `<img src>` an SVG that uses
 colours. The app's pair is the **club row's** (`brand_disc` / `brand_mark`): the root layout
 reads it on every request and sets `--brand-disc` / `--brand-mark`, the viewport and the manifest
 from it, and the admin changes it on `/admin/theme`.
+
+The **product's** palette, type scale, spacing scale and motion are the token layer in
+`src/app/globals.css` (#153) — constants in the Hoover pair, not the row, because a pair an admin
+may save at 3:1 cannot promise 4.5:1 to the text on it. Every colour token has a dark value, and
+the pairs a surface may use are the table in `test/tokens.ts`: `test/tokens.test.ts` computes each
+one in both schemes and prints the ratio, and `test/reduced-motion.test.ts` reads
+`transitionDuration` in Chrome under `prefers-reduced-motion`. A surface that needs a new pair adds
+it to the table, which adds it to the proof.

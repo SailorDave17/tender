@@ -1,27 +1,148 @@
 /*
- * --brand-disc and --brand-mark are NOT declared here. src/app/layout.tsx sets both on <html>
- * from the club row on every request (story #41), so a value written here would be a second
- * copy that nothing holds to the first. --paper is a constant and stays one: it is not a club
- * decision (src/brand/theme.ts). test/manifest.test.ts holds it equal to BACKGROUND_COLOUR.
+ * THE TOKEN LAYER (story #153). Every colour, type size, space and duration the app paints with
+ * is a custom property declared here, in the Hoover pair, and nowhere else. Until #153 this file
+ * was ten lines, `--hull-green` was declared and painted nowhere, and every screen carried its
+ * own `padding: 2rem; fontFamily: system-ui; maxWidth: 32rem` inline — eleven copies of one
+ * decision. #154 (the shell) and #155 (the surfaces) read from here; they do not add colours.
+ *
+ * TWO PALETTES MEET HERE, AND THEY ARE DELIBERATELY NOT THE SAME THING.
+ *
+ *   - `--brand-disc` / `--brand-mark` are NOT declared here. `src/app/layout.tsx` sets both on
+ *     `<html>` from the club row on every request (story #41), so a value written here would be a
+ *     second copy that nothing holds to the first. They paint the badge and the brand bar — the
+ *     club's mark — and `/admin/theme` can change them to any pair at 3:1.
+ *   - `--accent` and everything below it are the PRODUCT's palette: the Hoover pair as constants,
+ *     the owner's 2026-09-17 reversal recorded in `src/brand/theme.ts`. They are constants rather
+ *     than `var(--brand-disc)` because the contrast proof has to be computable: an admin may save
+ *     any disc that clears 3:1 against its mark, and nothing at save time asks whether white text
+ *     reads on it, so a product accent that followed the row could not promise 4.5:1 to anyone.
+ *     `test/tokens.test.ts` holds `--accent` equal to `HOOVER_SAILING_CLUB.disc` and `--paper`
+ *     to `BACKGROUND_COLOUR`, so the CSS and `theme.ts` cannot drift apart.
+ *
+ * EVERY COLOUR TOKEN HAS A DARK VALUE. The dark block below redeclares each one, and
+ * `test/tokens.test.ts` refuses a colour token that is missing there or that merely repeats its
+ * light value — the state this file was in before #153, where every border and badge in the app
+ * was fixed light-mode (`#ccc` table rules near-invisible on the dark background).
+ *
+ * THE PAIRINGS ARE THE CONTRACT. Not every token may sit on every other: `--ink-muted` on
+ * `--accent` is nobody's promise, and `--line` is a boundary, not a text colour. The pairs a
+ * surface may use are listed in `test/tokens.ts` (`PAIRINGS`), and the test computes every one of
+ * them in both schemes with the WCAG formula from `src/brand/contrast.ts` — 4.5:1 for text, 3:1 for
+ * non-text — and prints the ratios on pass as well as on fail, so a value drifting toward the line
+ * is visible before it crosses it. A surface that needs a pair not listed adds it to the table
+ * (and so to the proof), never to the page.
+ *
+ * `--dur` is re-pointed to `0s` under `prefers-reduced-motion`. That alone is enough ONLY while
+ * this file carries no blanket `* { transition-duration: 0.01ms !important }` reset — a token
+ * loses to an `!important` it cannot see, and reads back `0s` while the property reads `1e-05s`
+ * (cairn: `a-token-loses-to-an-important-it-cannot-see`). So `test/reduced-motion.test.ts` reads
+ * `getComputedStyle(el).transitionDuration` in a real Chrome, never the custom property, and it
+ * is that reading which would catch such a reset being added later.
  */
 :root {
   color-scheme: light dark;
+
+  /* ---- colour, light scheme ------------------------------------------------------------- */
+  /* The page. `BACKGROUND_COLOUR` in theme.ts; the manifest's splash colour behind the icon. */
   --paper: #edf0ea;
+  /* A card, a table cell, a message bubble — one step off the page. */
+  --surface: #ffffff;
+  /* Body text. */
+  --ink: #1a1a1a;
+  /* Secondary text: timestamps, hints, the build stamp. Text-grade on paper AND surface. */
+  --ink-muted: #4f5a55;
+  /* Control boundaries and table rules. Non-text grade (3:1) on paper AND surface, both schemes —
+     which is what a `#ccc` rule never was, in either. */
+  --line: #6f7a75;
+  /* Hoover blue: links, the primary fill. Text-grade on paper and surface; the fill under --accent-ink. */
+  --accent: #395fac;
+  /* Text on an accent fill. */
+  --accent-ink: #ffffff;
+  /* A tint of the accent for a highlighted row or the member's own message; --ink reads on it. */
+  --accent-soft: #e4eaf6;
+  /* An error, as text and as a border. */
+  --danger: #b00020;
+  /* The field behind an error line; --danger reads on it. */
+  --danger-soft: #fde8e8;
+  /* A warning, as text: the amber that clears 4.5:1 on paper (EmailUsage's reason, kept). */
+  --warn: #8a5a00;
+  /* Confirmation, as text. */
+  --ok: #1e6b3a;
+
+  /* ---- type ------------------------------------------------------------------------------ */
+  --font-body: system-ui, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --leading: 1.5;
+  --leading-tight: 1.2;
+
+  /* ---- space ----------------------------------------------------------------------------- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  /* The reading measure a page's content sits in, and the wide one for tables. */
+  --measure: 32rem;
+  --measure-wide: 48rem;
+  --radius: 0.5rem;
+  --radius-pill: 999px;
+
+  /* ---- motion ---------------------------------------------------------------------------- */
+  --dur: 150ms;
+  --ease: ease-out;
 }
-html, body { margin: 0; }
-body { background: var(--paper); color: #1a1a1a; }
+
 @media (prefers-color-scheme: dark) {
-  body { background: #121a17; color: var(--paper); }
+  :root {
+    --paper: #121a17;
+    --surface: #1c2622;
+    --ink: #edf0ea;
+    --ink-muted: #b3bdb8;
+    --line: #8a948f;
+    --accent: #9db6ec;
+    --accent-ink: #0f1c36;
+    --accent-soft: #24304a;
+    --danger: #ff8a95;
+    --danger-soft: #3a1a1e;
+    --warn: #f0b95a;
+    --ok: #7fd39a;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0s;
+  }
+}
+
+html,
+body {
+  margin: 0;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: var(--leading);
+}
+a {
+  color: var(--accent);
+  transition: color var(--dur) var(--ease);
 }
 
 /* The brand bar: the club's disc behind its knockout, the same pair the mark is drawn in. */
 [data-brand-bar] {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 2rem;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-8);
   background: var(--brand-disc);
   color: var(--brand-mark);
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-body);
   font-weight: 600;
 }

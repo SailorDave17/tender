@@ -31,6 +31,13 @@
  * `globals.css` cannot import these — it is CSS — so `test/manifest.test.ts` holds its `--paper`
  * equal to `BACKGROUND_COLOUR`, and holds the manifest's `theme_color` to the theme it is built
  * from rather than to a literal (cairn: `a-computable-claim-does-not-belong-in-prose`).
+ *
+ * SINCE #153 THE PRODUCT'S PALETTE IS THE TOKEN LAYER IN `globals.css`, and it is constants, not
+ * the row: `--accent` is `HOOVER_SAILING_CLUB.disc` (held there by `test/tokens.test.ts`), with
+ * `--ink`, `--surface`, `--line` and the rest chosen around it and proven against each other in
+ * both schemes. The row still paints the badge and the brand bar through `--brand-disc` /
+ * `--brand-mark`; the product's accent does not follow the row, because a pair an admin may save
+ * at 3:1 cannot promise 4.5:1 to the text that sits on it. `globals.css`'s header says the rest.
  */
 
 /** Sampled from the club burgee: blue field, yellow device. Contrast 4.13:1. */
