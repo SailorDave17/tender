@@ -44,10 +44,10 @@ export default async function BoatsPage({
       {!boats?.length ? (
         <p data-boats="0">You have no boats yet.</p>
       ) : (
-        <ul data-boats={boats.length} style={{ listStyle: "none", padding: 0, display: "grid", gap: "0.5rem" }}>
+        <ul data-boats={boats.length} data-list="stack">
           {boats.map((b) => (
-            <li key={b.id} data-boat={b.id} style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}>
-              <span style={{ flex: 1 }}>
+            <li key={b.id} data-boat={b.id} data-row>
+              <span data-grow>
                 <strong>{b.name}</strong> — {b.class}, usually takes{" "}
                 {RATINGS.find((r) => r.value === b.default_minimum)?.label.toLowerCase()}
               </span>
@@ -58,14 +58,14 @@ export default async function BoatsPage({
       )}
 
       <h2>Add a boat</h2>
-      <form action={createBoat} style={{ display: "grid", gap: "0.75rem" }}>
+      <form action={createBoat} data-stack>
         <label>
           Name
-          <input name="name" required maxLength={80} placeholder="Blue Moon" style={{ display: "block" }} />
+          <input name="name" required maxLength={80} placeholder="Blue Moon" />
         </label>
         <label>
           Class
-          <select name="class" required defaultValue="" style={{ display: "block" }}>
+          <select name="class" required defaultValue="">
             <option value="" disabled>
               Pick a class
             </option>
@@ -76,7 +76,7 @@ export default async function BoatsPage({
             ))}
           </select>
         </label>
-        <fieldset style={{ display: "grid", gap: "0.25rem" }}>
+        <fieldset>
           <legend>Minimum competence you usually take</legend>
           {RATINGS.map((r) => (
             <label key={r.value}>

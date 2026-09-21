@@ -73,12 +73,12 @@ export default async function BoardPage({
       <InstallBanner />
 
       {suspension && (
-        <p role="status" data-banner="suspended" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
+        <p role="status" data-banner="suspended">
           {SUSPENDED_NOTE}
         </p>
       )}
       {unrated && (
-        <p role="status" data-banner="no-rating" style={{ padding: "0.75rem", border: "1px solid currentColor" }}>
+        <p role="status" data-banner="no-rating">
           Before you can mark the days you can sail, <Link href="/profile" prefetch={false}>set your competence on your profile</Link>.
         </p>
       )}
@@ -88,7 +88,7 @@ export default async function BoardPage({
       {!dates?.length ? (
         <p>The season has no dates yet.</p>
       ) : (
-        <ol style={{ listStyle: "none", padding: 0, display: "grid", gap: "0.5rem" }}>
+        <ol data-list="stack" data-race-days>
           {dates.map((d) => {
             const f = formatStartsAt(d.starts_at);
             const s = byDate.get(d.id) ?? { count: 0, mine: false };
@@ -102,9 +102,9 @@ export default async function BoardPage({
                 data-race-date={d.id}
                 data-past={past}
                 data-available={s.mine}
-                style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}
+                data-row
               >
-                <span style={{ flex: 1 }}>
+                <span data-grow data-day>
                   <strong>{f.date}</strong> {f.time} — {d.title}
                   <br />
                   <small data-available-count={s.count}>
@@ -122,7 +122,7 @@ export default async function BoardPage({
                   </form>
                 )}
                 {posts.length > 0 && (
-                  <ul data-posts={posts.length} style={{ flexBasis: "100%", listStyle: "none", padding: "0 0 0 1rem", margin: 0, display: "grid", gap: "0.35rem" }}>
+                  <ul data-posts={posts.length}>
                     {posts.map((p) => {
                       const boat = data.boats.get(p.boat_id);
                       if (!boat) return null;

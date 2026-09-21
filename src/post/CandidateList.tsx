@@ -27,19 +27,21 @@ export type CandidatePerson = {
   hulls: readonly string[];
 };
 
-export function RungBadge({ rung, colour }: { rung: 1 | 2 | 3; colour: { name: string; hex: string } }) {
+/**
+ * The rung badge: `Rung {n} · {name}` as text beside the colour — colour is never the sole
+ * carrier (post-view.ts). Since #155 the badge is painted by `globals.css` (`[data-badge="rung"]`)
+ * from two custom properties set HERE: the rung's colour is the ladder's data, not a design
+ * token, so it reaches the markup as `--rung` / `--rung-dark` and the stylesheet picks the one
+ * the scheme needs. That inline `style` is the one the token layer cannot express, and it is why
+ * `CandidateList.test.tsx` still finds the rung's hex in the rendered HTML.
+ */
+export function RungBadge({ rung, colour }: { rung: 1 | 2 | 3; colour: { name: string; hex: string; dark: string } }) {
   return (
     <span
       data-rung={rung}
-      style={{
-        display: "inline-block",
-        padding: "0.1rem 0.5rem",
-        borderRadius: "999px",
-        background: colour.hex,
-        color: "#fff",
-        fontSize: "0.85rem",
-        fontWeight: 600,
-      }}
+      data-badge="rung"
+      // token-exempt: the rung colour is the ladder's vocabulary (RUNG_COLOUR), carried as data.
+      style={{ "--rung": colour.hex, "--rung-dark": colour.dark } as React.CSSProperties}
     >
       Rung {rung} · {colour.name}
     </span>
@@ -61,28 +63,18 @@ export function CandidateList({
 }) {
   if (rows.length === 0) return <p data-candidates="0">Nobody has marked this day available yet.</p>;
   return (
-    <ol data-candidates={rows.length} style={{ listStyle: "none", padding: 0, display: "grid", gap: "0.5rem" }}>
+    <ol data-candidates={rows.length} data-list="stack">
       {rows.map((r) => {
         const p = people.get(r.id);
         return (
-          <li
-            key={r.id}
-            data-candidate={r.id}
-            data-notified={r.notified}
-            data-answered={r.answered}
-            style={{ display: "flex", gap: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}
-          >
+          <li key={r.id} data-candidate={r.id} data-notified={r.notified} data-answered={r.answered} data-row>
             <RungBadge rung={r.rung} colour={r.colour} />
-            <span style={{ flex: 1 }}>
+            <span data-grow>
               <a href={`/profile/${r.id}`}>{p?.display_name ?? "Someone"}</a> —{" "}
               {competenceText({ rating: p?.rating ?? null, skills: p?.skills }, skills)},{" "}
               {p ? hullsText(p).toLowerCase() : "any hull"}
             </span>
-            {r.answered && (
-              <strong data-badge="answered" style={{ padding: "0.1rem 0.5rem", border: "1px solid currentColor", borderRadius: "999px", fontSize: "0.85rem" }}>
-                answered
-              </strong>
-            )}
+            {r.answered && <strong data-badge="answered">answered</strong>}
             {r.answered && accept?.(r.id)}
             {!r.notified && <em>not yet notified</em>}
           </li>

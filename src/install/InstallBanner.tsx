@@ -26,15 +26,6 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
-const wrapperStyle: React.CSSProperties = {
-  padding: "0.75rem",
-  border: "1px solid currentColor",
-  display: "flex",
-  gap: "0.75rem",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-};
-
 export function InstallBannerView({
   advice,
   onInstall,
@@ -47,20 +38,20 @@ export function InstallBannerView({
   if (advice === null) return null;
 
   return (
-    <aside role="status" data-banner="install" data-install-advice={advice.kind} style={wrapperStyle}>
+    <aside role="status" data-banner="install" data-install-advice={advice.kind}>
       <div>
         {advice.kind === "ios-share-sheet" ? (
-          <p style={{ margin: 0 }}>
+          <p>
             Add Tender to your home screen so a skipper&rsquo;s post can reach your phone: tap{" "}
             <strong>Share</strong> at the bottom of Safari, then <strong>Add to Home Screen</strong>.
           </p>
         ) : (
-          <p style={{ margin: 0 }}>
+          <p>
             Add Tender to your home screen so a skipper&rsquo;s post can reach your phone.
           </p>
         )}
         {advice.kind === "browser-prompt" && (
-          <button type="button" data-install-action="prompt" onClick={onInstall} style={{ marginTop: "0.5rem" }}>
+          <button type="button" data-install-action="prompt" onClick={onInstall}>
             Add to home screen
           </button>
         )}

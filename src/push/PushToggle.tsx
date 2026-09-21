@@ -99,7 +99,7 @@ export function PushToggle({ vapidPublicKey, subscribed }: { vapidPublicKey: str
   }
 
   return (
-    <div style={{ display: "grid", gap: "0.5rem" }}>
+    <div data-stack>
       {on ? (
         <p data-push-on>
           Notifications are on for this device.{" "}

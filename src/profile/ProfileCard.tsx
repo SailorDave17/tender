@@ -46,7 +46,7 @@ export function ProfileCard({
 }) {
   const own = viewerId === person.id;
   return (
-    <dl data-profile={person.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.25rem 1rem" }}>
+    <dl data-profile={person.id} data-pairs>
       <dt>Name</dt>
       <dd>{person.display_name}</dd>
       <dt>Competence</dt>

@@ -32,7 +32,10 @@ describe("CandidateList — name, competence and hulls only (AC 5)", () => {
     expect(html).toContain("green");
     expect(html).toContain("Rung 2");
     expect(html).toContain("amber");
-    expect(html).toContain(RUNG_COLOUR[1].hex);
+    // The rung reaches the markup as the custom property the stylesheet paints the badge from
+    // (#155 AC 4): the hex is still literally in the HTML, on the badge, as `--rung`.
+    expect(html).toMatch(new RegExp(`data-badge="rung"[^>]*style="[^"]*--rung:${RUNG_COLOUR[1].hex}`));
+    expect(html).toContain(`--rung-dark:${RUNG_COLOUR[1].dark}`);
   });
 
   it("marks a rung the post has not reached as not yet notified, and only that one", () => {
@@ -75,7 +78,7 @@ describe("CandidateList — the 'answered' badge (story #20 AC 4)", () => {
     // The answerer's row carries rung 2 / amber and 'Can hike and trim', not the badge alone.
     const cyRow = html.slice(html.indexOf('data-candidate="cy"'), html.indexOf('data-candidate="ann"'));
     expect(cyRow).toContain("Rung 2");
-    expect(cyRow).toContain(RUNG_COLOUR[2].hex);
+    expect(cyRow).toMatch(new RegExp(`data-badge="rung"[^>]*style="[^"]*--rung:${RUNG_COLOUR[2].hex}`));
     expect(cyRow).toContain("Can hike and trim");
     expect(cyRow).toContain(">answered<");
   });
