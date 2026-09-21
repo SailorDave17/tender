@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PassPayload } from "./pass";
-import { ensurePerson, type PersonStore } from "./person";
+import { ensurePerson, type GateAttestation, type PersonStore } from "./person";
 
 /** A fake store recording every write, so each branch can assert what was and was not touched. */
 function store(existing = false) {
@@ -38,16 +37,15 @@ const googleUser = {
   user_metadata: { full_name: "Bob Example", email_verified: true },
 };
 
-const pass: PassPayload = {
+const gate: GateAttestation = {
   display_name: "Bob",
   adult_attested_at: "2026-08-23T10:00:00.000Z",
-  issued_at: "2026-08-23T10:00:00.000Z",
 };
 
 describe("ensurePerson — the first sign-in mints the person rows (#15 AC 4)", () => {
   it("inserts person and contact from the auth user's metadata on first sign-in", async () => {
     const { s, inserted, deleted, metadata } = store(false);
-    expect(await ensurePerson(invited, s)).toEqual({ created: true, usedPass: false });
+    expect(await ensurePerson(invited, s)).toEqual({ created: true, usedGate: false });
     expect(inserted).toEqual([
       {
         id: invited.id,
@@ -60,16 +58,16 @@ describe("ensurePerson — the first sign-in mints the person rows (#15 AC 4)", 
     expect(metadata).toEqual([]);
   });
 
-  it("writes nothing on a later sign-in — with or without a pass lying around", async () => {
+  it("writes nothing on a later sign-in — with or without a gate attestation offered", async () => {
     const { s, inserted, deleted, metadata } = store(true);
     expect(await ensurePerson(invited, s)).toEqual({ created: false });
-    expect(await ensurePerson(googleUser, s, pass)).toEqual({ created: false });
+    expect(await ensurePerson(googleUser, s, gate)).toEqual({ created: false });
     expect(inserted).toEqual([]);
     expect(deleted).toEqual([]);
     expect(metadata).toEqual([]);
   });
 
-  it("refuses a garbage attestation with no pass, and a user with no email", async () => {
+  it("refuses a garbage attestation with no gate, and a user with no email", async () => {
     const { s, inserted } = store(false);
     expect(
       await ensurePerson({ ...invited, user_metadata: { adult_attested_at: "yesterday-ish" } }, s),
@@ -97,30 +95,30 @@ describe("ensurePerson — the first sign-in mints the person rows (#15 AC 4)", 
   });
 });
 
-describe("ensurePerson — the Google path and the gate pass (#70 AC 5)", () => {
-  it("with a valid pass: writes the attestation onto the user, then mints the rows from it", async () => {
+describe("ensurePerson — the Google path and the gate attestation (#70 AC 5, the pass retired by #173)", () => {
+  it("with a gate attestation: writes it onto the user, then mints the rows from it", async () => {
     const { s, inserted, metadata, deleted } = store(false);
-    expect(await ensurePerson(googleUser, s, pass)).toEqual({ created: true, usedPass: true });
+    expect(await ensurePerson(googleUser, s, gate)).toEqual({ created: true, usedGate: true });
     expect(metadata).toEqual([
-      { id: googleUser.id, meta: { display_name: "Bob", adult_attested_at: pass.adult_attested_at } },
+      { id: googleUser.id, meta: { display_name: "Bob", adult_attested_at: gate.adult_attested_at } },
     ]);
     expect(inserted).toEqual([
       {
         id: googleUser.id,
         display_name: "Bob",
-        adult_attested_at: pass.adult_attested_at,
+        adult_attested_at: gate.adult_attested_at,
         email: "bob@example.org",
       },
     ]);
     expect(deleted).toEqual([]);
   });
 
-  it("without a pass: deletes the auth user exactly once and inserts nothing", async () => {
+  it("without a gate: deletes the auth user exactly once and inserts nothing", async () => {
     const { s, inserted, metadata, deleted } = store(false);
     const r = await ensurePerson(googleUser, s, null);
     expect(r).toEqual({
       created: false,
-      refused: "no adult attestation on the auth user and no gate pass",
+      refused: "no adult attestation on the auth user and no invite gate behind it",
       deleted: true,
     });
     expect(deleted).toEqual([googleUser.id]);
@@ -135,10 +133,10 @@ describe("ensurePerson — the Google path and the gate pass (#70 AC 5)", () => 
     expect(inserted).toEqual([]);
   });
 
-  it("a user carrying the email gate's metadata ignores the pass — exactly as today", async () => {
+  it("a user carrying the email gate's metadata ignores the gate attestation — exactly as today", async () => {
     const { s, inserted, metadata, deleted } = store(false);
-    const other: PassPayload = { ...pass, display_name: "Impostor", adult_attested_at: "2020-01-01T00:00:00.000Z" };
-    expect(await ensurePerson(invited, s, other)).toEqual({ created: true, usedPass: false });
+    const other: GateAttestation = { ...gate, display_name: "Impostor", adult_attested_at: "2020-01-01T00:00:00.000Z" };
+    expect(await ensurePerson(invited, s, other)).toEqual({ created: true, usedGate: false });
     expect(inserted[0]).toMatchObject({ display_name: "Alice", adult_attested_at: invited.user_metadata.adult_attested_at });
     expect(metadata).toEqual([]);
     expect(deleted).toEqual([]);
@@ -147,7 +145,7 @@ describe("ensurePerson — the Google path and the gate pass (#70 AC 5)", () => 
   it("a metadata write that fails refuses without inserting or deleting", async () => {
     const { s, inserted, deleted } = store(false);
     s.setMetadata = async () => ({ error: "admin api down" });
-    expect(await ensurePerson(googleUser, s, pass)).toEqual({
+    expect(await ensurePerson(googleUser, s, gate)).toEqual({
       created: false,
       refused: "admin api down",
       deleted: false,

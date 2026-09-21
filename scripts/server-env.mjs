@@ -17,11 +17,13 @@
  *               as many words: "quiet by construction — the one to check for deliberately".
  *
  * The story asked for an assertion over five names (its body amended three -> four -> five as
- * #70 and #23 landed). The runbook numbers NINE, and the four beyond the five degrade rather
- * than throw. Owner decision at pickup, 2026-09-20: THROW on the five, REPORT all nine. Turning
+ * #70 and #23 landed). The runbook numbered NINE, and the four beyond the five degraded rather
+ * than threw. Owner decision at pickup, 2026-09-20: THROW on the five, REPORT all nine. Turning
  * the other four into throws would be a behaviour change this story did not ask for — a missing
  * OWNER_EMAIL would take down the error-reporting hook instead of logging `OWNER_EMAIL unset`,
  * and an unset VAPID public key would break /profile rather than hiding the push toggle.
+ * #173 then retired GATE_PASS_SECRET (the fifth throw) with the Google redirect flow and added
+ * NEXT_PUBLIC_GOOGLE_CLIENT_ID as a fifth degrade: four throw, five degrade, nine in all.
  *
  * Adding a name here is not bookkeeping: the test refuses a `throws` entry that no file reads
  * through env(), and refuses an env() call whose name is missing from this list.
@@ -53,11 +55,12 @@ export const SERVER_ENV = [
     fails: "throws",
     breaks: "every outbound email, at transport construction; the ...Live wrappers catch it, so a post still stands and nobody is emailed",
   },
-  // Step 1's Google provider — the gate pass.
+  // Step 1's Google provider — the web client id GIS renders the button with (#173). The gate pass
+  // and its GATE_PASS_SECRET sat here until #173 retired them with the redirect flow.
   {
-    name: "GATE_PASS_SECRET",
-    fails: "throws",
-    breaks: "Google sign-up — /api/signup/google cannot sign the pass and /auth/callback cannot verify one",
+    name: "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
+    fails: "degrades",
+    breaks: "/join shows no Continue with Google on either tab, and nothing says why; the /profile link flow is unaffected",
   },
   // Step 2b — web push (#29).
   {

@@ -165,7 +165,7 @@ npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,postgres-meta
 #    whatever .env.local names — see README, "Working on it".
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon> npm run build
 NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... SUPABASE_SERVICE_ROLE_KEY=... \
-  RESEND_API_KEY=stub GATE_PASS_SECRET=stub npx next start -p 3100
+  RESEND_API_KEY=stub npx next start -p 3100
 
 # 3. seed, sign in and measure
 STACK_ANON_KEY=<anon> STACK_SERVICE_ROLE_KEY=<service> \
