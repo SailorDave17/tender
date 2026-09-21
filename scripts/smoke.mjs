@@ -131,9 +131,10 @@ async function signIn(page, baseUrl, person) {
   await page.fill('form[data-form="signin"] input[name="email"]', person.email);
   await page.fill('form[data-form="signin"] input[name="password"]', SMOKE_PASSWORD);
   await Promise.all([page.waitForURL((u) => u.pathname === "/board"), page.click('form[data-form="signin"] button[type="submit"]')]);
-  // Whose board it is, not merely that a board rendered: two contexts, two people.
-  const text = await page.innerText("main");
-  if (!text.includes(`Signed in as ${person.displayName}`)) throw new Error(`the board does not say "Signed in as ${person.displayName}"`);
+  // Whose board it is, not merely that a board rendered: two contexts, two people. Since #154 the
+  // identity line is the shell's, in the header, not the board's <main> — read it where it lives.
+  const who = await page.innerText("header [data-who]");
+  if (!who.includes(`Signed in as ${person.displayName}`)) throw new Error(`the header does not say "Signed in as ${person.displayName}"`);
 }
 
 async function main() {
