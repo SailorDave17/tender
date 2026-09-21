@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { RECOGNITION_COOKIE, RECOGNITION_VALUE } from "@/auth/recognition";
 import ForgotPage from "./forgot/page";
 import JoinPage from "./join/page";
 
@@ -14,7 +15,30 @@ import JoinPage from "./join/page";
  * why the one part of this criterion that lives behind a submit — the client-side "enter your
  * email" message — is checked against the source below, and said to be checked that way.
  */
-async function join(searchParams: Record<string, string> = {}): Promise<string> {
+/**
+ * Since #123 the page reads a cookie before it renders, so the fixture is a browser as well as a
+ * URL. `next/headers` is replaced rather than stubbed per test: `cookies()` throws outside a
+ * request, and the jar below is the one thing the page asks it for.
+ */
+let jar: Record<string, string> = {};
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => (name in jar ? { name, value: jar[name] } : undefined),
+  }),
+}));
+
+/**
+ * `recognized` is the device this render happens in: `false` is a browser that has never signed
+ * in here, which since #123 is what a first visit looks like. It is a required argument on
+ * purpose — the default is the whole subject of this story, so a call that does not say which
+ * browser it means is a call that will read as whichever default is current, silently, the next
+ * time somebody changes one.
+ */
+async function join(
+  searchParams: Record<string, string>,
+  recognized: boolean,
+): Promise<string> {
+  jar = recognized ? { [RECOGNITION_COOKIE]: RECOGNITION_VALUE } : {};
   return renderToStaticMarkup(await JoinPage({ searchParams: Promise.resolve(searchParams) }));
 }
 
@@ -51,7 +75,7 @@ describe("the Forgot screen keeps one arm and it is the reset (#99 AC 7)", () =>
 
 describe("the Sign up tab finishes here, not in an inbox (#99 AC 7)", () => {
   it("the finish button reads Create my account", async () => {
-    const html = await join({ mode: "signup" });
+    const html = await join({ mode: "signup" }, false);
     expect(html).toContain("Create my account");
     expect(html).not.toContain("Email me a link");
   });
@@ -59,8 +83,14 @@ describe("the Sign up tab finishes here, not in an inbox (#99 AC 7)", () => {
   it("the sign-up tab really is what was rendered — the negative control", async () => {
     // Without this, "contains Create my account" is consistent with a page that renders both
     // tabs at once, and "does not contain Email me a link" is consistent with rendering neither.
-    const signup = await join({ mode: "signup" });
-    const signin = await join();
+    //
+    // #123 AC 8: the sign-in half was `await join()` with no arguments, because Sign in was the
+    // default for everybody. It is not any more, so this REACHES the sign-in tab the way a
+    // returning member does — with the recognition cookie — rather than being deleted. The claim
+    // here was never about the default: it is that the two tabs are distinct, and that is the only
+    // assertion in the file that would notice a page rendering both at once.
+    const signup = await join({ mode: "signup" }, false);
+    const signin = await join({}, true);
     expect(signup).toContain('data-form="signup"');
     expect(signup).not.toContain('data-form="signin"');
     expect(signin).toContain('data-form="signin"');
@@ -70,11 +100,59 @@ describe("the Sign up tab finishes here, not in an inbox (#99 AC 7)", () => {
   });
 });
 
+/**
+ * #123 AC 1–3. Which tab /join opens on, read off the HTML the server produced — which is the
+ * criterion, not a proxy for it: a test that asserted `initialMode`'s return value would pass on a
+ * page that computed the right mode and handed the component the wrong one, and a test that drove
+ * a browser would pass on a page that painted Sign in and flipped after hydration. The absence of
+ * `data-form="signin"` from the first byte of HTML is what proves there is no flip to watch.
+ */
+describe("/join opens on the tab the device has earned (#123 AC 1-3)", () => {
+  it("a browser that has never signed in here opens on Sign up", async () => {
+    const html = await join({}, false);
+    expect(html).toContain('data-form="signup"');
+    expect(html).not.toContain('data-form="signin"');
+  });
+
+  it("a browser carrying the cookie opens on Sign in, as it did for everybody before", async () => {
+    const html = await join({}, true);
+    expect(html).toContain('data-form="signin"');
+    expect(html).not.toContain('data-form="signup"');
+  });
+
+  it("?mode= beats the cookie in both directions, so the deep link keeps working", async () => {
+    // The invited member who was SENT /join?mode=signup, on a device that has signed in before.
+    const deepLinked = await join({ mode: "signup" }, true);
+    expect(deepLinked).toContain('data-form="signup"');
+    expect(deepLinked).not.toContain('data-form="signin"');
+    // ...and the other direction, which is new: an unrecognised browser asked for Sign in.
+    const askedForSignin = await join({ mode: "signin" }, false);
+    expect(askedForSignin).toContain('data-form="signin"');
+    expect(askedForSignin).not.toContain('data-form="signup"');
+  });
+
+  it("the cookie is what decides it — the same URL renders both tabs", async () => {
+    // The control on the two assertions above: if the page ignored the cookie entirely, one of
+    // them would still pass, and `not.toContain` on a page rendering neither tab would pass both.
+    const [stranger, member] = [await join({}, false), await join({}, true)];
+    expect(stranger).not.toBe(member);
+    expect(stranger).toContain('data-form="signup"');
+    expect(member).toContain('data-form="signin"');
+  });
+
+  it("still shows the tab controls, so a first-timer who does have an account can get out", async () => {
+    // Opening on Sign up must not strand a member whose browser forgot: both tabs are on screen.
+    const html = await join({}, false);
+    expect(html).toContain('data-mode="signin"');
+    expect(html).toContain('data-mode="signup"');
+  });
+});
+
 describe("neither screen promises an emailed way in (#99 AC 7)", () => {
   it("no sentence on /join, either tab, or on /forgot offers to email a sign-in link", async () => {
     for (const [name, html] of [
-      ["/join (sign in)", await join()],
-      ["/join (sign up)", await join({ mode: "signup" })],
+      ["/join (sign in)", await join({}, true)],
+      ["/join (sign up)", await join({ mode: "signup" }, false)],
       ["/forgot", forgot()],
     ] as const) {
       expect(html, `${name} promises an emailed way in`).not.toMatch(PROMISES_A_LINK);

@@ -1,3 +1,5 @@
+import { cookies } from "next/headers";
+import { RECOGNITION_COOKIE, initialMode, isRecognized } from "@/auth/recognition";
 import { JoinForm } from "./JoinForm";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +10,10 @@ export default async function JoinPage({
   searchParams: Promise<{ error?: string; mode?: string; deleted?: string }>;
 }) {
   const { error, mode, deleted } = await searchParams;
+  // #123: a browser that has never signed in here opens on **Sign up**. Read before the render,
+  // not after hydration, so the right tab is in the first byte of HTML and nothing flips under
+  // the person this is for. `dynamic = "force-dynamic"` above is what makes that legal.
+  const recognized = isRecognized((await cookies()).get(RECOGNITION_COOKIE)?.value);
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "28rem" }}>
       <h1>Tender</h1>
@@ -29,7 +35,7 @@ export default async function JoinPage({
         Members sign in with their email and password, or with Google. New to Tender? Sign up with
         this season&apos;s invite code.
       </p>
-      <JoinForm initialError={error} initialMode={mode === "signup" ? "signup" : "signin"} />
+      <JoinForm initialError={error} initialMode={initialMode(mode, recognized)} />
     </main>
   );
 }
