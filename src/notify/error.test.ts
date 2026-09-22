@@ -60,17 +60,34 @@ type Fake = {
   failLast?: boolean;
   failCount?: boolean;
   failLog?: boolean;
+  failClaim?: boolean;
   /** Set to make the provider refuse. */
   refuse?: string;
+  /** How many times the store was asked to claim a window. */
+  claimCalls: number;
 };
 
-function fake(): Fake {
-  const f: Fake = { rows: [], sent: [], recent: new Map(), history: [], sentToday: 0, store: null as unknown as ErrorStore };
+/**
+ * `claims` is 0030's table: signature → the holder's instant. Pass one Map to two fakes and they
+ * are two INSTANCES sharing one database — separate `recent` Maps, one claim table. The claim is
+ * atomic here the way Postgres makes it atomic: the check and the write happen in one synchronous
+ * step, with no await between them for another caller to land in.
+ */
+function fake(claims: Map<string, Date> = new Map()): Fake {
+  const f: Fake = { rows: [], sent: [], recent: new Map(), history: [], sentToday: 0, claimCalls: 0, store: null as unknown as ErrorStore };
   f.store = {
     async lastErrorEmailAt(signature) {
       if (f.failLast) throw new Error("fetch failed");
       const rows = f.history.filter((h) => h.signature === signature).sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
       return rows[0]?.sentAt ?? null;
+    },
+    async claimWindow(signature, at, since) {
+      f.claimCalls++;
+      if (f.failClaim) throw new Error("fetch failed");
+      const held = claims.get(signature);
+      if (held && held.getTime() > since.getTime()) return { won: false, heldSince: held };
+      claims.set(signature, at);
+      return { won: true, heldSince: at };
     },
     async emailsSentToday() {
       if (f.failCount) throw new Error("fetch failed");
@@ -257,6 +274,77 @@ describe("the day's cap (AC 3)", () => {
   });
 });
 
+describe("concurrent reports of one error send once (#198)", () => {
+  // The case measured on 2026-09-22: ONE refused read of `club`, one request, one instance — and
+  // two report emails 4 ms apart, because the in-process window was written only after two
+  // awaited reads. Supabase's edge log showed the pair: two dedupe reads 18 ms apart, two log
+  // writes 6 ms apart.
+
+  it("two at once on ONE instance, with the database down: one email — the in-process window alone", async () => {
+    // Every store call fails, so nothing but the Map can stop the second report. This is the case
+    // that isolates the in-process fix: with the claim working, the claim would catch it too.
+    const f = fake();
+    f.failLast = true;
+    f.failCount = true;
+    f.failClaim = true;
+    const results = await Promise.all([reportError(report(), deps(f, T0)), reportError(report(), deps(f, at(4)))]);
+    expect(f.sent).toHaveLength(1);
+    expect(results.map((r) => r.state).sort()).toEqual(["sent", "suppressed"]);
+    expect(results.find((r) => r.state === "suppressed")?.suppressedBy).toBe("memory");
+  });
+
+  it("two at once on ONE instance, database up: the second never reaches the store at all", async () => {
+    const f = fake();
+    const results = await Promise.all([reportError(report(), deps(f, T0)), reportError(report(), deps(f, at(4)))]);
+    expect(f.sent).toHaveLength(1);
+    expect(results.map((r) => r.suppressedBy).filter(Boolean)).toEqual(["memory"]);
+    expect(f.claimCalls, "one claim, from the report that sent").toBe(1);
+  });
+
+  it("two INSTANCES at once — separate memory, one database: one email, the other lost the claim", async () => {
+    // The log read cannot help here: neither attempt's row exists until its send has finished, so
+    // both instances read "nothing in the last hour". The claim is what decides.
+    const claims = new Map<string, Date>();
+    const a = fake(claims);
+    const b = fake(claims);
+    const results = await Promise.all([reportError(report(), deps(a, T0)), reportError(report(), deps(b, at(4)))]);
+    expect(a.sent.length + b.sent.length).toBe(1);
+    expect(results.map((r) => r.state).sort()).toEqual(["sent", "suppressed"]);
+    expect(results.find((r) => r.state === "suppressed")?.suppressedBy).toBe("claim");
+  });
+
+  it("a second instance an hour later claims again — the window is an hour, not forever", async () => {
+    const claims = new Map<string, Date>();
+    const a = fake(claims);
+    const b = fake(claims);
+    expect((await reportError(report(), deps(a, T0))).state).toBe("sent");
+    expect((await reportError(report(), deps(b, at(ERROR_EMAIL_WINDOW_MS - 1)))).suppressedBy).toBe("claim");
+    const c = fake(claims);
+    expect((await reportError(report(), deps(c, at(ERROR_EMAIL_WINDOW_MS)))).state).toBe("sent");
+  });
+
+  it("the loser's in-process window ends when the HOLDER's does, not an hour after its own occurrence", async () => {
+    const claims = new Map<string, Date>([["TypeError /post/[id]", at(-50 * 60_000)]]);
+    const b = fake(claims);
+    expect((await reportError(report(), deps(b, T0))).suppressedBy).toBe("claim");
+    expect(b.recent.get("TypeError /post/[id]")).toBe(at(-50 * 60_000).getTime());
+    // Ten minutes and a second later the holder's hour is over, and this instance may send.
+    expect((await reportError(report(), deps(b, at(10 * 60_000 + 1_000)))).state).toBe("sent");
+  });
+
+  it("the claim is asked for the hour before `now`, from the caller's clock", async () => {
+    const f = fake();
+    const asked: { at: Date; since: Date }[] = [];
+    const claim = f.store.claimWindow;
+    f.store.claimWindow = (sig, atArg, since) => {
+      asked.push({ at: atArg, since });
+      return claim(sig, atArg, since);
+    };
+    await reportError(report(), deps(f, T0));
+    expect(asked).toEqual([{ at: T0, since: at(-ERROR_EMAIL_WINDOW_MS) }]);
+  });
+});
+
 describe("the database being down is what this exists to report, so its reads are best-effort", () => {
   it("a dedupe read that throws still sends", async () => {
     const f = fake();
@@ -278,11 +366,19 @@ describe("the database being down is what this exists to report, so its reads ar
     expect(f.sent).toHaveLength(1);
   });
 
+  it("a claim that throws still sends", async () => {
+    const f = fake();
+    f.failClaim = true;
+    expect((await reportError(report(), deps(f, T0))).state).toBe("sent");
+    expect(f.sent).toHaveLength(1);
+  });
+
   it("with every read failing, the in-process window is still the bound — one an hour, not one a request", async () => {
     const f = fake();
     f.failLast = true;
     f.failCount = true;
     f.failLog = true;
+    f.failClaim = true;
     for (let i = 0; i < 25; i++) await reportError(report(), deps(f, at(i * 1_000)));
     expect(f.sent).toHaveLength(1);
   });
