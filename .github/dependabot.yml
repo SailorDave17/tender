@@ -4,6 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # A version is not pulled until it has been on the registry for a week. The npm worm lineage
+    # (Shai-Hulud and its 2026 successors) spreads through freshly published versions and is
+    # usually yanked within days; a floor on age is the cheapest defence there is. Version updates
+    # only - GitHub applies no cooldown to security updates, which is the intended asymmetry.
+    cooldown:
+      default-days: 7
     # Two majors are blocked by upstream, not by anything in this repo. Without these
     # rules, closing a PR only suppresses that exact version — the next patch of the
     # same major (7.0.3, 10.8.2) opens a fresh PR that fails identically. Minors and
@@ -58,3 +64,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # The workflows pin actions by commit SHA (security-audit 2026-09-22); Dependabot moves the SHA
+    # and keeps the `# vN` comment current. Same age floor as npm, for the same reason.
+    cooldown:
+      default-days: 7
