@@ -79,6 +79,28 @@ const SENDERS = [
  */
 const HOOK = "instrumentation.ts";
 
+/**
+ * The second, since #198: the club-theme loader. A refused read of `club` no longer throws — the
+ * page renders in the default theme — so Next's error hook never sees it, and the loader reports
+ * it itself. It is on the render path (every page's layout awaits it), which is exactly why it is
+ * exempted by name and not by widening the rule, and why the exemption carries a condition the
+ * hook's does not: the send may only be scheduled through `after()`, which runs once the response
+ * has gone. So a page still never waits on, or causes, a send while it renders; this reports a
+ * failure that has already happened, which is the hook's job moved to where the failure now ends.
+ */
+const THEME_LOADER = "brand/club-theme.ts";
+
+/** Every call of a sender in a text, and whether each one is the body of an `after(() => …)`. */
+function senderCalls(text: string): { name: string; deferred: boolean }[] {
+  const calls: { name: string; deferred: boolean }[] = [];
+  for (const m of text.matchAll(/\b([A-Za-z]+)\s*\(/g)) {
+    if (!SENDERS.includes(m[1])) continue;
+    const before = text.slice(0, m.index);
+    calls.push({ name: m[1], deferred: /\bafter\(\s*(?:async\s*)?\(\)\s*=>\s*$/.test(before) });
+  }
+  return calls;
+}
+
 async function sourceFiles(): Promise<{ path: string; text: string }[]> {
   const out: { path: string; text: string }[] = [];
   async function walk(dir: string) {
@@ -135,7 +157,7 @@ describe("what can send a rung email (AC 3)", () => {
     ]);
   });
 
-  it("exactly the four Server Actions, the tick route and the error hook can send — no page, no component", async () => {
+  it("exactly the four Server Actions, the tick route, the error hook and the theme loader can send — no page, no component", async () => {
     const files = await sourceFiles();
     expect(files.length).toBeGreaterThan(20);
     // The thread's send action joined this list when `notifyMessage` joined SENDERS (#37 —
@@ -143,27 +165,44 @@ describe("what can send a rung email (AC 3)", () => {
     // The admin's invite action joined on #31, with its name added to SENDERS in the same edit —
     // which is #37's lesson (d) applied at filing time rather than found two stories later.
     // The error hook joined on #43, with `reportErrorLive` added to SENDERS in the same edit.
+    // The club-theme loader joined on #198, exempted by name with the after() condition below.
     expect(sendersAmong(files)).toEqual([
       "app/admin/invite/actions.ts",
       "app/api/ladder/tick/route.ts",
       "app/board/actions.ts",
       "app/post/[id]/thread/actions.ts",
       "app/post/actions.ts",
+      THEME_LOADER,
       HOOK,
     ]);
-    // A sender is a Server Action or a Route Handler — plus the error hook, exempted by name
-    // above. All three are entered by a request the person made on purpose; none is reached by
-    // rendering a page, which is the claim AC 3 is about.
+    // A sender is a Server Action or a Route Handler — plus the error hook and the theme loader,
+    // exempted by name above. None of them sends while a page renders, which is the claim AC 3 is
+    // about: the first two are entered by a request made on purpose, the hook runs after a request
+    // has failed, and the loader only schedules a report for after the response.
     for (const p of sendersAmong(files)) {
       const text = files.find((f) => f.path === p)!.text;
-      expect(text.startsWith('"use server";') || /^app\/api\/.*\/route\.ts$/.test(p) || p === HOOK, `${p} is an action, a route or the error hook`).toBe(
-        true,
-      );
+      expect(
+        text.startsWith('"use server";') || /^app\/api\/.*\/route\.ts$/.test(p) || p === HOOK || p === THEME_LOADER,
+        `${p} is an action, a route, the error hook or the theme loader`,
+      ).toBe(true);
       expect(isClientComponent(text), `${p} is not a client component`).toBe(false);
     }
-    // The exemption is for ONE file and it has to exist: a named carve-out whose subject has been
+    // Each exemption is for ONE file and it has to exist: a named carve-out whose subject has been
     // renamed or deleted reads as the rule still covering everything.
     expect(files.map((f) => f.path)).toContain(HOOK);
+    expect(files.map((f) => f.path)).toContain(THEME_LOADER);
+  });
+
+  it("the theme loader calls a sender only from inside after(), so no render waits on a send (#198)", async () => {
+    // Proven on fixtures first, both ways: the scan must see a call, and must tell a deferred call
+    // from a direct one — otherwise the assertion below passes on a file that awaits the send.
+    expect(senderCalls(`after(() => reportErrorLive(report));`)).toEqual([{ name: "reportErrorLive", deferred: true }]);
+    expect(senderCalls(`await reportErrorLive(report);`)).toEqual([{ name: "reportErrorLive", deferred: false }]);
+    expect(senderCalls(`import { reportErrorLive } from "@/notify/error-live";`)).toEqual([]);
+    const text = (await sourceFiles()).find((f) => f.path === THEME_LOADER)!.text;
+    const calls = senderCalls(text);
+    expect(calls.length, "the loader does report").toBeGreaterThan(0);
+    expect(calls.filter((c) => !c.deferred)).toEqual([]);
   });
 });
 

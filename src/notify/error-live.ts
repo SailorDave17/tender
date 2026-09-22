@@ -29,11 +29,22 @@ function ownerEmail(): string | null {
 }
 
 /**
- * The in-process half of the dedupe (AC 2), at module scope so it survives between requests on a
- * warm instance. Deliberately NOT the whole dedupe — a cold start empties it and Vercel may run
- * several instances, which is what the `notification_log` read in the store below is for.
+ * The in-process half of the dedupe (AC 2), kept for the life of the process so it survives
+ * between requests on a warm instance. Deliberately NOT the whole dedupe — a cold start empties it
+ * and Vercel may run several instances, which is what the `notification_log` read and the claim
+ * (0030, #198) in the store below are for.
+ *
+ * ON `globalThis`, NOT AT MODULE SCOPE (#198). A production build does not give every route one
+ * copy of this module. *Measured* on `next build` + `next start` with the club read refused: `/`,
+ * `/join` and `/privacy` shared one window, while `/manifest.webmanifest` (a route handler) sent a
+ * second report of the same signature inside the hour from the same process. So a module-scope Map
+ * was one window per bundle, not per instance. The claim hides that while the database answers,
+ * and exposes it when the database does not, which is when this Map is the only bound. A
+ * `Symbol.for` key is the one name every copy of this module resolves to the same slot.
  */
-const recent = new Map<string, number>();
+const RECENT_KEY = Symbol.for("tender.error-report.recent");
+const processWide = globalThis as unknown as Record<symbol, Map<string, number> | undefined>;
+export const recent: Map<string, number> = (processWide[RECENT_KEY] ??= new Map<string, number>());
 
 export function supabaseErrorStore(): ErrorStore {
   const admin = supabaseAdmin();
@@ -52,6 +63,22 @@ export function supabaseErrorStore(): ErrorStore {
         .maybeSingle();
       if (error) throw new Error(`error store: read last error email: ${error.message}`);
       return data ? new Date(data.sent_at) : null;
+    },
+
+    async claimWindow(signature, at, since) {
+      // 0030's function answers one row: whether this call took the window, and when its holder
+      // did. A `returns table` function comes back from `.rpc()` as an ARRAY of rows, as
+      // `answer_counts` does in src/board/load.ts. No row at all is not an answer; throwing sends
+      // the caller down the best-effort path, which is the send, not silence.
+      const { data, error } = await admin.rpc("claim_error_report", {
+        p_signature: signature,
+        p_at: at.toISOString(),
+        p_since: since.toISOString(),
+      });
+      if (error) throw new Error(`error store: claim the window: ${error.message}`);
+      const row = (data as { won: boolean; held_since: string }[] | null)?.[0];
+      if (!row) throw new Error("error store: claim the window: no row came back");
+      return { won: row.won, heldSince: new Date(row.held_since) };
     },
 
     async emailsSentToday(now) {

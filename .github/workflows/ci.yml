@@ -3,12 +3,16 @@ on:
   pull_request:
   push:
     branches: [develop, release]
+# The floor: GITHUB_TOKEN can read the checkout and nothing else. Neither job writes to the repo -
+# upload-artifact needs only this - so nothing is added per job (security-audit 2026-09-22, SA-3).
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -47,13 +51,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: npm
       # Pinned to the version measured on this story; `latest` would move the stack under the job.
-      - uses: supabase/setup-cli@v3
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.117.0
       - run: npm ci
@@ -92,7 +96,7 @@ jobs:
         if: failure()
         run: cat "$RUNNER_TEMP/next.log"
       # smoke.mjs saves each person's page as it stood when a step failed.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: smoke-output

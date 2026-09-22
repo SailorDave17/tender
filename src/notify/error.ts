@@ -16,11 +16,18 @@ import { EMAIL_SKIP_AT, type LogEntry } from "./rung";
  *
  *   - **The dedupe is kept in two places, and they are blind to different failures.** A
  *     module-scope Map (`recent`, injected here so the rule is testable) bounds the volume
- *     inside one running instance and keeps working when Supabase does not; the
- *     `notification_log` read makes it exact across instances, which the Map cannot be, because
- *     Vercel may run several and each starts empty. A store read that THROWS is not fatal: the
- *     Map is still enforcing one-per-hour, so the report goes out rather than being lost to the
- *     outage it is reporting. Owner decision at pickup, 2026-09-20.
+ *     inside one running instance and keeps working when Supabase does not; the database carries
+ *     it across instances, which the Map cannot, because Vercel may run several and each starts
+ *     empty. A store call that THROWS is not fatal: the Map is still enforcing one-per-hour, so
+ *     the report goes out rather than being lost to the outage it is reporting. Owner decision at
+ *     pickup, 2026-09-20.
+ *   - **Both halves are taken BEFORE anything is awaited on them (#198).** The Map slot is set
+ *     the moment a report passes it, and the database half ends in a CLAIM (0030) — a write
+ *     Postgres arbitrates, just before the send — rather than only in the `notification_log`
+ *     read, whose row lands after the provider answers. Until #198 both were check-then-act
+ *     across awaits: one failed request that threw from two places emailed the owner twice, 4 ms
+ *     apart, on one instance (measured in Supabase's edge log, 2026-09-22). The log read stays,
+ *     as the cheap path for the ordinary repeat.
  *   - **Both windows measure ATTEMPTS, not successful sends** — the opposite of notifyAnswer(),
  *     whose window deliberately starts only on a send the provider accepted so a refusal is
  *     retried on the next answer. The reason the rule inverts here is what a repeat costs. An
@@ -155,9 +162,22 @@ export function signatureOf(report: ErrorReport): string {
 /** The store's `log`, plus the signature the dedupe reads back (0025). */
 export type ErrorLogEntry = LogEntry & { signature: string | null };
 
+/** What a claim on a signature's window answered (0030's `claim_error_report`). */
+export type WindowClaim = {
+  /** True when THIS call took the window — it is the one that may send. */
+  won: boolean;
+  /** When the window's holder claimed it: this call's own `at` when won, the winner's otherwise. */
+  heldSince: Date;
+};
+
 export interface ErrorStore {
   /** When an error email for this signature was last ATTEMPTED, or null if never. */
   lastErrorEmailAt(signature: string): Promise<Date | null>;
+  /**
+   * Take the signature's window for this attempt, atomically across instances (#198): won unless
+   * another claim on the same signature falls after `since`. The last gate before the send.
+   */
+  claimWindow(signature: string, at: Date, since: Date): Promise<WindowClaim>;
   /** Email sends attempted so far in the day `now` falls in, all kinds — the cap's count. */
   emailsSentToday(now: Date): Promise<number>;
   log(entry: ErrorLogEntry): Promise<void>;
@@ -188,7 +208,7 @@ export type ErrorReportResult = {
     | "ignored" // Next's own control flow: notFound(), redirect()
     | "unconfigured"; // no OWNER_EMAIL on this deployment
   /** Which dedupe caught it, when state is "suppressed" — useful to a test, and to the log. */
-  suppressedBy?: "memory" | "log";
+  suppressedBy?: "memory" | "log" | "claim";
 };
 
 /** What the owner reads. Exported so the copy is tested, not so anything else sends it. */
@@ -225,10 +245,13 @@ function prune(recent: Map<string, number>, now: number): void {
  *   2. No OWNER_EMAIL — nothing to send to. A console.error, and no log row: nothing was
  *      attempted, and a row per request on a misconfigured deployment is its own storm.
  *   3. The in-process window (AC 2). No store read, no log row — during a Supabase outage this
- *      is the branch that runs, and it must not write to the thing that is down.
+ *      is the branch that runs, and it must not write to the thing that is down. Passing it takes
+ *      it, synchronously (#198).
  *   4. The logged window (AC 2, across instances) and then the day's cap (AC 3). Both reads are
  *      best-effort: a throw means the database cannot answer, which is itself consistent with
  *      why we are here, so the report proceeds on the in-process window alone.
+ *   5. The claim (#198): the cross-instance window, taken atomically just before the send. Lost,
+ *      it suppresses; thrown, it is best-effort like the reads.
  */
 export async function reportError(report: ErrorReport, deps: ErrorReportDeps): Promise<ErrorReportResult> {
   const { store, transport, now, ownerEmail, recent } = deps;
@@ -248,6 +271,13 @@ export async function reportError(report: ErrorReport, deps: ErrorReportDeps): P
   if (seen !== undefined && at - seen < ERROR_EMAIL_WINDOW_MS) {
     return { signature, state: "suppressed", suppressedBy: "memory" };
   }
+  // Take the in-process window NOW, before the first await (#198). Every line below awaits the
+  // store, and a second report of the same signature arriving during those awaits — one failed
+  // request throwing from two places, measured on 2026-09-22 — must find it taken. Written after
+  // the reads, as it was until #198, both reports passed this check and the owner got two emails.
+  // The branches below may move it to an earlier instant (a logged or claimed attempt elsewhere);
+  // none of them clears it.
+  recent.set(signature, at);
 
   // Across instances. A read that throws leaves `last` null and the send goes ahead — the
   // in-process window above is still bounding it, and silence during a database outage is the
@@ -276,7 +306,6 @@ export async function reportError(report: ErrorReport, deps: ErrorReportDeps): P
   }
   if (sentToday >= EMAIL_SKIP_AT) {
     console.error(`tender error (cap reached, not emailed): ${signature}: ${report.message}`);
-    recent.set(signature, at);
     await logQuietly(store, {
       kind: KIND_ERROR_SKIPPED_CAP,
       channel: "email",
@@ -290,9 +319,26 @@ export async function reportError(report: ErrorReport, deps: ErrorReportDeps): P
     return { signature, state: "skipped_cap" };
   }
 
-  // The window starts on the ATTEMPT, before the provider is called: a transport that hangs and
-  // then rejects must not let the next request through as though nothing had been tried.
-  recent.set(signature, at);
+  // Across instances, EXACTLY (#198, owner decision at pickup). The log read above cannot see an
+  // attempt still in flight elsewhere — its row is written after the provider answers, ~3 s
+  // measured — so two instances failing inside one send's latency would both get here. The claim
+  // is a write the database arbitrates: of two concurrent claims on one signature, one wins.
+  // Best-effort like the reads: a claim that throws means the database cannot answer, and the send
+  // goes ahead on the in-process window alone rather than falling silent during an outage.
+  try {
+    const claim = await store.claimWindow(signature, now, new Date(at - ERROR_EMAIL_WINDOW_MS));
+    if (!claim.won) {
+      // The holder's instant, so this instance's window ends when the real one does.
+      recent.set(signature, claim.heldSince.getTime());
+      return { signature, state: "suppressed", suppressedBy: "claim" };
+    }
+  } catch (e) {
+    console.error(`tender error reporter: could not claim the window:`, e instanceof Error ? e.message : e);
+  }
+
+  // The window started on the ATTEMPT — in process at the top, across instances at the claim —
+  // before the provider is called: a transport that hangs and then rejects must not let the next
+  // request through as though nothing had been tried.
   try {
     const { id } = await transport.send(errorEmail(report, ownerEmail, now));
     await logQuietly(store, { kind: KIND_ERROR, channel: "email", personId: null, toEmail: ownerEmail, postId: null, providerId: id, error: null, signature });
