@@ -301,12 +301,31 @@ input[type="radio"] {
     padding: var(--space-8);
   }
 }
+/* Support and Privacy (#147), under every page and above the stamp, on the page's own measure.
+   Each link is its own 44px target: they are the shell's, not prose, so the inline exception
+   `test/shell-focus.test.ts` allows does not cover them. */
+[data-about] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  max-width: var(--measure);
+  padding: 0 var(--space-4);
+}
+[data-about] a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
 footer[data-build-stamp] {
   max-width: var(--measure);
   padding: 0 var(--space-4) var(--space-6);
   color: var(--ink-muted);
 }
 @media (min-width: 40rem) {
+  [data-about] {
+    padding: 0 var(--space-8);
+  }
   footer[data-build-stamp] {
     padding: 0 var(--space-8) var(--space-8);
   }

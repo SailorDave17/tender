@@ -5,7 +5,11 @@ import { UUID } from "@/post/post-form";
 import { fixtureId } from "../scripts/lighthouse-floor-core.mjs";
 import {
   CREW_PHONE,
+  SEED_CLUB_MARK,
+  SUPPORT_EMAIL,
   contactVerdict,
+  expectedSeedLines,
+  openPageVerdict,
   refuseNonLocalStack,
   runSteps,
   smokePlan,
@@ -83,6 +87,51 @@ describe("smokeSeedSql", () => {
 
   it("writes no availability, post, answer or match row", () => {
     expect(sql).not.toMatch(/insert into public\.(availability|post|answer|match) /);
+  });
+
+  it("gives the club row the support address /support must show, counted after the phones (#147)", () => {
+    const club = `update public.club set admin_email = '${SUPPORT_EMAIL}' where id = '${fixtureId("club", 0)}' returning '${SEED_CLUB_MARK}';`;
+    expect(sql).toContain(club);
+    // after the insert that creates the row, so it lands on a fresh stack as well as a re-used one
+    expect(sql.indexOf(club)).toBeGreaterThan(sql.indexOf("insert into public.club"));
+    expect(sql.match(/set admin_email =/g)).toHaveLength(1);
+    // the seed check in smoke.mjs reads exactly these lines back, in this order
+    expect(expectedSeedLines(plan)).toEqual([plan.crew.id, SEED_CLUB_MARK]);
+  });
+
+  it("uses an address that is nobody's, so 0009's trigger makes neither smoke person the admin", () => {
+    expect(plan.people.map((p) => p.email.toLowerCase())).not.toContain(SUPPORT_EMAIL.toLowerCase());
+  });
+});
+
+describe("openPageVerdict (#147)", () => {
+  const support = `<main data-page="support"><a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></main>`;
+  const privacy = `<main data-page="privacy"><h1>Privacy</h1></main>`;
+
+  it("passes both pages answering 200 with their content", () => {
+    expect(openPageVerdict({ path: "/support", status: 200, location: null, body: support })).toEqual([]);
+    expect(openPageVerdict({ path: "/privacy", status: 200, location: null, body: privacy })).toEqual([]);
+  });
+
+  it("refuses a redirect to the sign-in page, naming where it went", () => {
+    const out = openPageVerdict({ path: "/privacy", status: 302, location: "/join", body: "" });
+    expect(out).toContain("/privacy answered 302 (to /join), not 200");
+  });
+
+  it("refuses a 200 that did not render the page — a streamed error boundary answers 200 too", () => {
+    const boundary = `<main data-error><h1>Something went wrong</h1></main>`;
+    expect(openPageVerdict({ path: "/privacy", status: 200, location: null, body: boundary })).toEqual([
+      '/privacy did not render its page (no data-page="privacy" in the response)',
+    ]);
+  });
+
+  it("refuses a /support that rendered without the club row's address — a default or the fallback", () => {
+    const fallback = `<main data-page="support"><p data-contact="none">Ask whoever…</p></main>`;
+    expect(openPageVerdict({ path: "/support", status: 200, location: null, body: fallback })).toEqual([
+      `/support does not link the club row's address ${SUPPORT_EMAIL}`,
+    ]);
+    const other = support.replaceAll(SUPPORT_EMAIL, "someone-else@fixture.invalid");
+    expect(openPageVerdict({ path: "/support", status: 200, location: null, body: other })).toHaveLength(1);
   });
 });
 

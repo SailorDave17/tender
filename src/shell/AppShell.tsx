@@ -25,6 +25,12 @@ import type { ShellPerson } from "./session";
  *
  * `#main` is the skip link's target and carries `tabindex="-1"` so focus actually lands there.
  * The page's own `<main>` sits inside it; the frame is the div's, the landmark is the page's.
+ *
+ * SUPPORT AND PRIVACY SIT UNDER THE PAGE ON EVERY PAGE (story #147 AC 3), signed in or out, in a
+ * nav of their own above the build stamp. They are not destinations a member moves between, so
+ * they stay out of `[data-nav]`, which is the bottom dock on a phone. The shell is also where the
+ * criterion's two places meet: the board and /join both render inside it, so one line reaches
+ * both, and a person who cannot sign in finds it on the sign-in page itself.
  */
 export function AppShell({
   mark,
@@ -88,6 +94,14 @@ export function AppShell({
       <div id="main" tabIndex={-1} data-frame>
         {children}
       </div>
+      <nav aria-label="About Tender" data-about>
+        <Link href="/support" prefetch={false}>
+          Support
+        </Link>
+        <Link href="/privacy" prefetch={false}>
+          Privacy
+        </Link>
+      </nav>
       <BuildStamp />
     </>
   );
