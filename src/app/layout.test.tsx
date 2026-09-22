@@ -115,3 +115,32 @@ describe("every page renders inside the shell (#154 AC 1)", () => {
     expect(html).toContain("data-skip");
   });
 });
+
+describe("Support and Privacy are under every page, signed in or out (#147 AC 3)", () => {
+  /**
+   * The criterion names two places — the board, and /join for someone not yet signed in — and
+   * both render inside this shell, so the shell is the subject. Signed out is the arm that
+   * matters most: /join is where a person who cannot get in goes looking for help.
+   */
+  for (const [arm, who] of [
+    ["signed in", PERSON],
+    ["signed out", null],
+  ] as const) {
+    it(`${arm}: one About nav after the page and before the stamp, linking both`, async () => {
+      person = who;
+      const html = await render();
+      const about = html.match(/<nav aria-label="About Tender" data-about(?:="[^"]*")?>([\s\S]*?)<\/nav>/);
+      expect(about, "the About nav is on the page").not.toBeNull();
+      expect(html.match(/data-about/g), "exactly one").toHaveLength(1);
+      expect(about![1]).toContain('href="/support"');
+      expect(about![1]).toContain('href="/privacy"');
+      const at = (needle: string) => html.indexOf(needle);
+      expect(at("data-the-page")).toBeLessThan(at("data-about"));
+      expect(at("data-about")).toBeLessThan(at("data-build-stamp"));
+      // not in the member navigation, which docks to the bottom edge on a phone
+      const nav = html.match(/<nav aria-label="Tender"[\s\S]*?<\/nav>/)![0];
+      expect(nav).not.toContain("/support");
+      expect(nav).not.toContain("/privacy");
+    });
+  }
+});

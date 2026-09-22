@@ -48,6 +48,15 @@ export const SMOKE_PASSWORD = "smoke-core-path-45";
 export const CREW_PHONE = "614-555-0145";
 
 /**
+ * The club row's `admin_email` for the run (#147): what /support must show, read back from the
+ * served page as the proof that `src/support/contact.ts` reads the row rather than a default.
+ * Deliberately NOBODY's address — 0009's trigger makes whoever's contact email matches it the admin,
+ * and the smoke's two people must stay a plain crew and a plain skipper (`test/smoke.test.ts`
+ * holds that).
+ */
+export const SUPPORT_EMAIL = "smoke-support@fixture.invalid";
+
+/**
  * The fixture as data: one club, one upcoming race day, a skipper with a boat, and a rated crew.
  *
  * What is seeded and what is left to the browser is the point. Everything AC 1 names as a STEP —
@@ -137,7 +146,44 @@ export function smokeSeedSql(plan) {
   const phones = plan.people
     .filter((p) => p.phone)
     .map((p) => `update public.person_contact set phone = ${q(p.phone)} where person_id = ${q(p.id)} returning person_id;`);
-  return [fixtureSql(plan, { clubName: "Smoke Sailing Club" }), ...phones].join("\n");
+  // #147: the support address, as an UPDATE rather than through fixtureSql's insert, because that
+  // insert is `on conflict do nothing` and a local stack may already hold the club row from an
+  // earlier run or from perf:floor. It counts itself like the phones: `smoke.mjs` expects this
+  // line in the output after theirs.
+  const club = `update public.club set admin_email = ${q(SUPPORT_EMAIL)} where id = ${q(fixtureId("club", 0))} returning ${q(SEED_CLUB_MARK)};`;
+  return [fixtureSql(plan, { clubName: "Smoke Sailing Club" }), ...phones, club].join("\n");
+}
+
+/** What the club UPDATE prints when it touched the row — the seed's count check reads it. */
+export const SEED_CLUB_MARK = "club";
+
+/** The rows `smokeSeedSql` must report touching, in order: each phone's person, then the club. */
+export function expectedSeedLines(plan) {
+  return [...plan.people.filter((p) => p.phone).map((p) => p.id), SEED_CLUB_MARK];
+}
+
+/**
+ * The verdict on #147's AC 1 and AC 2 as served: `/support` and `/privacy` answer 200 to a request
+ * with no session. Returns the failures, empty when it holds.
+ *
+ * The STATUS IS NOT ENOUGH, and that is why the body is read too. The root `loading.tsx` (#154)
+ * makes every page stream, and a streamed response has sent `200` before the page has finished —
+ * so a page whose loader throws mid-render still answers 200, carrying the error boundary instead
+ * of its content. The page's own `data-page` hook proves it rendered, and on /support the seeded
+ * `mailto:` proves the address came from the club row. A 3xx is read with its `location`, because a
+ * redirect to /join is exactly the failure a gated path would produce.
+ */
+export function openPageVerdict({ path, status, location, body, supportEmail = SUPPORT_EMAIL }) {
+  const failures = [];
+  if (status !== 200) failures.push(`${path} answered ${status}${location ? ` (to ${location})` : ""}, not 200`);
+  const page = path.replace(/^\//, "");
+  if (typeof body !== "string" || !body.includes(`data-page="${page}"`)) {
+    failures.push(`${path} did not render its page (no data-page="${page}" in the response)`);
+  }
+  if (path === "/support" && !(typeof body === "string" && body.includes(`href="mailto:${supportEmail}"`))) {
+    failures.push(`/support does not link the club row's address ${supportEmail}`);
+  }
+  return failures;
 }
 
 /**
