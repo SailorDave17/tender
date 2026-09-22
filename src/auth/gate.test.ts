@@ -28,6 +28,15 @@ describe("the proxy's decision (AC 1 / AC 5)", () => {
     expect(redirectFor("/boardroom", false)).toBeNull(); // a prefix is not a path segment
   });
 
+  it("leaves /support and /privacy open to a stranger — madcowsailing.com links there (#147)", () => {
+    // Signed out is the case that matters: the product page's readers have never had an account,
+    // and the person who needs /support most is the one who cannot sign in.
+    for (const path of ["/support", "/privacy"]) {
+      expect(redirectFor(path, false), `${path} signed out`).toBeNull();
+      expect(isProtected(path), `${path} is not gated`).toBe(false);
+    }
+  });
+
   it("isProtected matches segments, not prefixes", () => {
     expect(isProtected("/board")).toBe(true);
     expect(isProtected("/board/")).toBe(true);
@@ -53,6 +62,8 @@ describe("the signed-in arm sends them off /join and nowhere else (#123 AC 7)", 
     "/api/signin",
     "/api/join",
     "/manifest.webmanifest",
+    "/support", // #147
+    "/privacy",
     "/joining", // /join is a path, not a prefix — this one must be left alone
     "/join/extra",
     ...PROTECTED_PREFIXES,

@@ -37,6 +37,8 @@ import { chromium } from "playwright-core";
 import {
   SMOKE_PASSWORD,
   contactVerdict,
+  expectedSeedLines,
+  openPageVerdict,
   refuseNonLocalStack,
   runSteps,
   smokePlan,
@@ -89,11 +91,12 @@ async function seed({ stack, serviceKey, dbContainer, plan }) {
   }
   // `returning person_id` makes the phone UPDATE count itself: one line per row it touched. An UPDATE
   // matching nothing does not throw, and a crew with no phone would make the whole contact check
-  // vacuous — contactVerdict would be looking for a string nobody stored.
+  // vacuous — contactVerdict would be looking for a string nobody stored. The club's support address
+  // (#147) counts itself the same way, after the phones.
   const touched = psql(dbContainer, smokeSeedSql(plan)).split(/\r?\n/).filter(Boolean);
-  const expected = plan.people.filter((p) => p.phone).map((p) => p.id);
+  const expected = expectedSeedLines(plan);
   if (touched.join(",") !== expected.join(",")) {
-    throw new Error(`phone seed touched [${touched.join(", ")}], expected [${expected.join(", ")}]`);
+    throw new Error(`seed touched [${touched.join(", ")}], expected [${expected.join(", ")}]`);
   }
 }
 
@@ -169,6 +172,21 @@ async function main() {
   let before = null;
 
   const steps = [
+    {
+      // #147: the two pages madcowsailing.com links to, as a stranger reaches them. Node's fetch has
+      // no cookie jar, so the request carries no session, and `redirect: "manual"` keeps a 302 to
+      // /join a 302 rather than following it to a sign-in page that also answers 200.
+      name: "support and privacy answer 200 signed out",
+      run: async () => {
+        const failures = [];
+        for (const path of ["/support", "/privacy"]) {
+          const res = await fetch(url(path), { redirect: "manual" });
+          const body = await res.text();
+          failures.push(...openPageVerdict({ path, status: res.status, location: res.headers.get("location"), body }));
+        }
+        if (failures.length) throw new Error(failures.join("; "));
+      },
+    },
     { name: "crew signs in", run: () => signIn(pages.crew, args.baseUrl, crew) },
     { name: "skipper signs in", run: () => signIn(pages.skipper, args.baseUrl, skipper) },
     {

@@ -280,7 +280,10 @@ Everything that decides an outcome is in `scripts/lighthouse-floor-core.mjs`, ex
 signing in through `/join`; the crew marks a race day on `/board`; the skipper posts a need; the crew
 answers "I can"; the skipper accepts. It then checks that the crew's phone reached the skipper
 **only after** the acceptance: it is absent from the skipper's page before, raw HTML and flight
-data included, and present after in the same read and in the contact panel. The job starts a local
+data included, and present after in the same read and in the contact panel. Before any of that,
+it fetches `/support` and `/privacy` with no session and redirects off (#147), and requires 200,
+the page's own content (a streamed page answers 200 even when it fails), and on `/support` the
+address the seed put on the club row. The job starts a local
 Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
 pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
 `test/smoke.test.ts` holds both of those lines.
@@ -349,7 +352,9 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
 
    `admin_email` is yours: the person who signs in with that address becomes the admin
    (0009's trigger sets `person.is_admin` on their first sign-in, and on an existing person the
-   moment the column is set), so `/admin` loads with no SQL run against `person`. The colours are
+   moment the column is set), so `/admin` loads with no SQL run against `person`. **It is also
+   public**: since #147 `/support` shows it to anyone, signed in or not, as the address to write
+   to, so use one you are content to publish. The colours are
    the Hoover pair (`brand/`) — the club accepted them on 2026-08-22 (#11, `docs/charter.md`
    § Forge checks), which is why the seed carries them rather than the mark set's default green.
    **Changing them afterwards is `/admin/theme`, not an edit to this row** (#41): that screen

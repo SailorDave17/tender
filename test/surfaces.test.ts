@@ -9,6 +9,8 @@ import { IDS, ME, NOW, fakeClient } from "./surfaces";
 
 /**
  * Story #155 — the six member-facing surfaces, rendered from the token layer and read in Chrome.
+ * #147 added /support and /privacy to the contrast sweep (AC 8's cases below); the other ACs are
+ * still about the six.
  *
  * AC 1: no inline `style={{` survives on the surfaces except one the token layer cannot express,
  *       and that one carries a `token-exempt:` comment (a corpus scan; the needle is built from
@@ -49,6 +51,8 @@ vi.mock("@/app/post/actions", () => ({
 vi.mock("@/app/boats/actions", () => ({ createBoat: async () => undefined }));
 vi.mock("@/app/profile/actions", () => ({ saveProfile: async () => undefined }));
 vi.mock("@/app/profile/account-actions", () => ({ deleteMyAccount: async () => undefined }));
+// #147: /support reads the club row's address as the service role, behind `server-only`.
+vi.mock("@/support/contact", () => ({ loadSupportAddress: async () => "someone@club.example.test" }));
 
 const css = readFileSync(GLOBALS_CSS, "utf8");
 const SRC = fileURLToPath(new URL("../src/", import.meta.url)).replace(/[\\/]$/, "");
@@ -70,6 +74,10 @@ const SURFACES: Surface[] = [
   { name: "/join", as: "", render: async () => (await import("@/app/join/page")).default({ searchParams: Promise.resolve({}) }) },
   { name: "/profile", as: ME, render: async () => (await import("@/app/profile/page")).default({ searchParams: Promise.resolve({}) }) },
   { name: "/boats", as: ME, render: async () => (await import("@/app/boats/page")).default({ searchParams: Promise.resolve({}) }) },
+  // #147: the two open pages. They paint from the same base rules and carry no hooks of their own,
+  // so the sweep is what says the shell's new About links and the prose clear their bars.
+  { name: "/support", as: "", render: async () => (await import("@/app/support/page")).default() },
+  { name: "/privacy", as: "", render: async () => (await import("@/app/privacy/page")).default() },
 ];
 
 const pages = new Map<string, string>();
@@ -261,7 +269,9 @@ describe("no surface carries an inline style the token layer could express (#155
   it("every style= left under the six surfaces and their components is token-exempt, with the reason on the line above", () => {
     const needle = ["style", "={{"].join("");
     const exempt = ["token", "-exempt:"].join("");
-    const dirs = ["app/board", "app/post", "app/join", "app/profile", "app/boats", "post", "profile", "auth", "install", "push"];
+    const dirs = ["app/board", "app/post", "app/join", "app/profile", "app/boats", "post", "profile", "auth", "install", "push",
+      // #147's two open pages and their loader
+      "app/support", "app/privacy", "support"];
     const hits: string[] = [];
     const unexplained: string[] = [];
     const walk = (dir: string) => {
