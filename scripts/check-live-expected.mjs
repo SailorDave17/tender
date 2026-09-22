@@ -13,6 +13,7 @@ export const EXPECTED_TABLES = [
   "boat",
   "boat_class",
   "club",
+  "error_report_claim",
   "match",
   "message",
   "message_removal",
@@ -45,6 +46,13 @@ export const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 export const EXPECTED_FUNCTIONS = [
   { name: "accept_answer", args: { post_id: NIL_UUID, person_id: NIL_UUID } },
   { name: "answer_counts", args: { post_ids: `{${NIL_UUID}}` } },
+  // 0030 (#198). Called by the service role alone; execute is revoked from public, anon and
+  // authenticated, so the anon probe is refused (42501), which reads PRESENT. It writes, and a GET
+  // is a read-only transaction besides, so the probe could not take a claim even if it ran.
+  {
+    name: "claim_error_report",
+    args: { p_signature: "check:live probe", p_at: "1970-01-01T00:00:00Z", p_since: "1970-01-01T00:00:00Z" },
+  },
   { name: "current_invite_code", args: {} },
   // 0027 (#42). Self-or-admin definer; the anon probe is refused (42501), which reads PRESENT —
   // and a GET is a read-only transaction besides, so nothing could be deleted by the probe.

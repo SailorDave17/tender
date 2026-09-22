@@ -1,7 +1,9 @@
 import "server-only";
 import { cache } from "react";
-import { connection } from "next/server";
+import { after, connection } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { reportErrorLive } from "@/notify/error-live";
+import { themeFromRead, type ClubRead } from "./club-theme-read";
 
 /**
  * The club's two colours, read from the `club` row on every request (story #41 AC 3).
@@ -33,6 +35,11 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
  * without the club row (README step 1 measured that on the live project), so a landing page
  * that named the cause is better than one painted in a colour nobody chose. `env()` does the
  * same for a missing key (#65), and for the same reason.
+ *
+ * A REFUSED READ DOES NOT THROW (#198). It paints the default theme and reports the refusal to the
+ * owner after the response, because one transient platform refusal was failing whole pages.
+ * `./club-theme-read.ts` holds the rule and says why; this file only does the I/O, and a query
+ * that throws rather than answering an error is treated as the same refusal.
  */
 
 export type ClubTheme = {
@@ -46,8 +53,11 @@ export type ClubTheme = {
 export const loadClubTheme = cache(async (): Promise<ClubTheme> => {
   await connection();
   const admin = supabaseAdmin();
-  const { data, error } = await admin.from("club").select("name, brand_disc, brand_mark").limit(1).maybeSingle();
-  if (error) throw new Error(`club theme could not be read: ${error.message}`);
-  if (!data) throw new Error("the club row is not seeded — README, owner runbook step 1");
-  return { name: data.name, disc: data.brand_disc, mark: data.brand_mark };
+  let read: ClubRead;
+  try {
+    read = await admin.from("club").select("name, brand_disc, brand_mark").limit(1).maybeSingle();
+  } catch (e) {
+    read = { data: null, error: { message: e instanceof Error ? e.message : String(e) } };
+  }
+  return themeFromRead(read, (report) => after(() => reportErrorLive(report)));
 });

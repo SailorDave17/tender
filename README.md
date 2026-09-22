@@ -656,6 +656,12 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
       *quietly rather than loudly*: there is no 500 and no visible symptom, but the only window
       left is the one held in each running instance's memory, so a cold start or a second
       instance can send the same report again.
+   3. **Apply `0030` before promoting the `develop` that carries #198.** It adds
+      `error_report_claim` and `claim_error_report()`, the one-row-per-error claim taken just
+      before a send, so that two instances failing in the same few seconds send one report and
+      not two (`0025`'s read cannot see a send still in flight elsewhere). Without it the claim
+      fails and the reporter falls back to what #43 shipped, again quietly: no 500, just the
+      occasional duplicate.
 
    What lands: one email per distinct error — its name and the **route template** it threw on,
    `TypeError /post/[id]` — at most once an hour, carrying the method, the path with **any query
@@ -664,6 +670,12 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    the same 100/day as everything else and stops at 95, like every other sender; past that the
    report goes to the function log instead and `notification_log` records an `error_skipped_cap`
    row.
+
+   **One report is not a thrown error** (#198). A refused read of the club row no longer fails the
+   page: it is painted in the seed pair (`#395FAC` / `#FCCF0B`) and reported as
+   `ClubThemeReadError at loadClubTheme`, whose message carries the platform's reason. The same
+   one-an-hour rule applies, so an outage of that read is one email, whatever the number of pages
+   it touched.
 
    **What it cannot see**, so nobody hunts for it here: an error the app has already caught. Every
    `…Live` wrapper in `src/notify/live.ts` swallows its failure to a console line on purpose, and

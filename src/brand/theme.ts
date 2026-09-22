@@ -23,8 +23,10 @@
  *   - `HOOVER_SAILING_CLUB` — the pilot club's pair, sampled from the burgee (`brand/`), and the
  *     value README's owner-runbook seed writes into the club row. Consent for it is settled:
  *     #11 closed 2026-08-22, recorded in `docs/charter.md` § Forge checks. It is the value tests
- *     build fixtures from and the value `test/club-seed.test.ts` holds the README's SQL to. It is
- *     NOT read by any page.
+ *     build fixtures from and the value `test/club-seed.test.ts` holds the README's SQL to. A page
+ *     reads it only when the row CANNOT be read: since #198 a refused read paints this pair
+ *     (`DEFAULT_CLUB_THEME` in `club-theme-read.ts`) rather than failing the page. It is never
+ *     read in place of a row that answered.
  *   - `BACKGROUND_COLOUR` — `--paper`, the light-mode page background and therefore the splash
  *     screen behind the installed app's icon. Still a constant: it is not a club decision.
  *
