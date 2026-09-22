@@ -151,7 +151,10 @@ export default function PrivacyPage() {
           <li>a race you were matched for stays as a match with your side blank;</li>
           <li>boats you added stay, with no owner, so past races still show the boat;</li>
           <li>crew needs you posted stay, notes included;</li>
-          <li>the record of emails and notifications sent to you stays, without your name or email address.</li>
+          <li>
+            the record of emails and notifications sent to you stays, without your name, your email
+            address or your device&apos;s notification address.
+          </li>
         </ul>
         <p>You can also ask for your account to be deleted, using the address on the Support page.</p>
       </section>

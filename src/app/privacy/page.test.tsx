@@ -51,7 +51,8 @@ describe("/privacy (#147 AC 2)", () => {
     expect(kept).toContain("a match with your side blank");
     expect(kept).toContain("with no owner");
     expect(kept).toContain("crew needs you posted stay, notes included");
-    expect(kept).toContain("without your name or email address");
+    // The device address went with #197 (0029): a push row's provider_id is the device's endpoint.
+    expect(kept).toContain("without your name, your email address or your device&#x27;s notification address");
   });
 
   it("names every outside service the charter's stack and integrations list", () => {

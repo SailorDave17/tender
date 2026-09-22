@@ -702,10 +702,12 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    count is unchanged; their boats stay as ownerless names on the posts that already happened, and
    an open post of theirs stays on the board until its date passes (owner decision 2026-09-20).
    **Removing someone else** has no screen yet. `delete_person()` admits an admin, but the SQL
-   editor is not a signed-in member, so from the dashboard the route is two statements in this
+   editor is not a signed-in member, so from the dashboard the route is three statements in this
    order: `update public.notification_log set to_email = null where person_id = '<uuid>'`, then
+   `update public.notification_log set provider_id = null where person_id = '<uuid>' and channel =
+   'push'` (a push row's `provider_id` is the device's push address — #197, 0029), then
    `delete from auth.users where id = '<uuid>'` — `person` cascades from the auth user and 0027's
-   rules do the rest; the address goes first because `person_id` is already null afterwards. If a
+   rules do the rest; the log rows go first because `person_id` is already null afterwards. If a
    member's own deletion lands on `/join?deleted=partial`, their rows are gone and the auth user is
    not — delete it under Authentication → Users.
 
