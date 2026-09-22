@@ -1,0 +1,142 @@
+{
+  "takenAt": "2026-09-22T19:20:51.996Z",
+  "target": {
+    "baseUrl": "https://tender-4duvc7vsi-mad-cow1.vercel.app",
+    "seeded": true,
+    "servedSupabaseUrl": "https://signed-peaceful-sri-mega.trycloudflare.com"
+  },
+  "volume": {
+    "people": 80,
+    "dates": 45,
+    "boats": 30,
+    "openPosts": 20,
+    "matchedPosts": 30,
+    "availabilityPerPerson": 15,
+    "answersPerOpenPost": 4
+  },
+  "floors": {
+    "performance": 80,
+    "accessibility": 90,
+    "cls": 0.1
+  },
+  "summaries": [
+    {
+      "route": "/board",
+      "runs": 3,
+      "performance": {
+        "median": 66,
+        "values": [
+          60,
+          66,
+          70
+        ]
+      },
+      "accessibility": {
+        "median": 99,
+        "values": [
+          99,
+          99,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0.2343406361426487,
+        "values": [
+          0.2343406361426487,
+          0.2343406361426487,
+          0.1117861482381531
+        ]
+      },
+      "lcp": {
+        "median": 4879.3925,
+        "values": [
+          4879.3925,
+          4717.502999999999,
+          5141.022500000001
+        ]
+      },
+      "tbt": {
+        "median": 302.00000000000045,
+        "values": [
+          417,
+          254.99999999999955,
+          302.00000000000045
+        ]
+      },
+      "ttfb": {
+        "median": 38.675,
+        "values": [
+          24.004999999999995,
+          41.633999999999986,
+          38.675
+        ]
+      },
+      "requests": 15,
+      "lighthouseVersion": "12.8.2"
+    },
+    {
+      "route": "/post/00003dbe-0000-4000-8000-000000000002",
+      "runs": 3,
+      "performance": {
+        "median": 78,
+        "values": [
+          78,
+          78,
+          76
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0.1117861482381531,
+        "values": [
+          0.1117861482381531,
+          0.1117861482381531,
+          0.1117861482381531
+        ]
+      },
+      "lcp": {
+        "median": 4611.955,
+        "values": [
+          4428.432,
+          4611.955,
+          4672.043999999999
+        ]
+      },
+      "tbt": {
+        "median": 171,
+        "values": [
+          171,
+          147,
+          225
+        ]
+      },
+      "ttfb": {
+        "median": 17.88000000000001,
+        "values": [
+          21.982,
+          16.5,
+          17.88000000000001
+        ]
+      },
+      "requests": 18,
+      "lighthouseVersion": "12.8.2"
+    }
+  ],
+  "verdict": {
+    "pass": false,
+    "failures": [
+      "/board: performance 66 is below 80",
+      "/board: CLS 0.2343406361426487 is not below 0.1",
+      "/post/00003dbe-0000-4000-8000-000000000002: performance 78 is below 80",
+      "/post/00003dbe-0000-4000-8000-000000000002: CLS 0.1117861482381531 is not below 0.1"
+    ],
+    "warnings": []
+  }
+}

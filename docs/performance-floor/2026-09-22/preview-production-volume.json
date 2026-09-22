@@ -1,0 +1,132 @@
+{
+  "takenAt": "2026-09-22T19:10:57.838Z",
+  "target": {
+    "baseUrl": "https://tender-4duvc7vsi-mad-cow1.vercel.app",
+    "seeded": false,
+    "servedSupabaseUrl": "https://signed-peaceful-sri-mega.trycloudflare.com"
+  },
+  "volume": null,
+  "floors": {
+    "performance": 80,
+    "accessibility": 90,
+    "cls": 0.1
+  },
+  "summaries": [
+    {
+      "route": "/board",
+      "runs": 3,
+      "performance": {
+        "median": 82,
+        "values": [
+          79,
+          82,
+          84
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          99,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0.03851986995979797,
+        "values": [
+          0.11450262042279236,
+          0.03851986995979797,
+          0.03851986995979797
+        ]
+      },
+      "lcp": {
+        "median": 4403.092000000001,
+        "values": [
+          3744.1289999999995,
+          4524.2294999999995,
+          4403.092000000001
+        ]
+      },
+      "tbt": {
+        "median": 167,
+        "values": [
+          308,
+          167,
+          131
+        ]
+      },
+      "ttfb": {
+        "median": 25.238,
+        "values": [
+          25.84700000000001,
+          25.238,
+          23.38499999999999
+        ]
+      },
+      "requests": 15,
+      "lighthouseVersion": "12.8.2"
+    },
+    {
+      "route": "/post/00003dbe-0000-4000-8000-000000000385",
+      "runs": 3,
+      "performance": {
+        "median": 82,
+        "values": [
+          83,
+          82,
+          79
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0.07975629273218776,
+        "values": [
+          0.07975629273218776,
+          0.07975629273218776,
+          0.07975629273218776
+        ]
+      },
+      "lcp": {
+        "median": 4441.3189999999995,
+        "values": [
+          4274.0599999999995,
+          4441.3189999999995,
+          4545.13
+        ]
+      },
+      "tbt": {
+        "median": 136,
+        "values": [
+          131,
+          136,
+          197
+        ]
+      },
+      "ttfb": {
+        "median": 30.602000000000004,
+        "values": [
+          97.66,
+          30.602000000000004,
+          25.089
+        ]
+      },
+      "requests": 18,
+      "lighthouseVersion": "12.8.2"
+    }
+  ],
+  "verdict": {
+    "pass": true,
+    "failures": [],
+    "warnings": [
+      "/board: performance runs straddle the floor of 80 — 79 / 82 / 84",
+      "/post/00003dbe-0000-4000-8000-000000000385: performance runs straddle the floor of 80 — 83 / 82 / 79"
+    ]
+  }
+}

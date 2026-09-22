@@ -13,6 +13,9 @@ import {
   refuseNonLocalStack,
   refuseWrongPage,
   readReport,
+  requestHeaders,
+  runTarget,
+  VOLUME,
   summariseRoute,
   verdict,
 } from "../scripts/lighthouse-floor-core.mjs";
@@ -263,6 +266,78 @@ describe("the runner's guards", () => {
     expect(
       refuseWrongPage("http://localhost:3100/board", { finalDisplayedUrl: "http://localhost:3100/board" }),
     ).toBeNull();
+  });
+});
+
+describe("runTarget — seeded and unseeded runs (#185)", () => {
+  const plan = fixturePlan({ now: new Date("2026-06-01T12:00:00Z") });
+  const live = "https://abcdefg.supabase.co";
+
+  // The refusal that used to sit at the top of main() now lives here, so it has to be proven
+  // here: a SEEDED run against the live project must still be refused before anything is read.
+  it("refuses a seeded run against a Supabase that is not loopback", () => {
+    expect(() => runTarget({ seed: true, stack: live, plan })).toThrow(/refusing to seed/);
+  });
+
+  it("refuses a seeded run that names its own viewer or route", () => {
+    const stack = "http://127.0.0.1:54321";
+    expect(() => runTarget({ seed: true, stack, viewerEmail: "someone@example.com", plan })).toThrow(/--no-seed/);
+    expect(() => runTarget({ seed: true, stack, routes: ["/board"], plan })).toThrow(/--no-seed/);
+  });
+
+  it("measures the chosen viewer, both routes and the fixture volume on a seeded run", () => {
+    const t = runTarget({ seed: true, stack: "http://127.0.0.1:54321", plan });
+    expect(t).toEqual({
+      email: measuredViewer(plan).email,
+      routes: measuredRoutes(plan),
+      volume: VOLUME,
+      fixtureViewer: true,
+    });
+  });
+
+  // The whole point of --no-seed: it writes nothing, so the live project is a legitimate target.
+  it("lets an unseeded run name the live project, a real viewer and its own routes", () => {
+    const t = runTarget({ seed: false, stack: live, viewerEmail: "crew@example.com", routes: ["/board"], plan });
+    expect(t.email).toBe("crew@example.com");
+    expect(t.routes).toEqual(["/board"]);
+    expect(t.fixtureViewer).toBe(false);
+  });
+
+  // A real board's volume is not something the script can know, so a reading that named its own
+  // viewer or routes must not inherit the fixture's numbers — the doc states the volume by hand.
+  it("claims no volume once the viewer or the routes are named", () => {
+    expect(runTarget({ seed: false, stack: live, viewerEmail: "crew@example.com", plan }).volume).toBeNull();
+    expect(runTarget({ seed: false, stack: live, routes: ["/board"], plan }).volume).toBeNull();
+  });
+
+  it("keeps the fixture viewer and volume on an unseeded re-run that names nothing", () => {
+    const t = runTarget({ seed: false, stack: "http://127.0.0.1:54321", plan });
+    expect(t.volume).toBe(VOLUME);
+    expect(t.fixtureViewer).toBe(true);
+    expect(t.routes).toEqual(measuredRoutes(plan));
+  });
+
+  it("refuses a route that is not a path", () => {
+    expect(() => runTarget({ seed: false, stack: live, routes: ["board"], plan })).toThrow(/a route is a path/);
+  });
+});
+
+describe("requestHeaders (#185)", () => {
+  it("sends only the cookie when no bypass secret is set", () => {
+    expect(requestHeaders({ cookie: "sb-x-auth-token=abc" })).toEqual({ Cookie: "sb-x-auth-token=abc" });
+  });
+
+  // Vercel reads exactly this header name; a near-miss spelling is silently ignored and every
+  // preview request 302s to its SSO page instead.
+  it("adds Vercel's protection-bypass header when the secret is set", () => {
+    expect(requestHeaders({ cookie: "c=1", bypassSecret: "s3cret" })).toEqual({
+      Cookie: "c=1",
+      "x-vercel-protection-bypass": "s3cret",
+    });
+  });
+
+  it("refuses to build headers with no session cookie", () => {
+    expect(() => requestHeaders({ cookie: "" })).toThrow(/no session cookie/);
   });
 });
 
