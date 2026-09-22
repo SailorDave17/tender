@@ -242,15 +242,18 @@ footer would be indistinguishable from a page that has none.
 Lighthouse mobile, simulated throttling, against a production build served locally with a fixture
 of 80 people, 45 race dates and 50 posts, signed in through a real session cookie. Method, the
 current reading and the levers already priced are in
-[`docs/performance-floor.md`](docs/performance-floor.md); the short version is that `/board` reads
-**72** and `/post/[id]` reads **83** against a floor of 80, so the condition's *local* antecedent is
-met — but the ADR says *on a mid-range Android*, and a local serve is known to under-read this page
-shape by about eight points, so [ADR 002](docs/adr/002-nextjs-16.md) records the measurement and the
-one run against `release` that would make it decisive.
+[`docs/performance-floor.md`](docs/performance-floor.md); the short version is that on a
+**deployed** build of `release` at that volume (#185, 2026-09-22) `/board` reads **66**, and **70**
+with a new footer layout shift fixed, against a floor of 80 — the local/deployed gap #44 hoped for
+did not appear — so [ADR 002](docs/adr/002-nextjs-16.md) records its kill condition as **fired**
+and the framework decision as the owner's. `/post/[id]` reads 78, and 82 with the footer fixed.
 
-It **writes** — 80 people, 45 dates, 50 posts — so it refuses any Supabase URL that is not
-loopback before touching a row. It is the opposite shape from `check:live` and `verify:migrations`,
-which are read-only by construction, and it says so rather than relying on the flag being passed.
+A seeded run **writes** — 80 people, 45 dates, 50 posts — so it refuses any Supabase URL that is
+not loopback before touching a row. It is the opposite shape from `check:live` and
+`verify:migrations`, which are read-only by construction, and it says so rather than relying on the
+flag being passed. `--no-seed` writes nothing and may therefore read the live project as a named
+crew account; the doc's *Against a deployment* has both recipes, including the seeded Vercel
+preview #185 used.
 
 Two traps it guards, both of which produce a *reassuring* number rather than an error:
 

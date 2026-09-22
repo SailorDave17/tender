@@ -252,6 +252,64 @@ export function refuseNonLocalStack(url) {
 }
 
 /**
+ * Who signs in, which routes are measured, and what volume the reading may claim — decided once,
+ * here, for both shapes of run. Story #185.
+ *
+ * A SEEDED run measures the fixture and nothing else: the viewer and the routes are the ones
+ * `measuredViewer` chose, and naming another viewer or route is refused rather than honoured,
+ * because a seeded run's whole value is that its number is comparable with every other seeded
+ * run's. Letting a flag swap the viewer would reintroduce, by argument, the lighter-page defect
+ * `measuredViewer` exists to prevent.
+ *
+ * An UNSEEDED run writes nothing, so it may point at any Supabase — the live project included,
+ * which is how ADR 002's condition gets re-read once the club's real board has grown. There the
+ * viewer and routes may be named, and when either is, the reading claims NO volume: the script
+ * cannot know what a real board carries, so `volume` is null and the doc has to state it beside
+ * the number. Only an unseeded run over the fixture's own viewer and routes inherits `VOLUME`.
+ *
+ * @param {{ seed: boolean, stack: string, viewerEmail?: string | null, routes?: string[],
+ *           plan: ReturnType<typeof fixturePlan> }} options
+ */
+export function runTarget({ seed, stack, viewerEmail = null, routes = [], plan }) {
+  if (seed) {
+    const refusal = refuseNonLocalStack(stack);
+    if (refusal) throw new Error(refusal);
+    if (viewerEmail || routes.length) {
+      throw new Error("a seeded run measures the fixture's chosen viewer and routes — pass --no-seed to name your own");
+    }
+    return { email: measuredViewer(plan).email, routes: measuredRoutes(plan), volume: VOLUME, fixtureViewer: true };
+  }
+  for (const r of routes) {
+    if (!r.startsWith("/")) throw new Error(`a route is a path, not ${JSON.stringify(r)}`);
+  }
+  const named = Boolean(viewerEmail) || routes.length > 0;
+  return {
+    email: viewerEmail ?? measuredViewer(plan).email,
+    routes: routes.length ? routes : measuredRoutes(plan),
+    volume: named ? null : VOLUME,
+    fixtureViewer: !viewerEmail,
+  };
+}
+
+/**
+ * The headers every request of the run carries: the session cookie, and — only when the secret is
+ * set — Vercel's protection-bypass header, without which a PREVIEW deployment answers every
+ * request with a 302 to Vercel's own sign-in (measured on #185: `ssoProtection` is
+ * `all_except_custom_domains`, so production's custom domain is open and every preview is not).
+ * That 302 is `/join`'s trap in a second dress — a page nobody asked for — so `refuseWrongPage`
+ * would catch it; the header is what makes the preview measurable at all.
+ *
+ * The secret comes from the environment and never from a flag, so it does not land in shell
+ * history or in the committed summary.
+ *
+ * @param {{ cookie: string, bypassSecret?: string | null }} options
+ */
+export function requestHeaders({ cookie, bypassSecret = null }) {
+  if (!cookie) throw new Error("no session cookie — the run would measure a signed-out redirect");
+  return bypassSecret ? { Cookie: cookie, "x-vercel-protection-bypass": bypassSecret } : { Cookie: cookie };
+}
+
+/**
  * Did Lighthouse measure the page that was asked for? Returns a refusal message or null.
  *
  * This is the guard that makes every other number in the report worth reading. If the build was

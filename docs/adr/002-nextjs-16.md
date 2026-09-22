@@ -1,6 +1,6 @@
 # ADR 002 — Next.js 16 as the framework
 
-- Status: accepted 2026-08-21
+- Status: accepted 2026-08-21 — kill condition **fired** 2026-09-22 (#185); the framework decision is with the owner, see *Kill condition*
 - Phase: 6
 
 ## Context
@@ -21,6 +21,46 @@ Bundle size is watched on the old-Android target (an accessibility bar, not poli
 
 ## Kill condition
 Lighthouse mobile performance on the board page below 80 on a mid-range Android after the first three stories, unrecoverable by ordinary optimisation — reopen toward SvelteKit.
+
+### Measured 2026-09-22 (#185): the condition has FIRED
+
+**`/board` reads 66 on a deployed build of `release`** (60 / 66 / 70), at #44's fixture volume,
+Lighthouse 12.8.2 mobile with simulated throttling — the instrument this condition names — and
+**70 with the one new ordinary lever fixed** (68 / 70 / 78). No run reached 80. Crediting the
+deployed arms with the whole measured cost of how the fixture was served (a tunnel to a local
+stack, priced at +4 against production on the same board shape) still leaves 74–76.
+
+Both halves are now measured:
+
+- **Below 80 on a deployed build: established.** The #44 section below expected a local/deployed
+  gap of about eight points in the deployed build's favour. It did not appear: 66 deployed against
+  68 local on the same tree and fixture. The framework runtime (~457 KB) lands before first paint
+  on a real network too — Vercel's edge serves it in time — so the simulator prices it as
+  render-blocking there as well, and the LCP audit scores 0.24–0.32 in every deployed run.
+- **Unrecoverable by ordinary optimisation: supported.** #44 priced three levers (prefetch off,
+  ~3 points and kept; document cut 71%, none; client components removed, none). #185 found and
+  priced a fourth — a footer layout shift introduced by #154's streaming shell after #44's reading,
+  CLS 0.112–0.234 — and fixing it bought 4 points. The remainder is the runtime #44 attributed it
+  to, which is the thing this ADR chose.
+
+**The cause, in one line:** Next ships its React/Next client runtime to every route, and on this
+page shape it arrives before the first paint on any network measured, so the mobile simulator
+prices ~457 KB of JavaScript onto the critical path of a page that otherwise reads in the 90s
+(#44's framework-blocked bound: 96).
+
+**What the condition does not say, and what it therefore does not decide.** It fired on the
+instrument named; no physical mid-range Android on a cellular network was measured. And
+`/post/[id]` — the other page a crew member opens — passes on the same framework once the footer
+is fixed (82 / 80 / 90). Reopening toward SvelteKit is a decision about the whole app priced
+against one page's score, which is the owner's to take, not this measurement's. **Epic #7 pauses
+for that decision.** The #44 section below already names the next question if the answer is to
+look: what the board costs under a framework that ships no client runtime by default. Full method,
+the five arms and the tunnel's price:
+[`../performance-floor.md`](../performance-floor.md#the-deployed-reading-2026-09-22--story-185).
+
+No further run is asked for by this section. The harness re-runs it against the live project once
+the club's real board has grown (`npm run perf:floor -- --no-seed …`, same doc), which is worth
+doing before any migration starts, since a real board is the page the condition is about.
 
 ### Measured 2026-09-21 (#44): the local antecedent is met; the ADR's own condition is NOT yet established
 
@@ -58,6 +98,8 @@ So, precisely:
 - **Below 80 locally: established** (72, three runs, none near the floor).
 - **Unrecoverable by ordinary optimisation: supported** (three levers priced, two at zero).
 - **Below 80 on a mid-range Android: NOT established**, and not establishable from a local serve.
+  *(Settled 2026-09-22 by #185, above: established on a deployed build, and the ~8 points did not
+  carry.)*
 
 **What settles it, in order.** Run the same command against the deployed `release` build; that is
 one measurement and it decides whether this section becomes a framework decision or a footnote. Only

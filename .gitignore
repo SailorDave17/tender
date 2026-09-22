@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# perf:floor's default --out: ~3.7 MB of reports a pass, plus extra-headers.json, which holds a
+# session cookie and, against a preview, Vercel's protection-bypass secret (#185)
+/lighthouse/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

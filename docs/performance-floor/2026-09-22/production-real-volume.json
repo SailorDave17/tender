@@ -1,0 +1,129 @@
+{
+  "takenAt": "2026-09-22T19:16:13.430Z",
+  "target": {
+    "baseUrl": "https://tender.madcowsailing.com",
+    "seeded": false,
+    "servedSupabaseUrl": "https://iszdmtinhgnjwtnyetdn.supabase.co"
+  },
+  "volume": null,
+  "floors": {
+    "performance": 80,
+    "accessibility": 90,
+    "cls": 0.1
+  },
+  "summaries": [
+    {
+      "route": "/board",
+      "runs": 3,
+      "performance": {
+        "median": 86,
+        "values": [
+          88,
+          82,
+          86
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0.06606316871121715,
+        "values": [
+          0.06606316871121715,
+          0.06606316871121715,
+          0.06606316871121715
+        ]
+      },
+      "lcp": {
+        "median": 3762.5795,
+        "values": [
+          3656.15,
+          3794.2735000000002,
+          3762.5795
+        ]
+      },
+      "tbt": {
+        "median": 166,
+        "values": [
+          131,
+          274,
+          166
+        ]
+      },
+      "ttfb": {
+        "median": 18.756,
+        "values": [
+          17.057000000000002,
+          18.756,
+          25.438000000000002
+        ]
+      },
+      "requests": 14,
+      "lighthouseVersion": "12.8.2"
+    },
+    {
+      "route": "/post/cc0c17da-6ac1-4f9f-8f93-fb985f7ced5f",
+      "runs": 3,
+      "performance": {
+        "median": 88,
+        "values": [
+          88,
+          89,
+          88
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0.08203565032650308,
+        "values": [
+          0.08203565032650308,
+          0.08203565032650308,
+          0.08203565032650308
+        ]
+      },
+      "lcp": {
+        "median": 3698.176,
+        "values": [
+          3698.176,
+          3397.253,
+          3700.016
+        ]
+      },
+      "tbt": {
+        "median": 60.5,
+        "values": [
+          60.5,
+          60,
+          71
+        ]
+      },
+      "ttfb": {
+        "median": 24.456000000000003,
+        "values": [
+          19.787999999999997,
+          24.456000000000003,
+          46.771
+        ]
+      },
+      "requests": 17,
+      "lighthouseVersion": "12.8.2"
+    }
+  ],
+  "verdict": {
+    "pass": true,
+    "failures": [],
+    "warnings": []
+  }
+}
