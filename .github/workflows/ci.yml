@@ -3,10 +3,12 @@ on:
   pull_request:
   push:
     branches: [develop, release]
-# The floor: GITHUB_TOKEN can read the checkout and nothing else. Neither job writes to the repo -
-# upload-artifact needs only this - so nothing is added per job (security-audit 2026-09-22, SA-3).
+# The floor: GITHUB_TOKEN can read the checkout for both jobs, and the smoke also reads public GHCR
+# packages so Docker can authenticate around anonymous pull limits. Neither job writes to the repo -
+# upload-artifact needs only this broader read shape (security-audit 2026-09-22, SA-3).
 permissions:
   contents: read
+  packages: read
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -61,6 +63,8 @@ jobs:
         with:
           version: 2.117.0
       - run: npm ci
+      - name: log into ghcr.io before pulling the Supabase stack
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       # In a scratch directory, never the checkout: `supabase init` writes a config.toml the repo
       # does not carry. The directory's name is the project id, so the database container is
       # supabase_db_smoke. Only db, auth, rest and kong are started; the rest is image pulls the
@@ -94,7 +98,7 @@ jobs:
       - run: npm run smoke -- --db-container supabase_db_smoke --out "$RUNNER_TEMP/smoke-output"
       - name: what the server said
         if: failure()
-        run: cat "$RUNNER_TEMP/next.log"
+        run: test ! -f "$RUNNER_TEMP/next.log" || cat "$RUNNER_TEMP/next.log"
       # smoke.mjs saves each person's page as it stood when a step failed.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()

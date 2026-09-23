@@ -273,4 +273,11 @@ describe("ci.yml's smoke job (AC 3)", () => {
     expect(job).toContain('mkdir -p "$RUNNER_TEMP/smoke"');
     expect(job).toContain("npm run smoke -- --db-container supabase_db_smoke ");
   });
+
+  it("authenticates GHCR pulls before starting Supabase, and only cats next.log if it exists", async () => {
+    const { yml, job } = await smokeJob();
+    expect(yml).toMatch(/^ {2}packages: read$/m);
+    expect(job).toContain('docker login ghcr.io -u "${{ github.actor }}" --password-stdin');
+    expect(job).toContain('test ! -f "$RUNNER_TEMP/next.log" || cat "$RUNNER_TEMP/next.log"');
+  });
 });
