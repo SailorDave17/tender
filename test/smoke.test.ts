@@ -2,10 +2,11 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { UUID } from "@/post/post-form";
-import { fixtureId } from "../scripts/lighthouse-floor-core.mjs";
+import { fixtureId, fixtureSql } from "../scripts/lighthouse-floor-core.mjs";
 import {
   CREW_PHONE,
   SEED_CLUB_MARK,
+  SMOKE_INVITE_CODE,
   SUPPORT_EMAIL,
   contactVerdict,
   expectedSeedLines,
@@ -61,6 +62,21 @@ describe("smokePlan", () => {
     expect(Date.parse(plan.date.startsAt) - NOW.getTime()).toBe(7 * 24 * 3600 * 1000);
     const later = smokePlan({ now: new Date("2027-05-01T00:00:00Z") });
     expect(Date.parse(later.date.startsAt)).toBeGreaterThan(Date.parse("2027-05-01T00:00:00Z"));
+  });
+
+  it("keeps the newcomer OUT of the seeded people, so the form has to create them (#220 AC 5)", () => {
+    // Seeding the newcomer would make the sign-up a step the smoke passes without the form running.
+    expect(plan.newcomer.email).toMatch(/@fixture\.invalid$/);
+    expect(plan.people.map((p) => p.email)).not.toContain(plan.newcomer.email);
+    expect(plan.newcomer).not.toHaveProperty("id");
+    // ...and the address is nobody's admin_email, so 0009's trigger does not make them the admin
+    expect(plan.newcomer.email.toLowerCase()).not.toBe(SUPPORT_EMAIL.toLowerCase());
+  });
+
+  it("types the invite code the seed put on the club row, so the two cannot disagree (#220 AC 5)", () => {
+    expect(SMOKE_INVITE_CODE.length).toBeGreaterThan(0);
+    expect(fixtureSql(plan)).toContain(`'${SMOKE_INVITE_CODE}'`);
+    expect(smokeSeedSql(plan)).toContain(`'${SMOKE_INVITE_CODE}'`);
   });
 
   it("uses ids /post/[id] would accept, distinct from each other and from perf:floor's", () => {
@@ -148,6 +164,11 @@ describe("smokeResetSql", () => {
   it("removes both auth users, and leaves the club alone", () => {
     expect(sql).toContain(`delete from auth.users where id in ('${plan.crew.id}', '${plan.skipper.id}');`);
     expect(sql).not.toMatch(/public\.club/);
+  });
+
+  it("removes the newcomer by address, since the form gave them whatever id GoTrue chose (#220)", () => {
+    // Without this a local re-run's sign-up is refused as "you already have an account here".
+    expect(sql).toContain(`delete from auth.users where email = '${plan.newcomer.email}';`);
   });
 });
 

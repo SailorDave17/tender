@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * page the proxy lets them stay on.
  *
  * The name is required and pre-filled with whatever the account already holds, such as a Google
- * given name or the provisional one the sign-up rework (#220) will write. Phone and experience are
+ * given name or the provisional one the invite gate writes since #220. Phone and experience are
  * /profile's own fields (src/profile/fields.tsx) and optional: "Skip for now" keeps the name and
  * nothing else, and the board's "set your competence" banner follows a member who skipped.
  *

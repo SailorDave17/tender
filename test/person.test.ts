@@ -302,7 +302,10 @@ describe("person.profile_completed_at (0031, story #219)", () => {
     }
   });
 
-  it("a member created after it, by today's sign-up, is finished too — until #220 inserts NULL", async () => {
+  it("an insert that does not NAME the column gets the default — finished — which is what a forgotten writer ships", async () => {
+    // Until #220 this was how every sign-up wrote its row, and it was correct then (the form asked
+    // for the name). It stays as the negative control for the case below: the default is real, so
+    // a writer that omits the column marks the member finished and they never see /welcome.
     const EVE = "55555555-5555-4555-8555-555555555555";
     await pre.exec(`
       insert into auth.users (id) values ('${EVE}');
@@ -312,6 +315,24 @@ describe("person.profile_completed_at (0031, story #219)", () => {
       `select profile_completed_at is not null as done from public.person where id = '${EVE}'`,
     );
     expect(r.rows).toEqual([{ done: true }]);
+  });
+
+  it("an explicit NULL survives the default — what both #220 writers send — and reads as unfinished", async () => {
+    // As the schema owner rather than service_role: the harness grants service_role nothing (its
+    // insert on person is the platform's inherited ALL, test/pglite.ts), so the claim here is the
+    // schema's — that `default now()` yields to a named NULL — and the writers naming it are
+    // src/auth/person-writers.test.ts's subject.
+    const FAY = "66666666-6666-4666-8666-666666666666";
+    await pre.exec(`
+      insert into auth.users (id) values ('${FAY}');
+      insert into public.person (id, display_name, adult_attested_at, profile_completed_at)
+        values ('${FAY}', 'fay', now(), null);
+    `);
+    const r = await pre.query<{ profile_completed_at: Date | null; adult: boolean }>(
+      `select profile_completed_at, adult_attested_at is not null as adult from public.person where id = '${FAY}'`,
+    );
+    expect(r.rows).toEqual([{ profile_completed_at: null, adult: true }]);
+    expect(standingFromRow({ profile_completed_at: null }, null)).toBe("unfinished");
   });
 
   it("a member can set their own (the positive control for the refusal below)", async () => {

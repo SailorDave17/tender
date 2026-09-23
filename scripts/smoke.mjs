@@ -25,6 +25,13 @@
  * AC 2's mutation — "the accept step deleted" — is the `skipper accepts` step below. Removing it
  * must turn the run red at the step after it, and ONLY there: every earlier step stays ok, which is
  * what shows the red came from the missing acceptance rather than from a stack that never started.
+ *
+ * SINCE #220 THE RUN ALSO SIGNS SOMEBODY UP. The last two steps take a third browser context
+ * through the invite entrance the way a new member does: the Sign up tab, the seeded invite code,
+ * an email and a password, then /welcome ("Finish your profile", #219) with a provisional name to
+ * replace, then the board as themselves. It closes the gap the README's "what it cannot see" used
+ * to name — no end-to-end test covered sign-up — and it runs after the core path so a red there
+ * cannot be mistaken for one here.
  */
 
 import { spawnSync } from "node:child_process";
@@ -35,6 +42,7 @@ import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 
 import {
+  SMOKE_INVITE_CODE,
   SMOKE_PASSWORD,
   contactVerdict,
   expectedSeedLines,
@@ -151,17 +159,17 @@ async function main() {
   if (refusal) throw new Error(refusal);
 
   const plan = smokePlan();
-  const { crew, skipper, date, boat } = plan;
+  const { crew, skipper, newcomer, date, boat } = plan;
   const t0 = Date.now();
   const log = (line) => process.stdout.write(`${line}\n`);
 
   await seed({ stack, serviceKey, dbContainer: args.dbContainer, plan });
-  log(`seeded: ${crew.email}, ${skipper.email}, race day ${date.startsAt}, boat ${boat.name}`);
+  log(`seeded: ${crew.email}, ${skipper.email}, race day ${date.startsAt}, boat ${boat.name}; ${newcomer.email} cleared for the sign-up`);
   await waitForServer(args.baseUrl);
 
   const browser = await chromium.launch({ channel: "chrome", headless: !args.headed });
   const pages = {};
-  for (const who of ["crew", "skipper"]) {
+  for (const who of ["crew", "skipper", "newcomer"]) {
     // One context per person: separate cookie jars, so each session is its own.
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(15_000);
@@ -264,6 +272,57 @@ async function main() {
         const afterContact = panel ? await panel.innerText() : null;
         const failures = contactVerdict({ phone: crew.phone, before, after, afterContact });
         if (failures.length) throw new Error(failures.join("; "));
+      },
+    },
+    {
+      // #220 AC 5: the invite entrance, end to end, in a context nobody has signed in on. The
+      // Sign up tab is clicked for the same reason the Sign in tab is above — the click is the
+      // hydration gate. What is asserted on the way: the invite code is the first input and the
+      // form asks for no name and ticks no box (AC 1 as served), and the account lands on
+      // /welcome rather than the board (AC 3).
+      name: "a newcomer signs up with the invite code and lands on /welcome",
+      run: async () => {
+        const p = pages.newcomer;
+        await p.goto(url("/join"));
+        let form = null;
+        for (let attempt = 0; attempt < 5 && !form; attempt += 1) {
+          await p.click('button[data-mode="signup"]');
+          form = await p.waitForSelector('form[data-form="signup"]', { timeout: 2000 }).catch(() => null);
+        }
+        if (!form) throw new Error("the Sign up tab never showed its form");
+        const first = await p.$eval('form[data-form="signup"] input', (el) => el.name);
+        if (first !== "code") throw new Error(`the sign-up form's first input is "${first}", not the invite code`);
+        if (await p.$('form[data-form="signup"] input[name="displayName"], form[data-form="signup"] input[type="checkbox"]')) {
+          throw new Error("the sign-up form still asks for a name or ticks a box");
+        }
+        await p.fill('form[data-form="signup"] input[name="code"]', SMOKE_INVITE_CODE);
+        await p.fill('form[data-form="signup"] input[name="email"]', newcomer.email);
+        await p.fill('form[data-form="signup"] input[name="password"]', SMOKE_PASSWORD);
+        await p.fill('form[data-form="signup"] input[name="confirm"]', SMOKE_PASSWORD);
+        await Promise.all([
+          p.waitForURL((u) => u.pathname === "/welcome"),
+          p.click('form[data-form="signup"] button:has-text("Create my account")'),
+        ]);
+        // The page, not only the URL: /welcome streams like every page since #154, and its own
+        // hook is what says it rendered rather than an error boundary.
+        await p.waitForSelector('main[data-page="welcome"]');
+      },
+    },
+    {
+      name: "the newcomer gives a name on /welcome and reaches the board as themselves",
+      run: async () => {
+        const p = pages.newcomer;
+        // The provisional name is the address's local part (#220), pre-filled for them to replace.
+        const prefilled = await p.inputValue('main[data-page="welcome"] input[name="displayName"]');
+        const local = newcomer.email.split("@")[0];
+        if (prefilled !== local) throw new Error(`/welcome pre-filled "${prefilled}", not the provisional name "${local}"`);
+        await p.fill('main[data-page="welcome"] input[name="displayName"]', newcomer.displayName);
+        await Promise.all([p.waitForURL((u) => u.pathname === "/board"), p.click("button[data-finish]")]);
+        // Whose board: the name they just gave, in the shell's header (as signIn reads it).
+        const who = await p.innerText("header [data-who]");
+        if (!who.includes(`Signed in as ${newcomer.displayName}`)) {
+          throw new Error(`the header does not say "Signed in as ${newcomer.displayName}" (read ${JSON.stringify(who)})`);
+        }
       },
     },
   ];

@@ -523,6 +523,32 @@ button:disabled {
   color: var(--accent-ink);
 }
 
+/* the invite code panel (#220): the one thing the sign-up screen is about, before any other input.
+   Bordered in the accent and tinted --accent-soft, on which --ink and --ink-muted are both listed
+   pairs; the heading is the page's largest type and the input a step up from every other box. */
+[data-invite] {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+[data-invite] h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+}
+[data-invite] input {
+  font-size: var(--text-lg);
+  padding: var(--space-2) var(--space-3);
+}
+/* the 18+ line beside the create-account buttons: body ink, not a muted hint, so it is read */
+[data-attest] {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
 /* banners: the suspension and no-rating notes, the install offer */
 [data-banner] {
   padding: var(--space-3);

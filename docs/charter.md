@@ -60,7 +60,14 @@ season. Known blind spot: matches it caused that closed by text.
   deliberately and recorded here so it does not later read as an erosion somebody restores.
   Forgot my password is the one screen that still emails anything, and it is the way in for a
   member with no password — anyone from before #82, every Google-only account — because resetting
-  sets a first one. Supersedes #70's email-alone sign-in, 2026-08-23.)
+  sets a first one. Supersedes #70's email-alone sign-in, 2026-08-23.) *Amended 2026-09-22,
+  #219 and #220: the sign-up screen asks only for the invite code, in one large panel, then the
+  account method; the name is given on `/welcome` ("Finish your profile") once the account
+  exists, and until then the row carries a provisional name with `profile_completed_at` null.
+  The 18+ confirmation stays at sign-up as a line of text beside the create-account buttons
+  rather than a checkbox — creating the account is the confirmation, `adult_attested_at NOT
+  NULL` is unchanged, and the owner accepted that a sentence is weaker evidence than a ticked
+  box.*
   Email is required (it is the login); phone is optional and is exchanged only on a
   closed match. **One person is one account, and may carry more than one way into it** (#74,
   2026-08-24): a member whose Google address differs from the one they joined with links it from
