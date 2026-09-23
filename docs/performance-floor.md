@@ -128,6 +128,13 @@ budget. Worth knowing before anything is added to that banner.
 
 ## What this means for ADR 002
 
+**Where this stands now (2026-09-22).** ADR 002's lab condition fired on #185's deployed reading,
+and the owner decided the same day to stay on Next.js 16. That condition is retired as the
+framework trigger. The framework is reopened only by field data from members' phones, against
+thresholds the ADR will carry before that data exists. `perf:floor` does not decide the framework:
+it prices levers against a floor of 80. What follows is #44's reading of the condition as it stood
+on 2026-09-21, kept as the record of how the question was worked.
+
 ADR 002's kill condition: *"Lighthouse mobile performance on the board page below 80 on a mid-range
 Android after the first three stories, unrecoverable by ordinary optimisation — reopen toward
 SvelteKit."*
@@ -151,8 +158,9 @@ So the honest verdict is narrower than the numbers first suggest:
 - **Below 80 on a mid-range Android, which is what the ADR actually says: not established**, and
   cannot be from this instrument.
 
-The deciding measurement is the same command against the deployed `release` build. Until then this
-records that the kill condition's local antecedent is met, not that the framework decision is due.
+At the time, the deciding measurement was taken to be the same command against the deployed
+`release` build, and this section recorded only that the kill condition's local antecedent was met,
+not that the framework decision was due.
 
 *(Superseded 2026-09-22: that measurement has been taken, the ~8 points did **not** carry, and the
 third bullet above is now established the other way. See the next section.)*

@@ -44,7 +44,7 @@ npm run check:live # read-only probe of the live Supabase project; needs .env.lo
 npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
-npm run perf:floor -- --db-container supabase_db_<dir>  # ADR 002's kill condition, re-measured
+npm run perf:floor -- --db-container supabase_db_<dir>  # Lighthouse on /board and /post, at a fixture volume
 npm run smoke -- --db-container supabase_db_<dir>       # the core path in a real browser (CI runs it on every PR)
 ```
 
@@ -238,15 +238,16 @@ footer would be indistinguishable from a page that has none.
 
 ## The performance floor
 
-**`npm run perf:floor` re-measures ADR 002's kill condition** with the instrument that ADR names —
-Lighthouse mobile, simulated throttling, against a production build served locally with a fixture
-of 80 people, 45 race dates and 50 posts, signed in through a real session cookie. Method, the
-current reading and the levers already priced are in
-[`docs/performance-floor.md`](docs/performance-floor.md); the short version is that on a
-**deployed** build of `release` at that volume (#185, 2026-09-22) `/board` reads **66**, and **70**
-with a new footer layout shift fixed, against a floor of 80 — the local/deployed gap #44 hoped for
-did not appear — so [ADR 002](docs/adr/002-nextjs-16.md) records its kill condition as **fired**
-and the framework decision as the owner's. `/post/[id]` reads 78, and 82 with the footer fixed.
+**`npm run perf:floor` measures `/board` and `/post/[id]` with Lighthouse** — mobile, simulated
+throttling — against a production build served locally with a fixture of 80 people, 45 race dates
+and 50 posts, signed in through a real session cookie. It prices levers against a floor of 80; it
+does **not** decide the framework. On a **deployed** build of `release` at that volume (#185,
+2026-09-22) `/board` read **66**, and **70** with a new footer layout shift fixed. ADR 002's lab
+condition fired on that reading, and the owner decided the same day to stay on Next.js 16. The
+framework is now reopened only by field data from members' phones, against thresholds
+[ADR 002](docs/adr/002-nextjs-16.md) will carry before any such data exists. `/post/[id]` read 78,
+and 82 with the footer fixed. Method, readings and the levers priced are in
+[`docs/performance-floor.md`](docs/performance-floor.md).
 
 A seeded run **writes** — 80 people, 45 dates, 50 posts — so it refuses any Supabase URL that is
 not loopback before touching a row. It is the opposite shape from `check:live` and
