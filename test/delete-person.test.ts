@@ -301,7 +301,8 @@ describe("0027 — AC 1: the person deletes themself", () => {
       `select person_id, to_email from public.notification_log where post_id = '${P_A}' order by to_email nulls first`,
     );
     // 0010's rule: the row stays and person_id goes null. 0027's: the ADDRESS goes too — it is
-    // the person's email, and a deletion that kept it in a log would not be one. Sam's row, the
+    // the person's email, and a deletion that kept it in a log would not be one (since 0033 by
+    // the person_blank_log trigger, not by delete_person's own statement). Sam's row, the
     // positive control, keeps both.
     expect(log.rows).toEqual([
       { person_id: null, to_email: null },
@@ -351,6 +352,7 @@ describe("0027 — AC 4: every security definer runs after the deletion", () => 
       "admin_from_club",
       "admin_from_contact",
       "answer_counts",
+      "blank_person_log", // 0033 — a trigger; called by Di's deletion at the end of this file
       "current_invite_code",
       "delete_person",
       "email_usage",
@@ -439,6 +441,8 @@ describe("0027 — AC 4: every security definer runs after the deletion", () => 
   });
 
   it("delete_person by the admin route: Di goes too, and M_B stands with both sides null", async () => {
+    // blank_person_log (0033) runs on this delete, after Lee's: a row naming Di loses its address.
+    await db.exec(`insert into public.notification_log (kind, channel, person_id, to_email) values ('match', 'email', '${CREW2}', 'di@hsc-crew.org')`);
     const r = await as(db, "authenticated", del(CREW2), ADMIN);
     expect(r.rows).toEqual([{ kept: 2 }]); // M_B and the match accept_answer just made on P_D
     const m = await db.query<{ id: string; skipper_id: string | null; crew_id: string | null; sa: boolean; ca: boolean }>(
@@ -446,5 +450,6 @@ describe("0027 — AC 4: every security definer runs after the deletion", () => 
     );
     expect(m.rows).toEqual([{ id: M_B, skipper_id: null, crew_id: null, sa: true, ca: true }]);
     expect(await count(db, "person", `id = '${CREW2}'`)).toBe(0);
+    expect(await count(db, "notification_log", `to_email = 'di@hsc-crew.org'`)).toBe(0);
   });
 });
