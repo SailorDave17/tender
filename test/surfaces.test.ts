@@ -265,6 +265,44 @@ describe("the join tabs: the selected tab is visibly selected (#155 AC 6)", () =
   }
 });
 
+describe("a short page keeps its footer under its content, not under a screen (#211 AC 2)", () => {
+  // #211 hides the About links and the stamp only while loading.tsx is shown. The alternative it
+  // was chosen over, #185's R2 (`#main[data-frame] { min-height: 100svh }`), holds a page's frame
+  // at a viewport tall, so a short page ends in blank space above its footer. This reads what the
+  // loaded page does: the frame is exactly its <main>, and the About links start where it ends.
+  // All three render taller than 640px here, so this cannot see a viewport-tall frame (R2's rule
+  // added left it green); `test/footer-streaming.test.ts` proves that on a page shorter than the
+  // screen. This holds the three named pages to no gap at all.
+  for (const name of ["/join", "/support", "/privacy"]) {
+    it(`${name} at 360×640: no empty space between the content and the About links`, async () => {
+      const { page, close } = await open(name, { width: 360, height: 640 }, "light");
+      try {
+        const read = (await page.evaluate(`(() => {
+          const frame = document.getElementById("main").getBoundingClientRect();
+          const main = document.querySelector("#main[data-frame] > main");
+          const last = main.lastElementChild;
+          const about = document.querySelector("[data-about]");
+          return {
+            frame: frame.height,
+            main: main.getBoundingClientRect().height,
+            content: last.getBoundingClientRect().bottom + parseFloat(getComputedStyle(last).marginBottom),
+            padding: parseFloat(getComputedStyle(main).paddingBottom),
+            about: about.getBoundingClientRect().top,
+            display: getComputedStyle(about).display,
+          };
+        })()`)) as { frame: number; main: number; content: number; padding: number; about: number; display: string };
+        const blank = read.about - read.content;
+        console.log(`${name} 360×640: frame ${read.frame}px, main ${read.main}px, content ends ${read.content.toFixed(0)}px, About at ${read.about.toFixed(0)}px, blank ${blank.toFixed(0)}px (main padding ${read.padding}px)`);
+        expect(read.display).toBe("flex");
+        expect(Math.abs(read.frame - read.main)).toBeLessThan(1);
+        expect(blank).toBeLessThanOrEqual(read.padding + 1);
+      } finally {
+        await close();
+      }
+    });
+  }
+});
+
 describe("no surface carries an inline style the token layer could express (#155 AC 1)", () => {
   it("every style= left under the six surfaces and their components is token-exempt, with the reason on the line above", () => {
     const needle = ["style", "={{"].join("");

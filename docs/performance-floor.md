@@ -266,7 +266,8 @@ performance score too, since CLS carries 25 of its 100 weight.
 (`#main[data-frame] { min-height: 100svh }`) holds the footer below the fold while the page streams,
 and CLS went to 0 on both routes. It bought **`/board` +4 (66 → 70) and `/post/[id]` +4 (78 → 82)**.
 The rule was applied to a scratch copy for the measurement and is **not** in this change; the
-footer is its own story.
+footer is its own story. *(That story is #211. It shipped a different rule, measured in* The
+footer fix, 2026-09-23 *below.)*
 
 ### What this settles
 
@@ -330,6 +331,56 @@ would settle it.
 0.123 to `body > div#main > main > ol` in all three runs. That is the element the banner pushes
 down (see *CLS is the install banner* above). `body > footer` shifts in one run of three (0.112).
 Both fail the 0.1 floor. `/post/[id]` reads 0 in all three.
+
+## The footer fix, 2026-09-23 — story #211
+
+**Verdict: with #211, CLS is 0 in every run on both routes, and no run attributes a shift to
+anything. The same harness on `develop` reads 0.112 on `/board` in all three runs, each one
+`body > footer`.**
+
+The fix is not R2's rule. R2 (`#main[data-frame] { min-height: 100svh }`, *The deployed reading*
+above) holds every page's frame at a viewport tall, so a short page ends in blank space above its
+footer. #211 instead hides the About links and the stamp while `loading.tsx`'s "Loading…" is
+shown (`#main:has([data-loading]) ~ :is([data-about], footer[data-build-stamp])`). They are then
+laid out for the first time under the page, and a box that did not exist in the previous frame is
+not a shift. A loaded page is laid out exactly as before.
+
+`npm run perf:floor -- --runs 3`, seeded, on #44's fixture (80 people, 45 dates, 50 posts, 30
+matches, 1,125 availability). Both arms ran against `next build` + `next start` on localhost, with
+one local stack and the same host, back to back. The control is a `git worktree` of `develop` at
+`7a37325`, and #211 is the same commit plus the rule. Lighthouse 12.8.2, mobile preset, `simulate`
+throttling, every run shown. Machine-readable in `docs/performance-floor/2026-09-23/`.
+
+| arm | route | performance | accessibility | CLS | shifts attributed | LCP |
+|---|---|---|---|---|---|---|
+| `develop` (control) | `/board` | **67** (67 / 66 / 67) | 100 | **0.112** (0.112 / 0.112 / 0.112) | `body > footer` in 3 of 3 | 5.2 s |
+| `develop` (control) | `/post/[id]` | **84** (77 / 86 / 84) | 100 | 0.000 (0.112 / 0 / 0) | `body > footer` in 1 of 3 | 4.3 s |
+| #211 | `/board` | **73** (75 / 70 / 73) | 100 | **0.000** (0 / 0 / 0) | none | 5.3 s |
+| #211 | `/post/[id]` | **82** (82 / 79 / 83) | 100 | **0.000** (0 / 0 / 0) | none | 4.5 s |
+
+- **The footer's shift is gone, and the control shows it was there to remove.** 0.112 is the same
+  size as #185's L arm (0.141) and inside its 0.066–0.141 band. `/post/[id]`'s control shows the
+  race #185 described: the footer shifts only in a run whose first paint came before the page.
+- **`/board` gained 6 points** (67 → 73), and every #211 run (70–75) is above every control run
+  (66–67). R2 bought +4 on a deployed preview. So the direction agrees and the size is
+  one reading. **`/post/[id]` shows no gain.** Its runs overlap (77–86 against 79–83), and its
+  control median already had CLS 0.
+- **`/board` stays below 80**, which is ADR 002's reading and not this story's. The remainder is
+  the simulated LCP #185 attributed to the framework runtime.
+- **The install banner's shift (#217) did not appear in any run of either arm.** This document
+  records that shift as intermittent (*CLS is the install banner* above), so its absence here is
+  not evidence about #217.
+
+`test/footer-streaming.test.ts` holds the mechanism without Lighthouse. It paints the real
+`loading.tsx` inside the real layout in Chrome, swaps a page in, and reads `layout-shift` entries.
+With the rule there are no entries. With the rule stripped, a board-shaped page reads **0.1118 at
+Lighthouse's 412 × 823**, the figure this harness read on `develop`, and 0.1437 at 360 × 640.
+AC 2 is held in two places, and only one of them can see R2's cost. `test/surfaces.test.ts` reads
+`/join`, `/support` and `/privacy` at 360 × 640. On each, the frame is exactly its `<main>` and the
+About links start 24 px (the frame's padding) under the content. But all three render taller than
+640 px there, so a viewport-tall frame stretches nothing, and adding R2's rule left all three green.
+`test/footer-streaming.test.ts` makes the same reading on a page shorter than the screen, where R2's
+rule reddens it: the frame must equal its `<main>`, and the stamp must end on the first screen.
 
 ## Running it
 
