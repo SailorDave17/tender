@@ -62,6 +62,12 @@ export default function PrivacyPage() {
           </li>
           <li>A record of each email and notification Tender sends you: what kind, to which address, and when.</li>
           <li>If the club admin suspends you or removes one of your messages: that it happened, and when.</li>
+          <li data-claim="attempts">
+            When someone gets an invite code or a password wrong, or asks for a reset link: a
+            scrambled form of the internet address it came from and of the email address it named,
+            which cannot be turned back into either, and when. Tender uses it only to stop anyone
+            guessing, and deletes it after 15 minutes.
+          </li>
           <li>
             Cookies that keep you signed in, and one that remembers for a year that this device has
             signed in before, so the sign-in page opens on the right tab.

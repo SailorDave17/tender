@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requestReset } from "@/auth/signin";
+import { clientAddress, withAttemptLimit } from "@/auth/attempt-limit";
+import { GENERIC_OK, requestReset, type SignInResult } from "@/auth/signin";
+import { serviceAttemptStore } from "@/lib/auth/attempt-store";
 import { supabaseServer } from "@/lib/supabase/server";
 
 /**
@@ -20,7 +22,7 @@ export async function POST(request: NextRequest) {
   const client = await supabaseServer();
   const origin = request.nextUrl.origin;
 
-  const result = await requestReset(
+  const attempt = () => requestReset(
     { email: String(body.email ?? "") },
     {
       sendReset: async (address) => {
@@ -31,5 +33,16 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+  // #206: this screen has no failure to count and costs a member an email per request, so every
+  // request counts, on a budget of its own per source address. A caller over it gets the same
+  // generic sentence, and no mail goes out.
+  const result = await withAttemptLimit<SignInResult>({
+    gate: "forgot",
+    ip: clientAddress(request.headers),
+    store: serviceAttemptStore(),
+    refusal: { status: 200, body: { message: GENERIC_OK } },
+    isFailure: () => true,
+    attempt,
+  });
   return NextResponse.json(result.body, { status: result.status });
 }
