@@ -274,22 +274,12 @@ describe("ci.yml's smoke job (AC 3)", () => {
     expect(job).toContain("npm run smoke -- --db-container supabase_db_smoke ");
   });
 
-  it("grants packages: read to the smoke job alone, leaving the workflow's floor at contents: read", async () => {
-    const { yml, job } = await smokeJob();
-    const floor = yml.slice(yml.indexOf("\npermissions:"), yml.indexOf("\njobs:"));
-    expect(floor).toMatch(/^ {2}contents: read$/m);
-    expect(floor).not.toMatch(/packages/);
-    // A job-level block replaces the workflow's, so contents: read has to be restated beside it.
-    expect(job).toMatch(/^ {4}permissions:\n {6}contents: read\n {6}packages: read$/m);
-  });
-
-  it("logs Docker into ghcr.io before starting Supabase, with the token passed through env", async () => {
+  it("pulls the stack's images from public.ecr.aws, set on the step that starts it", async () => {
     const { job } = await smokeJob();
-    const login = job.indexOf('docker login ghcr.io -u "$GHCR_USER" --password-stdin');
-    expect(login, "no ghcr.io login step").toBeGreaterThan(-1);
-    expect(login).toBeLessThan(job.indexOf("supabase start"));
-    expect(job).toContain("GHCR_TOKEN: ${{ github.token }}");
-    expect(job).not.toMatch(/run: .*\$\{\{ github\.token \}\}/);
+    const step = job.slice(job.indexOf("- name: start a local Supabase stack"));
+    expect(step.slice(0, step.indexOf("supabase start"))).toMatch(
+      /^ {8}env:\n {10}SUPABASE_INTERNAL_IMAGE_REGISTRY: public\.ecr\.aws$/m,
+    );
   });
 
   it("prints next.log on failure only when the server got far enough to write one", async () => {

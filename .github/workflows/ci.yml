@@ -4,8 +4,7 @@ on:
   push:
     branches: [develop, release]
 # The floor: GITHUB_TOKEN can read the checkout and nothing else. Neither job writes to the repo -
-# upload-artifact needs only this - so nothing is added per job (security-audit 2026-09-22, SA-3),
-# except the smoke's `packages: read`, which it declares on itself.
+# upload-artifact needs only this - so nothing is added per job (security-audit 2026-09-22, SA-3).
 permissions:
   contents: read
 jobs:
@@ -51,12 +50,6 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    # A job's permissions replace the workflow's rather than adding to them, so the floor is
-    # restated here. `packages: read` lets the token log Docker into ghcr.io: anonymous pulls of the
-    # Supabase images hit `toomanyrequests` on #236 and #232 (2026-09-23).
-    permissions:
-      contents: read
-      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -68,16 +61,16 @@ jobs:
         with:
           version: 2.117.0
       - run: npm ci
-      - name: log into ghcr.io before pulling the Supabase stack
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-          GHCR_USER: ${{ github.actor }}
-        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       # In a scratch directory, never the checkout: `supabase init` writes a config.toml the repo
       # does not carry. The directory's name is the project id, so the database container is
       # supabase_db_smoke. Only db, auth, rest and kong are started; the rest is image pulls the
       # smoke never talks to.
+      # The images come from public.ecr.aws, not the CLI's default ghcr.io: on 2026-09-23 every
+      # ghcr.io pull failed `toomanyrequests ... allowed: 44000/minute` (#236, #232), and a
+      # `docker login ghcr.io` with the job token did not lift it (#237, two runs).
       - name: start a local Supabase stack from supabase/migrations
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
         run: |
           mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
           supabase init --force --with-intellij-settings=false --with-vscode-settings=false
