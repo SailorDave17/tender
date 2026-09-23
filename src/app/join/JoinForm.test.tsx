@@ -57,13 +57,13 @@ const CLIENT_ID = "727868912920-test.apps.googleusercontent.com";
 
 const GOOD = "correct-horse-battery";
 
-/** Fill everything the sign-up form requires, then set the two password boxes. */
+/**
+ * Fill everything the sign-up form requires, then set the two password boxes. Since #220 the
+ * invite code is the form's only required control — there is no name box and no 18+ checkbox.
+ */
 function fillSignUp(container: HTMLElement, password: string, confirm: string) {
   const q = within(container);
-  fireEvent.change(q.getByLabelText("Your name"), { target: { value: "Ann Crew" } });
   fireEvent.change(q.getByLabelText("Invite code"), { target: { value: "rotate-me" } });
-  const attested = q.getByLabelText("I am 18 or over") as HTMLInputElement;
-  if (!attested.checked) fireEvent.click(attested);
   fireEvent.change(q.getByLabelText("Email"), { target: { value: "ann@example.com" } });
   fireEvent.change(q.getByLabelText("Password"), { target: { value: password } });
   fireEvent.change(q.getByLabelText("Confirm password"), { target: { value: confirm } });
@@ -122,29 +122,25 @@ describe("AC 5 — the Sign up arm carries the shared two boxes", () => {
     const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }), bodies);
     const { container } = render(<JoinForm initialMode="signup" googleClientId={CLIENT_ID} />);
     const q = within(container);
-    fireEvent.change(q.getByLabelText("Your name"), { target: { value: "Ann Crew" } });
     fireEvent.change(q.getByLabelText("Invite code"), { target: { value: "rotate-me" } });
-    fireEvent.click(q.getByLabelText("I am 18 or over"));
 
     fireEvent.click(q.getByRole("button", { name: "Continue with Google" }));
 
     // The Google arm must reach its route without an email or a password; since #173 it checks
     // the form's constraints itself with `reportValidity`, so a `required` on either box would
-    // make that call refuse and this list would stay empty.
+    // make that call refuse and this list would stay empty. Since #220 it posts no name, and
+    // `attested` is `true` by construction — creating the account is the confirmation.
     await waitFor(() => expect(calls).toEqual(["/api/signup/google"]));
-    expect(bodies).toEqual([
-      { displayName: "Ann Crew", code: "rotate-me", attested: true, credential: "fake-id-token", nonce: "fake-raw-nonce" },
-    ]);
+    expect(bodies).toEqual([{ code: "rotate-me", attested: true, credential: "fake-id-token", nonce: "fake-raw-nonce" }]);
   });
 
-  it("posts nothing to the Google route while the name, code or 18+ box is missing (#173 AC 3)", async () => {
+  it("posts nothing to the Google route while the invite code is missing (#173 AC 3, narrowed by #220)", async () => {
     const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }));
     const { container } = render(<JoinForm initialMode="signup" googleClientId={CLIENT_ID} />);
     const q = within(container);
-    fireEvent.change(q.getByLabelText("Your name"), { target: { value: "Ann Crew" } });
-    // code and the box left empty
+    // the code left empty — the only thing this form can now refuse on
     fireEvent.click(q.getByRole("button", { name: "Continue with Google" }));
-    await waitFor(() => expect(q.getByRole("alert").textContent).toMatch(/invite code and the 18\+ box/));
+    await waitFor(() => expect(q.getByRole("alert").textContent).toMatch(/invite code/));
     expect(calls).toEqual([]);
   });
 
@@ -209,5 +205,77 @@ describe("AC 6 — a mismatch is shown and nothing is posted", () => {
     const sent = bodies[0] as Record<string, unknown>;
     expect(sent.password).toBe(GOOD);
     expect(Object.keys(sent), "the confirm value was posted").not.toContain("confirm");
+    // #220: the whole payload — the code, the confirmation this submit is, and the account. No
+    // name (it is /welcome's now) and no checkbox value: `attested` is posted as `true`.
+    expect(sent).toEqual({ code: "rotate-me", attested: true, email: "ann@example.com", password: GOOD });
+  });
+});
+
+/**
+ * #220 AC 1 — the sign-up screen is the invite code first, then the account, with the 18+
+ * confirmation as a sentence beside the two ways of creating one. Read off the rendered DOM, which
+ * is the order a screen reader and a phone both follow. Whether the panel is visually dominant at
+ * 360px is the owner's phone review (AC 7); jsdom applies no stylesheet and cannot see it.
+ */
+describe("#220 AC 1 — the sign-up tab is the invite code, then the account", () => {
+  function signUpForm(googleClientId = CLIENT_ID) {
+    const { container } = render(<JoinForm initialMode="signup" googleClientId={googleClientId} />);
+    const form = container.querySelector<HTMLFormElement>('form[data-form="signup"]');
+    if (!form) throw new Error("no sign-up form rendered");
+    return { container, form, q: within(form) };
+  }
+
+  it("the invite code is the first input, in a region labelled by the heading, and there is no name box and no checkbox", () => {
+    const { form, q } = signUpForm();
+    const inputs = [...form.querySelectorAll("input")];
+    expect(inputs[0]?.name, "the first input in DOM order").toBe("code");
+    // The whole set: an added box anywhere on this form reddens this line.
+    expect(inputs.map((i) => i.name)).toEqual(["code", "email", "password", "confirm"]);
+    expect(inputs.some((i) => i.type === "checkbox")).toBe(false);
+    expect(form.querySelector('input[name="displayName"]')).toBeNull();
+
+    // A labelled region — `role="group"` with `aria-labelledby`, or a fieldset with a legend —
+    // whose label is the heading text the issue names. Either form is accepted, so this test does
+    // not pin an element the design may change; what it pins is that the label text reaches it.
+    const region = inputs[0].closest<HTMLElement>('[role="group"], fieldset');
+    expect(region, "the code input sits in a labelled region").not.toBeNull();
+    const labelledBy = region!.getAttribute("aria-labelledby");
+    const heading = labelledBy ? form.querySelector(`#${labelledBy}`) : region!.querySelector("legend");
+    expect(heading?.textContent).toBe("Your invite code");
+    // ...and the input itself has an explicit label, over and above the region's.
+    expect(q.getByLabelText("Invite code")).toBe(inputs[0]);
+    expect(inputs[0].required).toBe(true);
+  });
+
+  it("the 18+ statement is rendered beside both Create my account and the Google button", () => {
+    const { form, q } = signUpForm();
+    const attest = form.querySelector<HTMLElement>("[data-attest]");
+    expect(attest?.textContent).toBe("By creating an account you confirm you're 18 or over.");
+    const create = q.getByRole("button", { name: "Create my account" });
+    const google = q.getByRole("button", { name: "Continue with Google" });
+    // Beside: the same parent as both buttons, and before both in DOM order, so it is read before
+    // either is used. (The Google stand-in renders a bare button where GIS renders its slot; both
+    // are direct children of the fieldset.)
+    expect(attest!.parentElement).toBe(create.parentElement);
+    expect(attest!.parentElement).toBe(google.parentElement);
+    expect(attest!.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(attest!.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // and the old checkbox label is gone with the box
+    expect(q.queryByLabelText("I am 18 or over")).toBeNull();
+  });
+
+  it("without a Google client id the statement still stands beside the one button there is", () => {
+    const { form, q } = signUpForm("");
+    const attest = form.querySelector<HTMLElement>("[data-attest]");
+    expect(attest).not.toBeNull();
+    expect(attest!.parentElement).toBe(q.getByRole("button", { name: "Create my account" }).parentElement);
+    expect(q.queryByRole("button", { name: "Continue with Google" })).toBeNull();
+  });
+
+  it("the Google hint that there was nothing else to fill in is gone — it would be misleading now", () => {
+    const { form } = signUpForm();
+    expect(form.textContent).not.toMatch(/nothing else to fill in/);
+    // the panel says where the code comes from, in the region itself
+    expect(form.querySelector('[data-invite] [data-hint]')?.textContent).toMatch(/invite email/);
   });
 });

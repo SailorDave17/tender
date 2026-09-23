@@ -194,9 +194,9 @@ describe("password sign-in remembers the device (#123 AC 4)", () => {
 describe("a sign-up that finishes here remembers the device (#123 AC 4)", () => {
   it("writes the marker through the store when the gate signs them in", async () => {
     supabase = healthyStack({ personExists: false });
+    // #220: the form posts no name; `attested` is true by construction.
     const res = await joinPOST(post("https://tender.test/api/join", {
       email: "new@example.test",
-      displayName: "New Member",
       code: INVITE,
       attested: true,
       password: PASSWORD,
@@ -210,7 +210,6 @@ describe("a sign-up that finishes here remembers the device (#123 AC 4)", () => 
   it("remembers nothing when the invite code is refused", async () => {
     const res = await joinPOST(post("https://tender.test/api/join", {
       email: "new@example.test",
-      displayName: "New Member",
       code: "NOT-THIS-SEASON",
       attested: true,
       password: PASSWORD,
@@ -312,13 +311,13 @@ describe("the Google ID-token routes remember the device (#123 AC 4, extended by
   it("sign-up writes the marker through the store when the gate mints the row", async () => {
     supabase = healthyStack({ personExists: false });
     const res = await googleSignupPOST(post("https://tender.test/api/signup/google", {
-      displayName: "Ann Crew",
       code: INVITE,
       attested: true,
       ...GOOD,
     }));
     expect(res.status, await res.clone().text()).toBe(200);
-    expect(await res.json()).toEqual({ redirect: "/board" });
+    // #220: a row minted just now has a provisional name to replace, so /welcome, not the board.
+    expect(await res.json()).toEqual({ redirect: "/welcome" });
     expect(remembered()?.value).toBe(RECOGNITION_VALUE);
   });
 
@@ -330,7 +329,6 @@ describe("the Google ID-token routes remember the device (#123 AC 4, extended by
       return { data: { user: null }, error: null };
     };
     const res = await googleSignupPOST(post("https://tender.test/api/signup/google", {
-      displayName: "Ann Crew",
       code: "NOT-THIS-SEASON",
       attested: true,
       ...GOOD,

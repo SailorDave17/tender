@@ -43,7 +43,7 @@ function fakes(overrides: Overrides = {}, { taken = false, attested = false } = 
     signIn: 0,
   };
   /** Every attestation write, so AC 2 and AC 3 can assert on the argument and not only the count. */
-  const written: { id: string; meta: { display_name: string; adult_attested_at: string }; password: string }[] = [];
+  const written: { id: string; meta: { adult_attested_at: string }; password: string }[] = [];
   /** Every person row minted, and every sign-in attempted, with their arguments. */
   const inserted: Parameters<PersonStore["insert"]>[0][] = [];
   const signedIn: { email: string; password: string }[] = [];
@@ -113,9 +113,9 @@ function fakes(overrides: Overrides = {}, { taken = false, attested = false } = 
   return { deps, calls, written, inserted, signedIn, deleted, reachedFor };
 }
 
+/** A sign-up as the form posts it since #220: no name — that is /welcome's — and `attested` always true. */
 const good: JoinInput = {
   email: "Alice@Example.org",
-  displayName: "Alice",
   code: "HSC-2027",
   attested: true,
   password: "sail-away-2027",
@@ -134,7 +134,8 @@ describe("join — the happy path finishes in a session, with no email at all (#
     });
     const r = await join(good, deps);
     expect(r).toEqual({ status: 200, body: { redirect: AFTER_SIGNUP } });
-    expect(AFTER_SIGNUP).toBe("/board");
+    // #220 AC 3: a finished sign-up lands on "Finish your profile", not the board.
+    expect(AFTER_SIGNUP).toBe("/welcome");
     // A fresh address is created outright, so nothing is looked up and nothing is stamped.
     expect(calls).toEqual({
       inviteCode: 1,
@@ -144,17 +145,22 @@ describe("join — the happy path finishes in a session, with no email at all (#
       ensurePerson: 1,
       signIn: 1,
     });
+    // The attestation only (#220): the gate writes no name, because the form asks for none.
     expect(created).toEqual({
       email: "alice@example.org",
       password: "sail-away-2027",
-      user_metadata: { display_name: "Alice", adult_attested_at: "2026-08-22T12:00:00.000Z" },
+      user_metadata: { adult_attested_at: "2026-08-22T12:00:00.000Z" },
     });
-    // The row is minted for the user that was just created, off the metadata that was just written.
+    // The row is minted for the user that was just created, off the metadata that was just
+    // written: adult_attested_at set, a PROVISIONAL name (the address's local part), and
+    // profile_completed_at written as an explicit NULL so the gate sends them to /welcome
+    // (#220 AC 3; 0031's `default now()` would otherwise mark them finished).
     expect(inserted).toEqual([
       {
         id: NEW_ID,
-        display_name: "Alice",
+        display_name: "alice",
         adult_attested_at: "2026-08-22T12:00:00.000Z",
+        profile_completed_at: null,
         email: "alice@example.org",
       },
     ]);
@@ -208,10 +214,13 @@ describe("join — the refusals reach neither the user store nor the person stor
     expect(calls.createUser + calls.ensurePerson + calls.signIn).toBe(0);
   });
 
-  it("400 on a malformed email or an empty name, before the code is read", async () => {
+  it("400 on a malformed email, before the code is read", async () => {
+    // (The empty-name case went with the name field, #220: a criterion whose subject is gone
+    // cannot fail, and is deleted rather than left passing.)
     const { deps, calls } = fakes();
-    expect((await join({ ...good, email: "not-an-address" }, deps)).status).toBe(400);
-    expect((await join({ ...good, displayName: "   " }, deps)).status).toBe(400);
+    const r = await join({ ...good, email: "not-an-address" }, deps);
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/email address/);
     expect(calls).toEqual(untouched);
   });
 
@@ -286,13 +295,13 @@ describe("join — a stray auth user on the address (#85, AC 5)", () => {
       ensurePerson: 1,
       signIn: 1,
     });
-    // The same name, clock and password the createUser attempt carried — what they typed and when
-    // the gate ran, not anything reconstructed later. The password is set on the stray too (#82),
-    // so the member who was squatted on can sign in with it a line later.
+    // The same clock and password the createUser attempt carried — when the gate ran, not anything
+    // reconstructed later. The password is set on the stray too (#82), so the member who was
+    // squatted on can sign in with it a line later.
     expect(written).toEqual([
       {
         id: EXISTING_ID,
-        meta: { display_name: "Alice", adult_attested_at: "2026-08-22T12:00:00.000Z" },
+        meta: { adult_attested_at: "2026-08-22T12:00:00.000Z" },
         password: "sail-away-2027",
       },
     ]);
@@ -470,13 +479,18 @@ import { googleSignup, type GoogleSignupDeps } from "./join";
  * zero-effect claims as `join()`'s: a wrong code or an unticked box must exchange no token and
  * touch no store. The recorder counts every dep by name, so the claim is about the whole list.
  */
-function googleFakes(overrides: Partial<GoogleSignupDeps> & { exists?: boolean } = {}) {
+/** What GoTrue puts on a Google-created user, as the fixtures have always had it: no given name. */
+const GOOGLE_META = { full_name: "Bob Example" };
+
+function googleFakes(
+  overrides: Partial<GoogleSignupDeps> & { exists?: boolean; googleMeta?: Record<string, unknown> } = {},
+) {
   const calls: string[] = [];
   const exchanged: string[] = [];
-  const inserted: { display_name: string; adult_attested_at: string; email: string }[] = [];
-  const metadata: { display_name: string; adult_attested_at: string }[] = [];
+  const inserted: { display_name: string; adult_attested_at: string; profile_completed_at: null; email: string }[] = [];
+  const metadata: { adult_attested_at: string }[] = [];
   const deleted: string[] = [];
-  const { exists, ...depOverrides } = overrides;
+  const { exists, googleMeta, ...depOverrides } = overrides;
   const deps: GoogleSignupDeps = {
     inviteCode: async () => {
       calls.push("inviteCode");
@@ -486,7 +500,7 @@ function googleFakes(overrides: Partial<GoogleSignupDeps> & { exists?: boolean }
       calls.push("exchange");
       exchanged.push(`${credential}|${nonce}`);
       return {
-        user: { id: "g-1", email: "Bob@Example.org", user_metadata: { full_name: "Bob Example" } },
+        user: { id: "g-1", email: "Bob@Example.org", user_metadata: googleMeta ?? GOOGLE_META },
       };
     },
     person: {
@@ -496,7 +510,12 @@ function googleFakes(overrides: Partial<GoogleSignupDeps> & { exists?: boolean }
       },
       insert: async (row) => {
         calls.push("insert");
-        inserted.push({ display_name: row.display_name, adult_attested_at: row.adult_attested_at, email: row.email });
+        inserted.push({
+          display_name: row.display_name,
+          adult_attested_at: row.adult_attested_at,
+          profile_completed_at: row.profile_completed_at,
+          email: row.email,
+        });
         return {};
       },
       setMetadata: async (_id, meta) => {
@@ -519,8 +538,8 @@ function googleFakes(overrides: Partial<GoogleSignupDeps> & { exists?: boolean }
   return { deps, calls, exchanged, inserted, metadata, deleted };
 }
 
+/** A Google sign-up as the form posts it since #220: the code, the confirmation, the token pair. No name. */
 const googleGood = {
-  displayName: " Bob ",
   code: "HSC-2027",
   attested: true,
   credential: "eyJ.id.token",
@@ -528,18 +547,37 @@ const googleGood = {
 };
 
 describe("googleSignup — the gate, then the exchange and the row, in one request (#173 AC 3)", () => {
-  it("checks the code, exchanges the token WITH the nonce, mints the row from the form, answers the board", async () => {
+  it("checks the code, exchanges the token WITH the nonce, mints the row with a provisional name, answers /welcome", async () => {
     const { deps, calls, exchanged, inserted, metadata } = googleFakes();
     const r = await googleSignup(googleGood, deps);
-    expect(r).toEqual({ status: 200, body: { redirect: "/board" } });
+    // #220 AC 4: the same outcome as the password path — a row to finish, so /welcome.
+    expect(r).toEqual({ status: 200, body: { redirect: "/welcome" } });
     expect(calls).toEqual(["inviteCode", "exchange", "exists", "setMetadata", "insert"]);
     expect(exchanged).toEqual(["eyJ.id.token|raw-nonce"]);
-    // The row is minted from the FORM's name and the gate's clock — not from whatever Google put
-    // in the user's metadata (`full_name` above is not consulted).
-    expect(metadata).toEqual([{ display_name: "Bob", adult_attested_at: "2026-08-23T10:00:00.000Z" }]);
+    // The gate's clock is the attestation; the form no longer supplies a name, so the row's is
+    // PROVISIONAL, taken from what Google sent (here its whole name, since GoTrue's fixtures carry
+    // no given name) and profile_completed_at is an explicit NULL — the member finishes on /welcome.
+    expect(metadata).toEqual([{ adult_attested_at: "2026-08-23T10:00:00.000Z" }]);
     expect(inserted).toEqual([
-      { display_name: "Bob", adult_attested_at: "2026-08-23T10:00:00.000Z", email: "bob@example.org" },
+      {
+        display_name: "Bob Example",
+        adult_attested_at: "2026-08-23T10:00:00.000Z",
+        profile_completed_at: null,
+        email: "bob@example.org",
+      },
     ]);
+  });
+
+  it("takes the provisional name from the Google given name when present (#220 AC 4)", async () => {
+    const { deps, inserted } = googleFakes({ googleMeta: { given_name: "Bob", full_name: "Bob Example" } });
+    expect((await googleSignup(googleGood, deps)).status).toBe(200);
+    expect(inserted.map((r) => r.display_name)).toEqual(["Bob"]);
+  });
+
+  it("...and from the address's local part when Google sent no name at all — the existing fallback", async () => {
+    const { deps, inserted } = googleFakes({ googleMeta: { email_verified: true } });
+    expect((await googleSignup(googleGood, deps)).status).toBe(200);
+    expect(inserted.map((r) => r.display_name)).toEqual(["bob"]);
   });
 
   it("wrong code: 403, no exchange, nothing touched", async () => {
@@ -553,12 +591,6 @@ describe("googleSignup — the gate, then the exchange and the row, in one reque
     const { deps, calls } = googleFakes();
     const r = await googleSignup({ ...googleGood, attested: false }, deps);
     expect(r.status).toBe(400);
-    expect(calls).toEqual([]);
-  });
-
-  it("empty name: 400 before the code is read", async () => {
-    const { deps, calls } = googleFakes();
-    expect((await googleSignup({ ...googleGood, displayName: "  " }, deps)).status).toBe(400);
     expect(calls).toEqual([]);
   });
 
@@ -586,7 +618,8 @@ describe("googleSignup — the gate, then the exchange and the row, in one reque
     expect(calls).toEqual(["inviteCode"]);
   });
 
-  it("a member already holding a person row simply signs in — nothing written", async () => {
+  it("a member already holding a person row simply signs in — nothing written, and the board, not /welcome", async () => {
+    // Nothing was minted, so there is nothing to finish: this lands where a sign-in does (#220).
     const { deps, calls, inserted, metadata } = googleFakes({ exists: true });
     expect(await googleSignup(googleGood, deps)).toEqual({ status: 200, body: { redirect: "/board" } });
     expect(calls).toEqual(["inviteCode", "exchange", "exists"]);

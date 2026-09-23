@@ -32,12 +32,18 @@
  * the club row is perf:floor's own (`fixtureId("club", 0)` in both), so the two can share a stack.
  */
 
-import { fixtureId, fixtureSql, refuseNonLocalStack } from "./lighthouse-floor-core.mjs";
+import { FIXTURE_INVITE_CODE, fixtureId, fixtureSql, refuseNonLocalStack } from "./lighthouse-floor-core.mjs";
 
 export { refuseNonLocalStack };
 
-/** Both people sign in with it. A local-only stack, so a literal is fine; it never reaches the live project. */
+/** Both people sign in with it, and the newcomer chooses it. A local-only stack, so a literal is fine; it never reaches the live project. */
 export const SMOKE_PASSWORD = "smoke-core-path-45";
+
+/**
+ * The invite code the newcomer types (#220): the one `fixtureSql` puts on the club row, so the
+ * sign-up case and the seed cannot disagree about it.
+ */
+export const SMOKE_INVITE_CODE = FIXTURE_INVITE_CODE;
 
 /**
  * The crew's phone: what acceptance reveals, and the one string the whole run turns on. Distinctive
@@ -98,9 +104,17 @@ export function smokePlan({ now = new Date() } = {}) {
     class: "Thistle",
     defaultMinimum: 2,
   };
+  // #220: the person the sign-up case CREATES through the form. Deliberately not in `people` —
+  // seeding them would make the sign-up a step the smoke passes without the form ever running —
+  // and with no id, because GoTrue mints one; the reset finds them by address.
+  const newcomer = {
+    email: "smoke-newcomer@fixture.invalid",
+    displayName: "Smoke Newcomer",
+  };
   return {
     crew,
     skipper,
+    newcomer,
     date,
     boat,
     // fixtureSql's shape. Posts, matches, availability and answers are empty on purpose — see above.
@@ -123,6 +137,9 @@ const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
  * fixtureSql's `on conflict (id) do nothing` would then keep that ownerless boat — the skipper
  * would sign in to "You need a boat first". So the post and the boat go explicitly, first.
  * The club stays: it may be perf:floor's, and both plans want it.
+ *
+ * The newcomer (#220) is deleted by ADDRESS, since the form gave them whatever id GoTrue chose;
+ * without this line a local re-run's sign-up answers "you already have an account here".
  */
 export function smokeResetSql(plan) {
   const people = plan.people.map((p) => q(p.id)).join(", ");
@@ -132,6 +149,7 @@ export function smokeResetSql(plan) {
     `delete from public.boat where id = ${q(plan.boat.id)};`,
     `delete from public.race_date where id = ${q(plan.date.id)};`,
     `delete from auth.users where id in (${people});`,
+    `delete from auth.users where email = ${q(plan.newcomer.email)};`,
     "commit;",
   ].join("\n");
 }

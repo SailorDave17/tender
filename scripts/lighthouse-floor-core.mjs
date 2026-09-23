@@ -438,11 +438,17 @@ const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
  * Every insert is `on conflict do nothing` so a re-seed over a live stack is a no-op rather than a
  * failure, and the runner can be run twice without a reset.
  */
+/**
+ * The club row's invite code on a seeded stack. Exported because the smoke signs a newcomer up
+ * with it through the real form (#220), so the literal has one home.
+ */
+export const FIXTURE_INVITE_CODE = "FIXTURE";
+
 export function fixtureSql(plan, { clubName = "Fixture Sailing Club", adminEmail = null } = {}) {
   const lines = ["begin;"];
 
   lines.push(
-    `insert into public.club (id, name, brand_disc, brand_mark, invite_code, admin_email) values (${fixtureId("club", 0) && q(fixtureId("club", 0))}, ${q(clubName)}, '#1f3b2c', '#edf0ea', 'FIXTURE', ${adminEmail ? q(adminEmail) : "null"}) on conflict (id) do nothing;`,
+    `insert into public.club (id, name, brand_disc, brand_mark, invite_code, admin_email) values (${fixtureId("club", 0) && q(fixtureId("club", 0))}, ${q(clubName)}, '#1f3b2c', '#edf0ea', ${q(FIXTURE_INVITE_CODE)}, ${adminEmail ? q(adminEmail) : "null"}) on conflict (id) do nothing;`,
   );
 
   for (const p of plan.people) {

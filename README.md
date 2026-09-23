@@ -287,7 +287,9 @@ answers "I can"; the skipper accepts. It then checks that the crew's phone reach
 data included, and present after in the same read and in the contact panel. Before any of that,
 it fetches `/support` and `/privacy` with no session and redirects off (#147), and requires 200,
 the page's own content (a streamed page answers 200 even when it fails), and on `/support` the
-address the seed put on the club row. The job starts a local
+address the seed put on the club row. Last, since #220, a third browser **signs up**: the Sign up
+tab, the seeded invite code, an email and a password, then `/welcome` ("Finish your profile", #219)
+pre-filled with the provisional name, then the board as the name they gave. The job starts a local
 Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
 pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
 `test/smoke.test.ts` holds both of those lines.
@@ -324,8 +326,9 @@ What it cannot see:
   notifications, which also shows each notify call was reached.
 - **The hosted project's grants.** The stack is the CLI's image, whose default privileges differ
   from the live project's. That seam is `check:live`'s and #48's, not this job's.
-- **Google sign-up, the invite gate, and the password reset.** Those are the other entrances to a
-  session; this job exercises the one a returning member uses.
+- **Google sign-up and the password reset.** Those are the other entrances to a session; this job
+  exercises the one a returning member uses and, since #220, the email sign-up with the invite
+  code. The local GoTrue has no Google provider, so the Google entrance stays unwalked here.
 
 Everything that decides an outcome is in `scripts/smoke-core.mjs`, exercised with no stack and no
 browser. The steps themselves were proven against a local stack by three mutations, each red at the

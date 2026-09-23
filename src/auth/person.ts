@@ -7,14 +7,19 @@
  * every sign-in runs it, and only the first one writes.
  *
  * Since #70 there is a second way in: a Google-created auth user carries no attestation in its
- * metadata, so the invite gate hands over what it just proved instead — the name typed and the
- * box ticked on the same submission. With that the attestation is written onto the user and the
- * rows are minted; without it the auth user is deleted — with *Allow new users to sign up* ON,
- * this is the layer that refuses an uninvited account. Until #173 that hand-over was a signed
- * cookie (the gate pass), because the Google redirect put a round trip through Google between
- * the form and the callback that minted the row. The ID-token flow puts the token in the same
- * request as the form, so the gate now passes its attestation as an argument and the cookie,
- * its secret and its TTL are gone.
+ * metadata, so the invite gate hands over what it just proved instead — the 18+ confirmation on
+ * the same submission (and, until #220, the name typed beside it). With that the attestation is
+ * written onto the user and the rows are minted; without it the auth user is deleted — with
+ * *Allow new users to sign up* ON, this is the layer that refuses an uninvited account. Until
+ * #173 that hand-over was a signed cookie (the gate pass), because the Google redirect put a
+ * round trip through Google between the form and the callback that minted the row. The ID-token
+ * flow puts the token in the same request as the form, so the gate now passes its attestation
+ * as an argument and the cookie, its secret and its TTL are gone.
+ *
+ * Since #220 the sign-up form asks for no name. The row is minted with a PROVISIONAL
+ * `display_name` (`provisionalName` below) and `profile_completed_at` written as an explicit
+ * NULL — 0031's `default now()` would otherwise stamp the member finished — so the proxy sends
+ * them to /welcome, where they give their real name (#219).
  *
  * **This stays the only writer of `person`, and it has three callers.** /auth/callback calls it
  * after exchanging a PKCE code — a reset link, or the return leg of an identity link. The invite
@@ -23,6 +28,8 @@
  * route calls it with neither, which is what makes a Google account matching no member a
  * deleted auth user rather than a session.
  */
+
+import { NAME_MAX } from "@/profile/welcome";
 
 /**
  * Does this auth user's metadata carry a usable attestation?
@@ -49,23 +56,48 @@ export type AuthUser = {
 };
 
 /**
- * What the invite gate proved on THIS request about a Google-created user: the name they typed
- * and the moment they ticked 18+. It exists only for the one hop from the gate to the store —
- * never serialised, never signed, never on a cookie.
+ * The name a freshly minted member is given until they say who they are on /welcome (#220).
+ *
+ * In order: a `display_name` the email gate wrote before #220 (a member from then who never got a
+ * row — the population #99 could strand); the given name Google sends, or failing that the whole
+ * name it sends under either of the two keys GoTrue has used; and last the address's local part,
+ * which is what this function's one caller fell back to before #220. Cut to `NAME_MAX` because
+ * 0002's check on `display_name` refuses anything longer, and a refused insert here is a member
+ * told "could not finish signing up" over a name they never typed.
+ *
+ * Exported so the fallback order is a test's subject and not only this comment's.
+ */
+export function provisionalName(meta: Record<string, unknown> | null | undefined, email: string): string {
+  for (const key of ["display_name", "given_name", "name", "full_name"]) {
+    const v = meta?.[key];
+    if (typeof v === "string" && v.trim()) return v.trim().slice(0, NAME_MAX);
+  }
+  return email.split("@")[0].slice(0, NAME_MAX);
+}
+
+/**
+ * What the invite gate proved on THIS request about a Google-created user: the moment they
+ * confirmed they are 18 or over by creating the account. It exists only for the one hop from the
+ * gate to the store — never serialised, never signed, never on a cookie. Until #220 it also
+ * carried the name typed on the sign-up form; the form no longer asks.
  */
 export type GateAttestation = {
-  display_name: string;
   adult_attested_at: string;
 };
 
 export type PersonStore = {
   /** Does a person row exist for this auth user? */
   exists: (id: string) => Promise<boolean>;
-  /** Insert person and person_contact in one statement, as the service role. */
+  /**
+   * Insert person and person_contact in one statement, as the service role. `profile_completed_at`
+   * is typed `null` rather than optional so that no writer can leave it to 0031's default by
+   * omission: a store that does not forward it is what `src/auth/person-writers.test.ts` reddens.
+   */
   insert: (row: {
     id: string;
     display_name: string;
     adult_attested_at: string;
+    profile_completed_at: null;
     email: string;
   }) => Promise<{ error?: string }>;
   /** Write the gate's attestation onto the auth user, as the service role (#70). */
@@ -87,7 +119,6 @@ export async function ensurePerson(
   if (await store.exists(user.id)) return { created: false };
 
   const meta = user.user_metadata ?? {};
-  let displayName = typeof meta.display_name === "string" ? meta.display_name.trim() : "";
   let attested = attestationOf(meta) ?? "";
   const email = (user.email ?? "").trim().toLowerCase();
   let usedGate = false;
@@ -105,12 +136,8 @@ export async function ensurePerson(
         deleted: !d.error,
       };
     }
-    const w = await store.setMetadata(user.id, {
-      display_name: gate.display_name,
-      adult_attested_at: gate.adult_attested_at,
-    });
+    const w = await store.setMetadata(user.id, { adult_attested_at: gate.adult_attested_at });
     if (w.error) return { created: false, refused: w.error, deleted: false };
-    displayName = gate.display_name.trim();
     attested = gate.adult_attested_at;
     usedGate = true;
   }
@@ -118,8 +145,11 @@ export async function ensurePerson(
 
   const r = await store.insert({
     id: user.id,
-    display_name: displayName || email.split("@")[0],
+    display_name: provisionalName(meta, email),
     adult_attested_at: attested,
+    // #220: a member minted here has not said who they are yet. 0031's `default now()` would
+    // otherwise stamp the row finished, so the NULL is decided here and written by every store.
+    profile_completed_at: null,
     email,
   });
   if (r.error) return { created: false, refused: r.error, deleted: false };

@@ -11,10 +11,11 @@ import { supabaseServer } from "@/lib/supabase/server";
  * Sign up finishing with Google (#70 AC 4), on the ID-token flow since #173. The decision is
  * src/auth/join.ts `googleSignup`; this file wires the invite code read as the service role, the
  * token exchange through the cookie-bound client, and the person store. The browser posts the
- * form values AND the ID token together, so the code and the attestation are checked, the token
- * exchanged and the person row minted in one request — there is no redirect, no gate-pass
- * cookie and no callback leg on this path any more. Answers JSON: `{redirect}` on success, the
- * session already on the response; a refusal stays a JSON message.
+ * invite code and the attestation AND the ID token together, so the code and the attestation are
+ * checked, the token exchanged and the person row minted in one request — there is no redirect,
+ * no gate-pass cookie and no callback leg on this path any more. Answers JSON: `{redirect}` on
+ * success, the session already on the response; a refusal stays a JSON message. Since #220 no
+ * name is posted: the row's `display_name` is provisional and the member is sent to /welcome.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
@@ -23,7 +24,6 @@ export async function POST(request: NextRequest) {
 
   const result = await googleSignup(
     {
-      displayName: String(body.displayName ?? ""),
       code: String(body.code ?? ""),
       attested: body.attested === true,
       credential: body.credential,
