@@ -77,7 +77,8 @@ export default function PrivacyPage() {
         <h2>Who can see it</h2>
         <ul>
           <li data-claim="members">
-            <strong>Every signed-in member</strong> can see your name, when you joined, your skills
+            <strong>Every signed-in member</strong> can see your name, when you joined and when you
+            finished your profile, your skills
             and hulls, the race days you are available, your boats, the crew needs you post, and
             who is matched with whom.
           </li>

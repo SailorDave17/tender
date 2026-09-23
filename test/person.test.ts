@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
-import { as, freshDb } from "./pglite";
+import { standingFromRow } from "@/auth/gate";
+import { applyMigration, as, freshDb } from "./pglite";
 
 /**
  * 0002 — person, person_contact, and the narrowed club grant.
@@ -87,11 +88,13 @@ describe("person and person_contact (0002) — shape", () => {
       { table_name: "person", privilege_type: "SELECT", column_name: "hulls" },
       { table_name: "person", privilege_type: "SELECT", column_name: "id" },
       { table_name: "person", privilege_type: "SELECT", column_name: "is_admin" },
+      { table_name: "person", privilege_type: "SELECT", column_name: "profile_completed_at" },
       { table_name: "person", privilege_type: "SELECT", column_name: "rating" },
       { table_name: "person", privilege_type: "SELECT", column_name: "skills" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "any_hull" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "display_name" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "hulls" },
+      { table_name: "person", privilege_type: "UPDATE", column_name: "profile_completed_at" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "rating" },
       { table_name: "person", privilege_type: "UPDATE", column_name: "skills" },
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "email" },
@@ -99,7 +102,8 @@ describe("person and person_contact (0002) — shape", () => {
       { table_name: "person_contact", privilege_type: "SELECT", column_name: "phone" },
       { table_name: "person_contact", privilege_type: "UPDATE", column_name: "phone" },
     ]); // rating/any_hull/hulls and the phone update arrive with 0005 (story #18); skills with
-    // 0024 (story #68), select AND update, beside rating and through the same self-only policy
+    // 0024 (story #68), select AND update, beside rating and through the same self-only policy;
+    // profile_completed_at with 0031 (story #219), the same way
   });
 
   it("authenticated holds no whole-table privilege on person, person_contact or club", async () => {
@@ -251,6 +255,94 @@ describe("person (0002) — who can change what", () => {
         ALICE,
       ),
     ).rejects.toThrow(/permission denied for table person_contact/);
+  });
+});
+
+describe("person.profile_completed_at (0031, story #219)", () => {
+  /**
+   * AC 1 needs members that exist BEFORE the migration runs, so this block boots its own database
+   * `through: "0030"` and applies 0031 by hand — the only way to test a backfill (the harness says
+   * why). It boots after the file's shared database, never beside it: two pglites in parallel in
+   * one file pushed the harness budget test over on a busy machine (tender overlay, #24).
+   */
+  const CAROL = "33333333-3333-4333-8333-333333333333";
+  const DAN = "44444444-4444-4444-8444-444444444444";
+  let pre: PGlite;
+
+  beforeAll(async () => {
+    pre = await freshDb({ through: "0030" });
+    await pre.exec(`
+      insert into auth.users (id) values ('${CAROL}'), ('${DAN}');
+      insert into public.person (id, display_name, adult_attested_at)
+        values ('${CAROL}', 'Carol', now()), ('${DAN}', 'Dan', now());
+    `);
+  });
+  afterAll(async () => {
+    await pre.close();
+  });
+
+  it("does not exist through 0030 — so the rows above really predate it", async () => {
+    const r = await pre.query<{ n: number }>(
+      `select count(*)::int as n from information_schema.columns
+        where table_schema = 'public' and table_name = 'person' and column_name = 'profile_completed_at'`,
+    );
+    expect(r.rows).toEqual([{ n: 0 }]);
+  });
+
+  it("backfills every existing member as finished, so none is ever sent to /welcome (AC 1)", async () => {
+    await applyMigration(pre, "0031");
+    const r = await pre.query<{ id: string; profile_completed_at: Date | null }>(
+      `select id, profile_completed_at from public.person order by id`,
+    );
+    expect(r.rows.map((x) => x.id)).toEqual([CAROL, DAN]);
+    for (const row of r.rows) {
+      expect(row.profile_completed_at, row.id).not.toBeNull();
+      // The proxy's own reading of that row: finished, so the gate answers null on /board.
+      expect(standingFromRow({ profile_completed_at: String(row.profile_completed_at) }, null)).toBe("finished");
+    }
+  });
+
+  it("a member created after it, by today's sign-up, is finished too — until #220 inserts NULL", async () => {
+    const EVE = "55555555-5555-4555-8555-555555555555";
+    await pre.exec(`
+      insert into auth.users (id) values ('${EVE}');
+      insert into public.person (id, display_name, adult_attested_at) values ('${EVE}', 'Eve', now());
+    `);
+    const r = await pre.query<{ done: boolean }>(
+      `select profile_completed_at is not null as done from public.person where id = '${EVE}'`,
+    );
+    expect(r.rows).toEqual([{ done: true }]);
+  });
+
+  it("a member can set their own (the positive control for the refusal below)", async () => {
+    await pre.exec(`update public.person set profile_completed_at = null where id = '${CAROL}'`);
+    const r = await as(
+      pre,
+      "authenticated",
+      `update public.person set display_name = 'Carol B', profile_completed_at = now() where id = '${CAROL}'
+        returning id`,
+      CAROL,
+    );
+    expect(r.rows).toEqual([{ id: CAROL }]);
+    const check = await pre.query<{ done: boolean }>(
+      `select profile_completed_at is not null as done from public.person where id = '${CAROL}'`,
+    );
+    expect(check.rows).toEqual([{ done: true }]);
+  });
+
+  it("RLS refuses a client setting profile_completed_at on another member's row (AC 4)", async () => {
+    await pre.exec(`update public.person set profile_completed_at = null where id = '${DAN}'`);
+    const r = await as(
+      pre,
+      "authenticated",
+      `update public.person set profile_completed_at = now() where id = '${DAN}'`,
+      CAROL,
+    );
+    expect(r.affectedRows ?? 0).toBe(0);
+    const check = await pre.query<{ done: boolean }>(
+      `select profile_completed_at is not null as done from public.person where id = '${DAN}'`,
+    );
+    expect(check.rows).toEqual([{ done: false }]);
   });
 });
 
