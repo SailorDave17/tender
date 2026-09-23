@@ -136,9 +136,10 @@ describe("/welcome finishes the profile and lands on /board (#219 AC 3)", () => 
     expect(await submit({ displayName: "Ann" })).toBe("/welcome?error=refused");
   });
 
-  it("with no session, sends to /join and writes nothing", async () => {
+  it("with no session, sends to the Sign in tab and writes nothing", async () => {
     user = null;
-    expect(await submit({ displayName: "Ann" })).toBe("/join");
+    // #234: the Sign in tab by name, a literal rather than SIGN_IN_URL so a wrong constant reddens here.
+    expect(await submit({ displayName: "Ann" })).toBe("/join?mode=signin");
     expect(writes).toEqual([]);
   });
 });
