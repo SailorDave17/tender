@@ -721,14 +721,12 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    count is unchanged; their boats stay as ownerless names on the posts that already happened, and
    an open post of theirs stays on the board until its date passes (owner decision 2026-09-20).
    **Removing someone else** has no screen yet. `delete_person()` admits an admin, but the SQL
-   editor is not a signed-in member, so from the dashboard the route is three statements in this
-   order: `update public.notification_log set to_email = null where person_id = '<uuid>'`, then
-   `update public.notification_log set provider_id = null where person_id = '<uuid>' and channel =
-   'push'` (a push row's `provider_id` is the device's push address — #197, 0029), then
-   `delete from auth.users where id = '<uuid>'` — `person` cascades from the auth user and 0027's
-   rules do the rest; the log rows go first because `person_id` is already null afterwards. If a
-   member's own deletion lands on `/join?deleted=partial`, their rows are gone and the auth user is
-   not — delete it under Authentication → Users.
+   editor is not a signed-in member, so from the dashboard delete the auth user: Authentication →
+   Users, or `delete from auth.users where id = '<uuid>'`. `person` cascades from the auth user and
+   0027's rules do the rest. The send log's email addresses and device push addresses go by 0033's
+   `person_blank_log` trigger, which fires however the person row goes (#201), so there is nothing
+   to run first. If a member's own deletion lands on `/join?deleted=partial`, their rows are gone
+   and the auth user is not — delete it under Authentication → Users.
 7. **Guessing is bounded, and you should know how** (#206, security-audit SA-5, `0032`). A wrong
    invite code at `/api/join` or `/api/signup/google` and a wrong email-and-password at
    `/api/signin` are **failures**, and they count against two keys in a **15-minute window**:
