@@ -3,6 +3,7 @@ import { explainLinkReason, hasGoogleIdentity } from "@/auth/link";
 import { PushToggle } from "@/push/PushToggle";
 import { ProfileCard } from "@/profile/ProfileCard";
 import { CONFIRM_VALUE } from "@/profile/delete-account";
+import { PhoneField, SkillsFieldset } from "@/profile/fields";
 import { explainProfileRefusal, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
 import { deleteMyAccount } from "./account-actions";
@@ -66,29 +67,8 @@ export default async function ProfilePage({
       <ProfileCard person={me} phone={contact?.phone ?? null} viewerId={user.id} skills={skills} />
 
       <form action={saveProfile} data-stack="loose" data-gap-top>
-        {/*
-          #68: checkboxes, not one radio. A crew ticks everything they can do and the rung is
-          derived from the highest level among them (levelFromSkills), so the engine and both
-          skipper-side forms go on reading one ordinal while the profile says what the person
-          actually does. `required` is deliberately absent — the browser applies it to a checkbox
-          group per box rather than per group, so it would demand ALL of them; the blank set is
-          refused in the Server Action, where a disabled control is no defence anyway.
-        */}
-        <fieldset>
-          <legend>How competent are you?</legend>
-          <p data-hint>Tick everything you can do.</p>
-          {skills.map((s) => (
-            <label key={s.code}>
-              <input
-                type="checkbox"
-                name="skills"
-                value={s.code}
-                defaultChecked={(me.skills ?? []).includes(s.code)}
-              />{" "}
-              {s.label}
-            </label>
-          ))}
-        </fieldset>
+        {/* #68's skill checkboxes; one copy shared with /welcome since #219 (src/profile/fields.tsx). */}
+        <SkillsFieldset skills={skills} checked={me.skills ?? []} />
 
         <fieldset>
           <legend>Which hulls will you sail?</legend>
@@ -108,16 +88,7 @@ export default async function ProfilePage({
           </div>
         </fieldset>
 
-        <label>
-          Phone (optional — shown to a skipper only once you are matched)
-          <input
-            name="phone"
-            type="tel"
-            autoComplete="tel"
-            maxLength={24}
-            defaultValue={contact?.phone ?? ""}
-          />
-        </label>
+        <PhoneField defaultValue={contact?.phone ?? ""} />
 
         <button type="submit">Save profile</button>
       </form>
