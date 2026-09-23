@@ -330,6 +330,16 @@ footer[data-build-stamp] {
     padding: 0 var(--space-8) var(--space-8);
   }
 }
+/* #211: while `loading.tsx`'s "Loading…" stands in for the page, the About links and the stamp
+   are not laid out at all. Under a one-line <main> they sat on the first screen, and the page
+   streaming in above them pushed them down: a layout shift on every route that streams (CLS
+   0.066–0.141 from `body > footer` alone in #185's reading). A box that did not exist in the
+   previous frame is not a shift, so they arrive in their final place, under the page. Scoped to
+   the loading state rather than a viewport-tall frame (#185's R2), which would leave a short page
+   with its footer under a screen of empty space. `test/footer-streaming.test.ts` holds it. */
+#main:has([data-loading]) ~ :is([data-about], footer[data-build-stamp]) {
+  display: none;
+}
 
 /* ---- the surfaces (#155) ------------------------------------------------------------------ */
 /*

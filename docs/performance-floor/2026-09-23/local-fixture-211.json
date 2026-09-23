@@ -1,0 +1,159 @@
+{
+  "takenAt": "2026-09-23T23:09:35.346Z",
+  "target": {
+    "baseUrl": "http://localhost:3100",
+    "seeded": true,
+    "servedSupabaseUrl": "http://127.0.0.1:54321"
+  },
+  "volume": {
+    "people": 80,
+    "dates": 45,
+    "boats": 30,
+    "openPosts": 20,
+    "matchedPosts": 30,
+    "availabilityPerPerson": 15,
+    "answersPerOpenPost": 4
+  },
+  "floors": {
+    "performance": 80,
+    "accessibility": 90,
+    "cls": 0.1
+  },
+  "summaries": [
+    {
+      "route": "/board",
+      "runs": 3,
+      "throttlingMethod": "simulate",
+      "benchmarkIndex": {
+        "median": 1652.5,
+        "values": [
+          1524.5,
+          1769,
+          1652.5
+        ]
+      },
+      "performance": {
+        "median": 73,
+        "values": [
+          75,
+          70,
+          73
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0,
+        "values": [
+          0,
+          0,
+          0
+        ]
+      },
+      "lcp": {
+        "median": 5259.97558277015,
+        "values": [
+          5123.374191115742,
+          5320.17068405118,
+          5259.97558277015
+        ]
+      },
+      "tbt": {
+        "median": 321,
+        "values": [
+          273,
+          395.8327594212601,
+          321
+        ]
+      },
+      "ttfb": {
+        "median": 188.257,
+        "values": [
+          188.257,
+          214.706,
+          158.39000000000001
+        ]
+      },
+      "requests": 14,
+      "lighthouseVersion": "12.8.2"
+    },
+    {
+      "route": "/post/00003dbe-0000-4000-8000-000000000002",
+      "runs": 3,
+      "throttlingMethod": "simulate",
+      "benchmarkIndex": {
+        "median": 1319,
+        "values": [
+          1581,
+          1319,
+          1064
+        ]
+      },
+      "performance": {
+        "median": 82,
+        "values": [
+          82,
+          79,
+          83
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0,
+        "values": [
+          0,
+          0,
+          0
+        ]
+      },
+      "lcp": {
+        "median": 4544.633,
+        "values": [
+          4544.633,
+          4677.936764349285,
+          4512.896764346862
+        ]
+      },
+      "tbt": {
+        "median": 141.2041250000002,
+        "values": [
+          141.2041250000002,
+          246.74209554366053,
+          122.61209554335801
+        ]
+      },
+      "ttfb": {
+        "median": 173.441,
+        "values": [
+          249.626,
+          173.441,
+          164.47
+        ]
+      },
+      "requests": 17,
+      "lighthouseVersion": "12.8.2"
+    }
+  ],
+  "verdict": {
+    "pass": false,
+    "failures": [
+      "/board: performance 73 is below 80"
+    ],
+    "warnings": [
+      "/post/00003dbe-0000-4000-8000-000000000002: performance runs straddle the floor of 80 — 82 / 79 / 83"
+    ]
+  }
+}
