@@ -89,7 +89,9 @@ describe("every page renders inside the shell (#154 AC 1)", () => {
     expect(html).toMatch(/<form action="\/auth\/signout" method="post"><button type="submit" data-signout(?:="[^"]*")?>Sign out<\/button><\/form>/);
     for (const href of ["/board", "/post/new", "/boats", "/profile"]) expect(html).toContain(`href="${href}"`);
     expect(html).not.toContain('href="/admin"');
-    expect(html).not.toContain('href="/join"');
+    // No quote after /join: since #218 the signed-out link carries ?mode=signin, and a closed
+    // quote here would no longer see it.
+    expect(html).not.toContain('href="/join');
 
     person = { ...PERSON, isAdmin: true };
     html = await render();
@@ -109,7 +111,8 @@ describe("every page renders inside the shell (#154 AC 1)", () => {
     expect(html).not.toContain("Signed in as");
     expect(html).not.toContain("data-signout");
     expect(html).not.toContain('href="/board"');
-    expect(html).toContain('href="/join"');
+    // #218: the way in names the Sign in tab; plain /join opens on Sign up for a new device.
+    expect(html).toContain('href="/join?mode=signin"');
     // the mark and the skip link are there for everyone
     expect(html).toMatch(/<svg [^>]*data-tender-mark="primary"/);
     expect(html).toContain("data-skip");

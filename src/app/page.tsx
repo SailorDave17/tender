@@ -33,12 +33,23 @@ export default async function Home({
       <h1>Tender</h1>
       {message && (
         <p role="alert" data-landing-error>
-          {message} <a href="/join">Back to sign in</a>
+          {message} <a href="/join?mode=signin">Back to sign in</a>
         </p>
       )}
       <p>The board that says who still needs a crew for Sunday.</p>
+      {/*
+        #218: signing in and signing up are two links, and only signing up mentions the code. The
+        single link this replaced read "Sign in with this season's invite code", which told a
+        returning member a code was needed to get in, and pointed at plain /join, which opens on
+        Sign up on any device that has not signed in before (#123). Both links name their tab.
+      */}
       <p>
-        <a href="/join">Sign in with this season&apos;s invite code</a>
+        <a href="/join?mode=signin" data-signin>
+          Sign in
+        </a>
+      </p>
+      <p>
+        <a href="/join?mode=signup">New to Tender? Sign up with an invite code</a>
       </p>
     </main>
   );

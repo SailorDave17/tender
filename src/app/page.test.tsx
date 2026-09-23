@@ -32,7 +32,8 @@ describe("the landing page says what happened, and only when something did (#83)
     expect(expired).toContain(explainReason("state-expired"));
     expect(expired).toContain('role="alert"');
     const alert = expired.slice(expired.indexOf('role="alert"'), expired.indexOf("</p>", expired.indexOf('role="alert"')));
-    expect(alert, "the way back sits with the message, not elsewhere on the page").toContain('href="/join"');
+    // #218: the way back names the Sign in tab, since plain /join opens on Sign up for a new device.
+    expect(alert, "the way back sits with the message, not elsewhere on the page").toContain('href="/join?mode=signin"');
 
     // ...and the ordinary visit is untouched: no alert, no sentence, nothing added (AC 2)
     expect(clean).not.toContain('role="alert"');
@@ -56,6 +57,25 @@ describe("the landing page says what happened, and only when something did (#83)
     expect(used).toContain(explainReason("state-used"));
     expect(expired).not.toContain(explainReason("state-used"));
     expect(used).not.toContain(explainReason("state-expired"));
+  });
+
+  it("signing in and signing up are separate links, and only signing up mentions the code (#218 AC 2)", async () => {
+    const page = await render({});
+    const links = [...page.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => ({
+      href: /href="([^"]*)"/.exec(m[1])?.[1],
+      text: m[2].replace(/<[^>]+>/g, "").trim(),
+    }));
+    // A positive control on the parse: the page really has its two links.
+    expect(links.length, "the scan found the page's links").toBeGreaterThanOrEqual(2);
+    // No link pairs signing in with an invite code, in either order or case.
+    for (const l of links) {
+      expect(/sign\s*in/i.test(l.text) && /invite\s*code/i.test(l.text), `link "${l.text}"`).toBe(false);
+    }
+    // The sign-in link opens the Sign in tab by name, and the sign-up link the Sign up tab.
+    expect(links.find((l) => l.text === "Sign in")?.href).toBe("/join?mode=signin");
+    expect(links.find((l) => /sign up/i.test(l.text))?.href).toBe("/join?mode=signup");
+    // ...and the scan would catch the old link if it came back.
+    expect(/sign\s*in/i.test("Sign in with this season's invite code") && /invite\s*code/i.test("Sign in with this season's invite code")).toBe(true);
   });
 
   it("still says something for a code it does not know, rather than rendering as though nothing happened", async () => {
