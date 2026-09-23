@@ -3,6 +3,8 @@
 What ADR 002's kill condition reads today, how it was measured, and which levers were priced
 against it. Story #44 took the local reading; story #185 took the deployed one, which is the
 reading that decides the condition — **jump to [The deployed reading, 2026-09-22](#the-deployed-reading-2026-09-22--story-185)**.
+Story #216 added a `devtools` throttling mode and took the repo's first reading with it,
+[a different instrument from every other row here](#the-devtools-reading-2026-09-22--story-216).
 
 Re-run it with `npm run perf:floor` (see *Running it* at the foot). The command is the record's
 instrument, not a convenience: a kill condition nobody can re-run is a sentence, not a condition.
@@ -72,8 +74,16 @@ app-level levers were each priced as their own arm:
 | lever | effect |
 |---|---|
 | `prefetch={false}` on every board link — kept, 27 requests → 13 | ~3 points |
-| document cut by 71% (10 dates instead of 45) | **none** |
+| document cut by 71% (10 dates instead of 45) | **none** under `simulate` only — see below |
 | both client components removed entirely | **none** |
+
+**The document-size "none" is a `simulate`-only finding.** `simulate` prices bytes, not CPU: it
+replays an unthrottled trace under a network model and barely models the main thread, while
+hydration cost grows with the rendered tree. Under `devtools` throttling, which really slows the
+CPU, the same cut (45 → 10 dates, 710 → 280 DOM nodes) moved `/board` **66 → 73** and TBT
+1.08 → 0.71 s, in the 2026-09-22 forge session that followed #185. That reading has not yet been
+re-run by this repo's harness. Read the lever as worth nothing to the simulated score and worth
+points to a real CPU.
 
 Those three arms were measured **before** the viewer defect above was found, so their absolute
 numbers (75 → 78, then 78, then 77) are from the lighter page and are not comparable with the 72 in
@@ -85,9 +95,10 @@ conclusion is unchanged. What each settled:
   one; each prefetch is a full server render of a `force-dynamic` page against Supabase. It is kept
   for a second reason that has nothing to do with Lighthouse: a 50-post board was firing ~50
   dynamic server renders per view on Vercel Hobby and a free-tier Supabase.
-- **Document size is not the lever.** Cutting 84 KB of HTML — 71% — moved the median by nothing.
-  This was the intuitive candidate and it is wrong, which is why the arm is recorded rather than
-  dropped.
+- **Document size is not the lever *under `simulate`*.** Cutting 84 KB of HTML — 71% — moved the
+  simulated median by nothing. It was the intuitive candidate and the arm is recorded rather than
+  dropped. The qualifier matters: under `devtools` the same cut is worth points (see the note under
+  the lever table above).
 - **Nor are the client components.** `/board` is the only page carrying any
   (`RegisterServiceWorker`, `InstallBanner`); removing both left it where it was, and Next still
   shipped all 455 KB — the client runtime goes to every route whether or not the route uses it.
@@ -269,6 +280,49 @@ footer is its own story.
 What this does **not** establish: a physical mid-range Android. The ADR names Lighthouse's mobile
 preset as the instrument, and that is what was run; a phone on cellular was not.
 
+## The devtools reading, 2026-09-22 — story #216
+
+**A different instrument from every row above.** Every other reading in this document is
+`simulate`. This one is `devtools`: the network and a 4× CPU slowdown were really applied. Do not
+compare its numbers with a `simulate` row. See *Throttling* under *Running it*.
+
+`npm run perf:floor -- --throttling-method devtools --runs 3`, seeded, on #44's fixture (80
+people, 45 dates, 50 posts, 30 matches, 1,125 availability). It ran against `next build` +
+`next start` of `develop` at **`beea286`** on localhost, with the local stack running beside it,
+at 22:07–22:09 EDT. **#211's footer fix is not in this build.** Lighthouse 12.8.2, mobile preset,
+Chrome 153, every run shown. Machine-readable in
+`docs/performance-floor/2026-09-22/local-fixture-devtools.json`.
+
+| route | throttling | performance | LCP | TBT | CLS | benchmarkIndex | build | #211 fix |
+|---|---|---|---|---|---|---|---|---|
+| `/board` | `devtools` | **75** (75 / 79 / 75) | 2.4 s (2.42 / 2.18 / 2.41) | **0.71 s** (0.72 / 0.60 / 0.71) | 0.123 | **1,750** (1,883 / 1,750 / 1,678) | `beea286` | no |
+| `/post/[id]` | `devtools` | **88** (88 / 86 / 90) | 2.0 s | 0.44 s (0.44 / 0.49 / 0.35) | 0.000 | 1,852 (1,852 / 1,915 / 1,750) | `beea286` | no |
+
+Accessibility was 99 on `/board` and 100 on `/post/[id]`.
+
+**It does not reproduce the 66 reading.** The forge session that followed #185 read `/board` at
+66 (65 / 67 / 66) with TBT 1.08 s. That reading has not been re-run by this repo's harness, and
+this run was the attempt. Its runs span 75–79, with TBT 0.60–0.72 s, so 66 and 1.08 s both fall
+outside this run's spread. Two differences could account for it. Neither was isolated by an arm of
+its own, so both are reasoned, not measured:
+
+- **The host was faster than the band.** Median `benchmarkIndex` was 1,750 on `/board` and 1,852
+  on `/post/[id]`, above the 920–1,680 band. The run printed the warning that says so, and
+  `verdict.warnings` records it. The same 4× slowdown on a faster CPU leaves less blocking time, and
+  TBT is where this run and the 66 reading differ most.
+- **The serving path.** This was a local `next start`. The 66 reading's record describes a
+  deployed preview reached through a tunnel. #185's `simulate` arms put that gap between level and
+  about four points, on a different instrument.
+
+So this row stands as the repo's own `devtools` reading of `develop` on this host. The 66 stays a
+forge-session figure. A devtools re-run on a host inside the band, or a deployed preview, is what
+would settle it.
+
+**CLS on `/board` is the install banner, not the footer, in this run.** Lighthouse attributes
+0.123 to `body > div#main > main > ol` in all three runs. That is the element the banner pushes
+down (see *CLS is the install banner* above). `body > footer` shifts in one run of three (0.112).
+Both fail the 0.1 floor. `/post/[id]` reads 0 in all three.
+
 ## Running it
 
 ```
@@ -291,6 +345,37 @@ STACK_ANON_KEY=<anon> STACK_SERVICE_ROLE_KEY=<service> \
 
 `--stack` defaults to `http://127.0.0.1:54321`, the CLI's own default; pass it when the stack was
 started on other ports.
+
+### Throttling: `simulate` or `devtools` (#216)
+
+`--throttling-method` takes `simulate` (the default, and what every reading before #216 used) or
+`devtools`. Any other value is refused before anything is seeded or launched.
+
+```
+STACK_ANON_KEY=<anon> STACK_SERVICE_ROLE_KEY=<service> \
+  npm run perf:floor -- --db-container supabase_db_<dir> --throttling-method devtools --runs 3
+```
+
+The two read similar scores for different reasons, so **a row from one is never comparable with a
+row from the other**:
+
+- **`simulate`** records an unthrottled trace and replays it under a slow-4G model. It prices
+  **bytes**. Hydration and layout barely register, so it cannot see a lever that saves CPU.
+- **`devtools`** really throttles the network and slows the CPU 4×. Compressed bytes cross a
+  throttled link, and hydration shows up as Total Blocking Time. This is the only mode in which the
+  framework runtime's main-thread cost is visible at all.
+
+**The `benchmarkIndex` caveat.** A `devtools` reading describes a mid-range phone only if the host
+is a mid-range desktop, because the 4× slowdown is applied to whatever CPU ran it. Every report
+carries `environment.benchmarkIndex`. The summary keeps each run's value and the per-route median,
+and prints a warning (also recorded in `summary.json`'s `verdict.warnings`) when a `devtools`
+route's median falls outside **920–1,680**, the band that slowdown is calibrated for. Outside it the
+TBT column describes some other phone. A running Docker stack is itself contention and moves the
+index, so read it from the run rather than assuming the machine's usual figure. `simulate` runs are
+not judged against the band.
+
+Each route's `throttlingMethod` in `summary.json` is the method Lighthouse **reports** having used,
+read from the report, not from the flag.
 
 ### Against a deployment (#185)
 
@@ -333,8 +418,12 @@ on a seeded run, whose value is that it always measures the same viewer. A readi
 either records `volume: null`, and the volume has to be stated beside it by hand. Use a rated crew
 account that is not the club admin — the admin sees a heavier page.
 
-Four guards, each proven able to refuse in `test/lighthouse-floor.test.ts` rather than merely
+Five guards, each proven able to refuse in `test/lighthouse-floor.test.ts` rather than merely
 present:
+
+- It **refuses a `--throttling-method` other than `simulate` or `devtools`** before reading a key,
+  seeding a row or launching Chrome (#216). Lighthouse accepts a third method, `provided`, which
+  throttles nothing, so a typo it happened to accept would record an unthrottled run as a reading.
 
 - It **refuses a non-loopback Supabase URL on any run that seeds**, before writing anything. It
   seeds 80 people and 50 posts, which against the live project would be vandalism — the opposite

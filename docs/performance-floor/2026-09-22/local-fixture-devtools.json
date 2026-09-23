@@ -1,0 +1,161 @@
+{
+  "takenAt": "2026-09-23T02:09:59.891Z",
+  "target": {
+    "baseUrl": "http://localhost:3100",
+    "seeded": true,
+    "servedSupabaseUrl": "http://127.0.0.1:54321"
+  },
+  "volume": {
+    "people": 80,
+    "dates": 45,
+    "boats": 30,
+    "openPosts": 20,
+    "matchedPosts": 30,
+    "availabilityPerPerson": 15,
+    "answersPerOpenPost": 4
+  },
+  "floors": {
+    "performance": 80,
+    "accessibility": 90,
+    "cls": 0.1
+  },
+  "summaries": [
+    {
+      "route": "/board",
+      "runs": 3,
+      "throttlingMethod": "devtools",
+      "benchmarkIndex": {
+        "median": 1750,
+        "values": [
+          1882.5,
+          1750,
+          1677.5
+        ]
+      },
+      "performance": {
+        "median": 75,
+        "values": [
+          75,
+          79,
+          75
+        ]
+      },
+      "accessibility": {
+        "median": 99,
+        "values": [
+          99,
+          99,
+          99
+        ]
+      },
+      "cls": {
+        "median": 0.1225544879044956,
+        "values": [
+          0.1225544879044956,
+          0.1225544879044956,
+          0.1225544879044956
+        ]
+      },
+      "lcp": {
+        "median": 2405.745,
+        "values": [
+          2417.292,
+          2176.881,
+          2405.745
+        ]
+      },
+      "tbt": {
+        "median": 707.9870000000005,
+        "values": [
+          716.9030000000005,
+          598.0259999999998,
+          707.9870000000005
+        ]
+      },
+      "ttfb": {
+        "median": 156.621,
+        "values": [
+          156.621,
+          195.319,
+          147.08599999999998
+        ]
+      },
+      "requests": 14,
+      "lighthouseVersion": "12.8.2"
+    },
+    {
+      "route": "/post/00003dbe-0000-4000-8000-000000000002",
+      "runs": 3,
+      "throttlingMethod": "devtools",
+      "benchmarkIndex": {
+        "median": 1851.5,
+        "values": [
+          1851.5,
+          1914.5,
+          1750
+        ]
+      },
+      "performance": {
+        "median": 88,
+        "values": [
+          88,
+          86,
+          90
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0,
+        "values": [
+          0,
+          0,
+          0
+        ]
+      },
+      "lcp": {
+        "median": 2044.79,
+        "values": [
+          2038.585,
+          2069.502,
+          2044.79
+        ]
+      },
+      "tbt": {
+        "median": 442.6659999999997,
+        "values": [
+          442.6659999999997,
+          493.13099993896526,
+          351.3140000000001
+        ]
+      },
+      "ttfb": {
+        "median": 129.33100000000002,
+        "values": [
+          129.33100000000002,
+          125.297,
+          130.489
+        ]
+      },
+      "requests": 17,
+      "lighthouseVersion": "12.8.2"
+    }
+  ],
+  "verdict": {
+    "pass": false,
+    "failures": [
+      "/board: performance 75 is below 80",
+      "/board: CLS 0.1225544879044956 is not below 0.1"
+    ],
+    "warnings": [
+      "/board: benchmarkIndex 1750 is outside 920–1680, so this devtools reading does not represent a mid-range phone",
+      "/post/00003dbe-0000-4000-8000-000000000002: benchmarkIndex 1852 is outside 920–1680, so this devtools reading does not represent a mid-range phone"
+    ]
+  }
+}

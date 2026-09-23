@@ -46,6 +46,11 @@
  * - **The live project, read-only.** `--no-seed` writes nothing, so it may name any Supabase and a
  *   real viewer (`--viewer`, with `PERF_VIEWER_PASSWORD` in the environment) and routes
  *   (`--route`, repeatable). Such a reading claims no volume (see `runTarget`).
+ *
+ * `--throttling-method devtools` (#216) throttles the real network and CPU instead of simulating
+ * them, which is the only way hydration cost shows up at all. Each route's summary records the
+ * method Lighthouse reports having used, plus the host's `benchmarkIndex`. See `THROTTLING_METHODS`
+ * and `BENCHMARK_BAND` in the core for why a devtools reading without that index cannot be read.
  */
 
 import { spawnSync } from "node:child_process";
@@ -57,10 +62,13 @@ import { createServerClient } from "@supabase/ssr";
 import {
   FLOORS,
   adminEmailFor,
+  buildSummary,
   fixturePlan,
   fixtureSql,
   formatReport,
+  lighthouseArgs,
   measuredViewer,
+  parseArgs,
   readReport,
   refuseWrongPage,
   requestHeaders,
@@ -70,39 +78,6 @@ import {
 } from "./lighthouse-floor-core.mjs";
 
 const FIXTURE_PASSWORD = "fixture-floor-44-pass";
-
-function parseArgs(argv) {
-  const args = {
-    stack: "http://127.0.0.1:54321",
-    baseUrl: "http://localhost:3100",
-    dbContainer: null,
-    runs: 3,
-    out: "lighthouse",
-    seed: true,
-    servedSupabaseUrl: null,
-    viewer: null,
-    routes: [],
-  };
-  for (let i = 0; i < argv.length; i += 1) {
-    const [flag, inline] = argv[i].split(/=(.*)/s);
-    const value = () => inline ?? argv[++i];
-    if (flag === "--stack") args.stack = value();
-    else if (flag === "--served-supabase-url") args.servedSupabaseUrl = value();
-    else if (flag === "--viewer") args.viewer = value();
-    else if (flag === "--route") args.routes.push(value());
-    else if (flag === "--base-url") args.baseUrl = value();
-    else if (flag === "--db-container") args.dbContainer = value();
-    else if (flag === "--runs") args.runs = Number(value());
-    else if (flag === "--out") args.out = value();
-    else if (flag === "--no-seed") args.seed = false;
-    // An unknown flag is refused rather than ignored, as `migrate-live.mjs` refuses one: a
-    // silently dropped flag here is a run measuring something other than what was asked for.
-    else if (flag.startsWith("--")) throw new Error(`unknown flag ${flag}`);
-  }
-  if (!args.dbContainer && args.seed) throw new Error("--db-container is required to seed (e.g. supabase_db_stack)");
-  if (!Number.isInteger(args.runs) || args.runs < 1) throw new Error("--runs must be a positive integer");
-  return args;
-}
 
 async function mintPeople(stack, serviceKey, people) {
   let created = 0;
@@ -194,21 +169,8 @@ async function assertSignedIn(baseUrl, route, headers) {
   );
 }
 
-function runLighthouse({ url, headersFile, outPath, chromePath }) {
-  const args = [
-    "--yes",
-    "lighthouse@12",
-    JSON.stringify(url),
-    "--form-factor=mobile",
-    "--screenEmulation.mobile",
-    "--throttling-method=simulate",
-    "--only-categories=performance,accessibility",
-    `--extra-headers=${JSON.stringify(headersFile)}`,
-    "--output=json",
-    `--output-path=${JSON.stringify(outPath)}`,
-    '--chrome-flags="--headless=new"',
-    "--quiet",
-  ];
+function runLighthouse({ url, headersFile, outPath, chromePath, throttlingMethod }) {
+  const args = lighthouseArgs({ url, headersFile, outPath, throttlingMethod });
   // A report left by an EARLIER invocation at this same path would otherwise be read as this
   // run's when lighthouse writes nothing at all (cairn: an-absent-result-reads-as-a-clean-one).
   // The path is deterministic per route and run, so deleting first is what makes the read honest.
@@ -302,8 +264,8 @@ async function main() {
     for (let run = 1; run <= args.runs; run += 1) {
       const url = new URL(route, args.baseUrl).toString();
       const outPath = join(outDir, `${route.replaceAll("/", "_").replace(/^_/, "")}-run${run}.json`);
-      process.stderr.write(`Lighthouse ${route} run ${run}/${args.runs}...\n`);
-      const lhr = runLighthouse({ url, headersFile, outPath, chromePath });
+      process.stderr.write(`Lighthouse ${route} run ${run}/${args.runs} (${args.throttlingMethod})...\n`);
+      const lhr = runLighthouse({ url, headersFile, outPath, chromePath, throttlingMethod: args.throttlingMethod });
       const wrongPage = refuseWrongPage(url, lhr);
       if (wrongPage) throw new Error(wrongPage);
       reports.push(readReport(lhr));
@@ -317,16 +279,14 @@ async function main() {
   writeFileSync(
     summaryPath,
     JSON.stringify(
-      {
+      buildSummary({
         takenAt: new Date().toISOString(),
         // Where it was measured. No viewer address and no secret: this file gets committed.
         target: { baseUrl: args.baseUrl, seeded: args.seed, servedSupabaseUrl: args.servedSupabaseUrl ?? args.stack },
-        // null when the run named its own viewer or routes — the doc states that volume by hand.
         volume: target.volume,
-        floors: FLOORS,
         summaries,
         verdict: v,
-      },
+      }),
       null,
       2,
     ),
