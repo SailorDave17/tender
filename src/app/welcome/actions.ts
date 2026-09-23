@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { SIGNED_IN_HOME, WELCOME_PATH } from "@/auth/gate";
+import { SIGN_IN_URL, SIGNED_IN_HOME, WELCOME_PATH } from "@/auth/gate";
 import { parseWelcomeForm } from "@/profile/welcome";
 import type { Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -30,7 +30,7 @@ export async function finishProfile(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   // Re-read rather than trusted from the form, for /profile's reason: the codes arrive from the
   // client, and an unknown one is refused against this read.

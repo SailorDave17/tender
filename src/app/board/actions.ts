@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { availabilityRefusal } from "@/availability/rules";
 import { supabaseServer } from "@/lib/supabase/server";
 import { notifyRungLive } from "@/notify/live";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * Mark or unmark the signed-in person for a race day (story #18 AC 4). One Server Action for
@@ -40,7 +41,7 @@ export async function setAvailability(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const [{ data: me }, { data: date }] = await Promise.all([
     client.from("person").select("rating").eq("id", user.id).maybeSingle(),

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { UUID } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * Remove a message as the admin (story #36 AC 2). Bound to the match id by the page; the message
@@ -24,7 +25,7 @@ export async function removeMessage(matchId: string, formData: FormData): Promis
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const { error } = await client.rpc("remove_message", { message_id: messageId });
   if (error) redirect(`${back}?error=refused`);
