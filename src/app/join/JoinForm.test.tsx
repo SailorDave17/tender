@@ -217,6 +217,39 @@ describe("AC 6 — a mismatch is shown and nothing is posted", () => {
  * is the order a screen reader and a phone both follow. Whether the panel is visually dominant at
  * 360px is the owner's phone review (AC 7); jsdom applies no stylesheet and cannot see it.
  */
+describe("#218 AC 1 — a member who landed on Sign up can see the way to Sign in before any field", () => {
+  it("the control comes before the first input, and activating it shows Sign in with no invite-code field", () => {
+    const { container } = render(<JoinForm initialMode="signup" googleClientId={CLIENT_ID} />);
+    const form = container.querySelector<HTMLFormElement>('form[data-form="signup"]');
+    if (!form) throw new Error("no sign-up form rendered");
+    const control = within(form).getByRole("button", { name: "Already a member? Sign in" });
+    const firstInput = form.querySelector("input");
+    // Before the first input in DOM order: the control precedes it.
+    expect(firstInput).not.toBeNull();
+    expect(control.compareDocumentPosition(firstInput!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // It is a button that cannot submit the form it sits in.
+    expect(control.getAttribute("type")).toBe("button");
+
+    fireEvent.click(control);
+
+    const signIn = container.querySelector<HTMLFormElement>('form[data-form="signin"]');
+    expect(signIn, "the Sign in form is shown").not.toBeNull();
+    expect(container.querySelector('form[data-form="signup"]'), "and the Sign up form is gone").toBeNull();
+    // No name and no invite code on the way in: the member's email and password are all it asks.
+    expect([...signIn!.querySelectorAll("input")].map((i) => i.name)).toEqual(["email", "password"]);
+    expect(within(signIn!).queryByLabelText(/invite code/i)).toBeNull();
+    // The tab strip agrees with what is shown.
+    expect(container.querySelector('[role="tab"][data-mode="signin"]')?.getAttribute("aria-selected")).toBe("true");
+    // The control removed itself, so focus is handed to the email field rather than dropped.
+    expect(document.activeElement).toBe(signIn!.querySelector('input[name="email"]'));
+  });
+
+  it("the Sign in tab carries no such control — it is the way out of Sign up only", () => {
+    const { container } = render(<JoinForm initialMode="signin" googleClientId={CLIENT_ID} />);
+    expect(container.querySelector("[data-already-member]")).toBeNull();
+  });
+});
+
 describe("#220 AC 1 — the sign-up tab is the invite code, then the account", () => {
   function signUpForm(googleClientId = CLIENT_ID) {
     const { container } = render(<JoinForm initialMode="signup" googleClientId={googleClientId} />);

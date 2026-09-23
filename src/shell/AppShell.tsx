@@ -85,7 +85,9 @@ export function AppShell({
               ) : null}
             </>
           ) : (
-            <Link href="/join" prefetch={false}>
+            // #218: the Sign in tab by name. Plain /join opens on Sign up for a device that has
+            // not signed in here before (#123), which is not what a link saying "Sign in" means.
+            <Link href="/join?mode=signin" prefetch={false}>
               Sign in
             </Link>
           )}

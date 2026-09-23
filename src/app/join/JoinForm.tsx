@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { explainReason } from "@/auth/callback";
 import { GoogleButton } from "@/auth/GoogleButton";
 import { PasswordFields } from "@/auth/PasswordFields";
@@ -64,6 +64,17 @@ export function JoinForm({
     initialError ? { kind: "done", ok: false, message: explainReason(initialError) } : { kind: "idle" },
   );
   const signUpForm = useRef<HTMLFormElement>(null);
+  // #218: "Already a member? Sign in" removes itself from the page when it switches tabs, so focus
+  // would fall to <body>. It asks for the sign-in email field instead; the tab strip does not, since
+  // the tab it was pressed on is still there to hold focus.
+  const signInEmail = useRef<HTMLInputElement>(null);
+  const focusSignIn = useRef(false);
+  useEffect(() => {
+    if (mode === "signin" && focusSignIn.current) {
+      focusSignIn.current = false;
+      signInEmail.current?.focus();
+    }
+  }, [mode]);
 
   async function post(path: string, payload: unknown): Promise<{ ok: boolean; body: Record<string, unknown> }> {
     let res: Response;
@@ -205,7 +216,7 @@ export function JoinForm({
           <p>Already a member? Sign in with your email and password — no invite code needed.</p>
           <label>
             Email
-            <input name="email" type="email" required autoComplete="email" />
+            <input ref={signInEmail} name="email" type="email" required autoComplete="email" />
           </label>
           <label>
             Password
@@ -224,9 +235,27 @@ export function JoinForm({
       ) : (
         <form ref={signUpForm} onSubmit={onSignUp} data-form="signup" data-stack>
           {/*
+            #218: the way out for a member who landed here on a new phone or browser. The cookie
+            default stays (#123, owner decision 2026-09-22), so this form is what such a member sees
+            first, and the tab strip above was too easy to miss (reported 2026-09-22). One full-width
+            control before any input, larger than a tab. `type="button"`, so it can never submit
+            the form it sits in.
+          */}
+          <button
+            type="button"
+            data-already-member
+            onClick={() => {
+              setMode("signin");
+              setState({ kind: "idle" });
+              focusSignIn.current = true;
+            }}
+          >
+            Already a member? Sign in
+          </button>
+          {/*
             #220: the invite code is the whole of the first thing a new member sees — its own
             bordered, tinted region with the page's largest heading, before any other input. (The
-            "Already a member? Sign in" block is #218's, and sits above this when it lands.) A
+            "Already a member? Sign in" block above is #218's.) A
             `role="group"` labelled by the heading rather than a second fieldset: the fieldset
             below is the account method, and two nested fieldsets read as one form in two boxes.
             The code input is the form's only `required` control, which is what lets the Google
