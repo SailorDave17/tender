@@ -131,6 +131,13 @@ export const CREATED_NOT_SIGNED_IN =
  */
 export const AFTER_SIGNUP = WELCOME_PATH;
 
+/**
+ * A wrong invite code's answer, at both gates. Since #206 it is also what a caller gets when the
+ * attempt limit refuses them (`src/auth/attempt-limit.ts`), which is why it is one value and not
+ * two literals: the limit is not an oracle only while the two answers cannot differ.
+ */
+export const WRONG_CODE = { status: 403, body: { message: "That invite code is not this season's." } } as const;
+
 export function codesMatch(supplied: string, expected: string): boolean {
   const a = Buffer.from(supplied.normalize("NFKC").trim());
   const b = Buffer.from(expected.normalize("NFKC").trim());
@@ -159,7 +166,7 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
     return { status: 400, body: { message: pw.message } };
   }
   if (!codesMatch(input.code, await deps.inviteCode())) {
-    return { status: 403, body: { message: "That invite code is not this season's." } };
+    return WRONG_CODE;
   }
 
   // The attestation only, since #220: the name is given on /welcome, not here.
@@ -256,7 +263,7 @@ export async function googleSignup(
   // a post with no credential is a hand-built one, not a member whose code needs checking.
   if (!hasCredential(input)) return { status: 400, body: { message: NO_CREDENTIAL } };
   if (!codesMatch(input.code, await deps.inviteCode())) {
-    return { status: 403, body: { message: "That invite code is not this season's." } };
+    return WRONG_CODE;
   }
 
   // The attestation is stamped at the moment the gate accepted the submission — the same clock

@@ -1,7 +1,9 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
-import { googleSignup } from "@/auth/join";
+import { clientAddress, withAttemptLimit } from "@/auth/attempt-limit";
+import { WRONG_CODE, googleSignup, type GoogleSignupResult } from "@/auth/join";
 import { rememberDevice } from "@/auth/recognition";
+import { adminAttemptStore } from "@/lib/auth/attempt-store";
 import { exchangeGoogleIdToken } from "@/lib/auth/google";
 import { adminPersonStore } from "@/lib/auth/person-store";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest) {
   const admin = supabaseAdmin();
   const client = await supabaseServer();
 
-  const result = await googleSignup(
+  const attempt = () => googleSignup(
     {
       code: String(body.code ?? ""),
       attested: body.attested === true,
@@ -42,6 +44,18 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+
+  // #206: this gate checks the code before the token is exchanged, so a junk credential is enough
+  // to guess with, and it shares the source address's budget with /api/join and /api/signin. No
+  // email key: there is no address until the exchange, which a wrong code never reaches.
+  const result = await withAttemptLimit<GoogleSignupResult>({
+    gate: "signup-google",
+    ip: clientAddress(request.headers),
+    store: adminAttemptStore(admin),
+    refusal: WRONG_CODE,
+    isFailure: (r) => r.status === WRONG_CODE.status,
+    attempt,
+  });
 
   // #123: a finished sign-up is a session on this device. Through the store, 200 only — as
   // /api/join does, and for the same reason.

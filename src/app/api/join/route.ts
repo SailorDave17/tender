@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
+import { clientAddress, withAttemptLimit } from "@/auth/attempt-limit";
 import { findAuthUser } from "@/auth/find-user";
-import { join } from "@/auth/join";
+import { WRONG_CODE, join, type JoinResult } from "@/auth/join";
 import { rememberDevice } from "@/auth/recognition";
+import { adminAttemptStore } from "@/lib/auth/attempt-store";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -26,13 +28,17 @@ import { supabaseServer } from "@/lib/supabase/server";
  * Since #220 the form sends no name: the row is minted with a provisional `display_name` and
  * `profile_completed_at` NULL, and the member is sent to /welcome to say who they are. A posted
  * `displayName` is ignored rather than refused.
+ *
+ * Since #206 the whole gate runs inside the attempt limit: a wrong code counts against this
+ * source address and this email address, and a caller at either limit gets WRONG_CODE without the
+ * gate running at all.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const admin = supabaseAdmin();
   const client = await supabaseServer();
 
-  const result = await join(
+  const attempt = () => join(
     {
       email: String(body.email ?? ""),
       code: String(body.code ?? ""),
@@ -103,6 +109,16 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+
+  const result = await withAttemptLimit<JoinResult>({
+    gate: "join",
+    ip: clientAddress(request.headers),
+    email: String(body.email ?? ""),
+    store: adminAttemptStore(admin),
+    refusal: WRONG_CODE,
+    isFailure: (r) => r.status === WRONG_CODE.status,
+    attempt,
+  });
 
   // #123: a sign-up that finished here IS a sign-in on this device — `join()` ends by calling
   // `signInWithPassword` through the cookie-bound client — so the next visit to /join opens on

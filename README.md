@@ -729,6 +729,31 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    rules do the rest; the log rows go first because `person_id` is already null afterwards. If a
    member's own deletion lands on `/join?deleted=partial`, their rows are gone and the auth user is
    not — delete it under Authentication → Users.
+7. **Guessing is bounded, and you should know how** (#206, security-audit SA-5, `0032`). A wrong
+   invite code at `/api/join` or `/api/signup/google` and a wrong email-and-password at
+   `/api/signin` are **failures**, and they count against two keys in a **15-minute window**:
+   **20 per source address**, shared across all three routes so guesses cannot be spread between
+   them, and **10 per email address**, on join and sign-in, which is what stops a guesser who
+   rotates addresses. `/api/forgot` counts every request, 20 per source address, on a budget of
+   its own. A caller at a limit gets the same answer a wrong code or password gets, so the limit
+   tells a guesser nothing. The numbers are `src/auth/attempt-limit.ts`'s, owner decision
+   2026-09-23. The address limit is loose on purpose: members at the clubhouse or a regatta share
+   one address, and a tight limit would lock the dock out. **If a whole clubhouse is locked out
+   anyway, it lifts on its own within 15 minutes**, or at once with `delete from
+   public.auth_attempt;` in the SQL editor. **If the code itself may have leaked, rotate it** on
+   `/admin`: the limit slows guessing and does nothing about a code that is already known.
+   What is stored is a SHA-256 digest of the address and the email, never either one, and every
+   row is deleted after the window, as `/privacy` says.
+
+   **Supabase's own sign-in limit does not do this job.** *Read 2026-09-23 from the project's auth
+   config*: `rate_limit_token_refresh` is 150, and the Supabase docs say password sign-in
+   (`/auth/v1/token`) falls under that limit, **150 requests per 5 minutes per IP address**.
+   The IP it counts is the caller's, and Tender's caller is its own server: sign-in runs from a
+   Vercel function with the publishable key, and Supabase counts the end user's address only when
+   the server sends `Sb-Forwarded-For` with a secret key, which Tender does not. So that limit is
+   shared by every member signing in through the same Vercel address, and it bounds no individual
+   guesser. It is on, and it is left alone. *(The per-IP keying is from the docs, not measured
+   here.)*
 
 ## Brand
 

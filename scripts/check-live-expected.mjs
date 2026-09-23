@@ -9,6 +9,7 @@
 /** Every table the migrations create in `public`. */
 export const EXPECTED_TABLES = [
   "answer",
+  "auth_attempt",
   "availability",
   "boat",
   "boat_class",
@@ -46,6 +47,22 @@ export const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 export const EXPECTED_FUNCTIONS = [
   { name: "accept_answer", args: { post_id: NIL_UUID, person_id: NIL_UUID } },
   { name: "answer_counts", args: { post_ids: `{${NIL_UUID}}` } },
+  // 0032 (#206). Called by the service role alone; execute is revoked from public, anon and
+  // authenticated, so the anon probe is refused (42501), which reads PRESENT. It writes, and a GET
+  // is a read-only transaction besides, so the probe could not reserve an attempt even if it ran.
+  {
+    name: "begin_auth_attempt",
+    args: {
+      p_gate: "forgot",
+      p_gates: "{forgot}",
+      p_ip_hash: "0".repeat(64),
+      p_email_hash: "0".repeat(64),
+      p_at: "1970-01-01T00:00:00Z",
+      p_since: "1970-01-01T00:00:00Z",
+      p_ip_limit: 0,
+      p_email_limit: 0,
+    },
+  },
   // 0030 (#198). Called by the service role alone; execute is revoked from public, anon and
   // authenticated, so the anon probe is refused (42501), which reads PRESENT. It writes, and a GET
   // is a read-only transaction besides, so the probe could not take a claim even if it ran.
@@ -79,4 +96,7 @@ export const EXPECTED_FUNCTIONS = [
   // 0021 (#37). The GET probe runs as anon and is refused (42501), which reads PRESENT; the
   // status value is irrelevant to the verdict for the same reason the nil uuid is.
   { name: "set_match_status", args: { match_id: NIL_UUID, status: "confirmed" } },
+  // 0032 (#206), begin_auth_attempt's other half, refused to anon the same way. A nil uuid names
+  // no reservation, and the GET's read-only transaction would stop the delete regardless.
+  { name: "settle_auth_attempt", args: { p_id: NIL_UUID } },
 ];
