@@ -65,7 +65,12 @@ jobs:
       # does not carry. The directory's name is the project id, so the database container is
       # supabase_db_smoke. Only db, auth, rest and kong are started; the rest is image pulls the
       # smoke never talks to.
+      # The images come from public.ecr.aws, not the CLI's default ghcr.io: on 2026-09-23 every
+      # ghcr.io pull failed `toomanyrequests ... allowed: 44000/minute` (#236, #232), and a
+      # `docker login ghcr.io` with the job token did not lift it (#237, two runs).
       - name: start a local Supabase stack from supabase/migrations
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
         run: |
           mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
           supabase init --force --with-intellij-settings=false --with-vscode-settings=false
@@ -94,7 +99,7 @@ jobs:
       - run: npm run smoke -- --db-container supabase_db_smoke --out "$RUNNER_TEMP/smoke-output"
       - name: what the server said
         if: failure()
-        run: cat "$RUNNER_TEMP/next.log"
+        run: test ! -f "$RUNNER_TEMP/next.log" || cat "$RUNNER_TEMP/next.log"
       # smoke.mjs saves each person's page as it stood when a step failed.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()

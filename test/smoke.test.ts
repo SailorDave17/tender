@@ -273,4 +273,17 @@ describe("ci.yml's smoke job (AC 3)", () => {
     expect(job).toContain('mkdir -p "$RUNNER_TEMP/smoke"');
     expect(job).toContain("npm run smoke -- --db-container supabase_db_smoke ");
   });
+
+  it("pulls the stack's images from public.ecr.aws, set on the step that starts it", async () => {
+    const { job } = await smokeJob();
+    const step = job.slice(job.indexOf("- name: start a local Supabase stack"));
+    expect(step.slice(0, step.indexOf("supabase start"))).toMatch(
+      /^ {8}env:\n {10}SUPABASE_INTERNAL_IMAGE_REGISTRY: public\.ecr\.aws$/m,
+    );
+  });
+
+  it("prints next.log on failure only when the server got far enough to write one", async () => {
+    const { job } = await smokeJob();
+    expect(job).toContain('test ! -f "$RUNNER_TEMP/next.log" || cat "$RUNNER_TEMP/next.log"');
+  });
 });
