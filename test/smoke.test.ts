@@ -274,10 +274,26 @@ describe("ci.yml's smoke job (AC 3)", () => {
     expect(job).toContain("npm run smoke -- --db-container supabase_db_smoke ");
   });
 
-  it("authenticates GHCR pulls before starting Supabase, and only cats next.log if it exists", async () => {
+  it("grants packages: read to the smoke job alone, leaving the workflow's floor at contents: read", async () => {
     const { yml, job } = await smokeJob();
-    expect(yml).toMatch(/^ {2}packages: read$/m);
-    expect(job).toContain('docker login ghcr.io -u "${{ github.actor }}" --password-stdin');
+    const floor = yml.slice(yml.indexOf("\npermissions:"), yml.indexOf("\njobs:"));
+    expect(floor).toMatch(/^ {2}contents: read$/m);
+    expect(floor).not.toMatch(/packages/);
+    // A job-level block replaces the workflow's, so contents: read has to be restated beside it.
+    expect(job).toMatch(/^ {4}permissions:\n {6}contents: read\n {6}packages: read$/m);
+  });
+
+  it("logs Docker into ghcr.io before starting Supabase, with the token passed through env", async () => {
+    const { job } = await smokeJob();
+    const login = job.indexOf('docker login ghcr.io -u "$GHCR_USER" --password-stdin');
+    expect(login, "no ghcr.io login step").toBeGreaterThan(-1);
+    expect(login).toBeLessThan(job.indexOf("supabase start"));
+    expect(job).toContain("GHCR_TOKEN: ${{ github.token }}");
+    expect(job).not.toMatch(/run: .*\$\{\{ github\.token \}\}/);
+  });
+
+  it("prints next.log on failure only when the server got far enough to write one", async () => {
+    const { job } = await smokeJob();
     expect(job).toContain('test ! -f "$RUNNER_TEMP/next.log" || cat "$RUNNER_TEMP/next.log"');
   });
 });

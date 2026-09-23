@@ -3,12 +3,11 @@ on:
   pull_request:
   push:
     branches: [develop, release]
-# The floor: GITHUB_TOKEN can read the checkout for both jobs, and the smoke also reads public GHCR
-# packages so Docker can authenticate around anonymous pull limits. Neither job writes to the repo -
-# upload-artifact needs only this broader read shape (security-audit 2026-09-22, SA-3).
+# The floor: GITHUB_TOKEN can read the checkout and nothing else. Neither job writes to the repo -
+# upload-artifact needs only this - so nothing is added per job (security-audit 2026-09-22, SA-3),
+# except the smoke's `packages: read`, which it declares on itself.
 permissions:
   contents: read
-  packages: read
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -52,6 +51,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    # A job's permissions replace the workflow's rather than adding to them, so the floor is
+    # restated here. `packages: read` lets the token log Docker into ghcr.io: anonymous pulls of the
+    # Supabase images hit `toomanyrequests` on #236 and #232 (2026-09-23).
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -64,7 +69,10 @@ jobs:
           version: 2.117.0
       - run: npm ci
       - name: log into ghcr.io before pulling the Supabase stack
-        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USER: ${{ github.actor }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       # In a scratch directory, never the checkout: `supabase init` writes a config.toml the repo
       # does not carry. The directory's name is the project id, so the database container is
       # supabase_db_smoke. Only db, auth, rest and kong are started; the rest is image pulls the
