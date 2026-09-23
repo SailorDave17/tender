@@ -8,6 +8,7 @@ import { explainProfileRefusal, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
 import { deleteMyAccount } from "./account-actions";
 import { saveProfile } from "./actions";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function ProfilePage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const [{ data: me }, { data: contact }, { data: classes }, { data: skillRows }, { data: devices }] =
     await Promise.all([

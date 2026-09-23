@@ -112,3 +112,27 @@ describe("the read is spent only where the answer depends on it (#219)", () => {
     expect(reads).toEqual([]);
   });
 });
+
+describe("a signed-out redirect opens the Sign in tab (#234)", () => {
+  it("sends a signed-out /board to /join?mode=signin: the path is /join and the tab is a real query", async () => {
+    claims = null;
+    const res = await proxy(request("/board/2027-05-02"));
+    expect(res.status).toBe(302);
+    const loc = new URL(res.headers.get("location")!);
+    // Both halves. A target carrying `?` assigned to url.pathname would read /join%3Fmode=signin
+    // here, with an empty search: a redirect to a page that does not exist.
+    expect(loc.pathname).toBe("/join");
+    expect(loc.search).toBe("?mode=signin");
+  });
+
+  it("drops the request's own query, and no other redirect gains one", async () => {
+    claims = null;
+    expect(new URL((await proxy(request("/board?date=2027-05-02"))).headers.get("location")!).search).toBe("?mode=signin");
+    // A signed-in member sent elsewhere gets no query at all, as before.
+    claims = { sub: MEMBER };
+    row = { profile_completed_at: null };
+    const welcome = new URL((await proxy(request("/board?date=2027-05-02"))).headers.get("location")!);
+    expect(welcome.pathname).toBe("/welcome");
+    expect(welcome.search).toBe("");
+  });
+});

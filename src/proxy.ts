@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { needsPersonRead, redirectFor, standingFromRow, type Standing } from "@/auth/gate";
+import { needsPersonRead, redirectFor, searchFor, standingFromRow, type Standing } from "@/auth/gate";
 import { env } from "@/lib/env";
 
 /** The header Next's router puts on a prefetch (next/dist/client/components/app-router-headers). */
@@ -65,7 +65,9 @@ export async function proxy(request: NextRequest) {
   if (target) {
     const url = request.nextUrl.clone();
     url.pathname = target;
-    url.search = "";
+    // #234: the sign-in screen by its tab, and no other query. `target` is a pathname by contract,
+    // so the query is set here rather than carried in it; see SIGN_IN_URL for why.
+    url.search = searchFor(target);
     // 302, not Next's default 307: a plain "go and sign in" for a GET, and what AC 1 names.
     return NextResponse.redirect(url, 302);
   }

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { SIGNED_IN_HOME } from "@/auth/gate";
+import { SIGN_IN_URL, SIGNED_IN_HOME } from "@/auth/gate";
 import { PhoneField, SkillsFieldset } from "@/profile/fields";
 import { explainProfileRefusal, type Skill } from "@/profile/profile";
 import { NAME_MAX, explainWelcomeRefusal } from "@/profile/welcome";
@@ -31,7 +31,7 @@ export default async function WelcomePage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const [{ data: me }, { data: contact }, { data: skillRows }] = await Promise.all([
     client

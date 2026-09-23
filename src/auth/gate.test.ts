@@ -2,14 +2,39 @@ import { describe, expect, it } from "vitest";
 import {
   PROTECTED_PREFIXES,
   SIGN_IN_PATH,
+  SIGN_IN_URL,
   SIGNED_IN_HOME,
   WELCOME_PATH,
   isProtected,
+  isSignInScreen,
   needsPersonRead,
   redirectFor,
+  searchFor,
   standingFromRow,
   type Standing,
 } from "./gate";
+
+describe("where a signed-out visitor is sent, and what the gate still matches (#234)", () => {
+  it("the sign-in screen's PATH stays a bare pathname, so the gate's exact match still fires", () => {
+    // The trap #234 was filed around: this constant is compared against a request's pathname, which
+    // never carries a query, so a `?` in it would make isSignInScreen() never match.
+    expect(SIGN_IN_PATH).toBe("/join");
+    expect(SIGN_IN_PATH).not.toContain("?");
+    expect(isSignInScreen("/join")).toBe(true);
+  });
+
+  it("the URL a page redirects to names the Sign in tab", () => {
+    expect(SIGN_IN_URL).toBe("/join?mode=signin");
+  });
+
+  it("the proxy adds the Sign in tab to a redirect to the sign-in screen, and to nothing else", () => {
+    expect(searchFor(SIGN_IN_PATH)).toBe("?mode=signin");
+    for (const other of [WELCOME_PATH, SIGNED_IN_HOME]) expect(searchFor(other), other).toBe("");
+    // ...and the gate keeps deciding in pathnames: the signed-out answer is still the bare path,
+    // which is what lets the cycle sweep below feed it back in unchanged.
+    expect(redirectFor("/board", "signed-out")).toBe(SIGN_IN_PATH);
+  });
+});
 
 describe("the proxy's decision (AC 1 / AC 5)", () => {
   it("sends an unauthenticated request for /board, and anything under it, to /join", () => {

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { sendInvitesLive } from "@/notify/live";
 import { supabaseServer } from "@/lib/supabase/server";
 import { encodeInviteReport } from "@/notify/invite-report";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * The admin's one write on the invite list: send the pasted addresses their invite (story #31).
@@ -36,7 +37,7 @@ export async function sendInvitesAction(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
   const { data: me } = await client.from("person").select("is_admin").eq("id", user.id).maybeSingle();
   // Not a redirect to an error page: a non-admin is told this screen does not exist, the same
   // answer the page itself gives them (AC 2 of #16's pattern).

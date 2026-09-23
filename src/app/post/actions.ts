@@ -7,6 +7,7 @@ import { isSettableStatus } from "@/post/match-view";
 import { UUID, parsePostForm } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
 import { notifyAnswerLive, notifyConfirmedLive, notifyMatchLive, notifyRungLive } from "@/notify/live";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * A skipper's two writes on a post: post a need, close it. Both through the cookie-bound
@@ -97,7 +98,7 @@ export async function answerPost(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   // The post as the caller may read it (published date), then the three facts the rule needs.
   const { data: post } = await client.from("post").select("id, race_date_id, closed_at").eq("id", id).maybeSingle();

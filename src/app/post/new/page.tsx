@@ -6,6 +6,7 @@ import { RATINGS } from "@/profile/profile";
 import { UUID, explainPostRefusal } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
 import { createPost } from "../actions";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function NewPostPage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
   const { boat: boatParam, error } = await searchParams;
 
   const [{ data: boats }, { data: dates }] = await Promise.all([

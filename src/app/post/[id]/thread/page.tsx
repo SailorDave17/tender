@@ -8,6 +8,7 @@ import { THREAD_CLOSED_NOTE, messageText, threadClosesAt, threadIsOpen } from "@
 import { SUSPENDED_NOTE } from "@/moderation/suspension";
 import { supabaseServer } from "@/lib/supabase/server";
 import { sendMessage } from "./actions";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   // The match, the post's boat and the race date in one read, as the caller. No filter names an
   // embedded resource — every `.eq` here is on `post`'s own column — because a filter on an

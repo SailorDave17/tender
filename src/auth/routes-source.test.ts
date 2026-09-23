@@ -415,3 +415,37 @@ describe("every guessing surface runs inside the attempt limit (#206)", () => {
     expect(src).not.toMatch(/withAttemptLimit/);
   });
 });
+
+/**
+ * #234. The proxy gate's own redirect is proven in proxy.test.ts; the pages and server actions each
+ * carry a second wall, `if (!user) redirect(…)`, and 27 of them sent a signed-out member to plain
+ * `/join`, which opens on Sign up for a new device. No unit test renders them, so the tree is read.
+ */
+describe("every signed-out redirect in a page or action opens the Sign in tab (#234)", () => {
+  it("no bare redirect to /join is left under src/, and the constant is what replaced them", async () => {
+    const files = await sourceFiles(new URL("../", import.meta.url));
+    expect(files.length, "the scan really walked src/").toBeGreaterThan(40);
+    // BUILT, not written: this file is under src/ and a literal would be the scan's first hit.
+    const BARE = "redirect(" + '"/join")';
+    const bare: string[] = [];
+    let viaConstant = 0;
+    for (const f of files) {
+      const src = await readFile(f, "utf8");
+      if (src.includes(BARE)) bare.push(f.pathname);
+      // Built for the same reason as BARE: the literal would count this file (measured, 28 not 27).
+      viaConstant += src.split("redirect(" + "SIGN_IN_URL)").length - 1;
+    }
+    expect(bare).toEqual([]);
+    // A positive control on the replacement: all 27 went to the constant, not somewhere else.
+    expect(viaConstant).toBe(27);
+    // ...and the needle matches the shape it hunts for.
+    // (The sample is built too: written out, it was this scan's one hit on its first run.)
+    expect("if (!user) " + BARE + ";").toContain(BARE);
+  });
+
+  it("sign-out keeps plain /join on purpose: that device has signed in, so it opens on Sign in", async () => {
+    const src = await readFile(new URL("../app/auth/signout/route.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/url\.pathname = "\/join";/);
+    expect(src).toMatch(/Deliberately plain `\/join`, not `SIGN_IN_URL` \(#234\)/);
+  });
+});

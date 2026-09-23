@@ -7,7 +7,24 @@
  * able to reach the page that gives them one.
  */
 export const PROTECTED_PREFIXES = ["/board", "/admin", "/profile", "/boats", "/post"] as const;
+/** The sign-in screen's PATHNAME, which the gate compares against a request's pathname. Never add a query here. */
 export const SIGN_IN_PATH = "/join";
+/**
+ * What a redirect to the sign-in screen carries (#234): the Sign in tab by name. `/join` alone
+ * opens on Sign up for a device with no `tender_seen` cookie (#123), and the person a members-only
+ * page turns away is, overwhelmingly, a member.
+ */
+export const SIGN_IN_SEARCH = "?mode=signin";
+/**
+ * Where a signed-out visitor is SENT, as a URL: for `redirect()` in pages and actions.
+ *
+ * Two constants rather than one, and that is the whole of #234's trap. `SIGN_IN_PATH` is compared
+ * against a pathname (`isSignInScreen`), so giving it the query would make that comparison never
+ * match; and the proxy assigns a target to `url.pathname`, where a `?` is encoded as `%3F` rather
+ * than read as the start of a query. So the gate decides in pathnames, and the query is added at
+ * the edge, by `searchFor` in the proxy and by this constant in the pages.
+ */
+export const SIGN_IN_URL = `${SIGN_IN_PATH}${SIGN_IN_SEARCH}`;
 /** Where a member who is already signed in goes when they ask for the sign-in screen (#123). */
 export const SIGNED_IN_HOME = "/board";
 /**
@@ -42,6 +59,15 @@ export function isProtected(pathname: string): boolean {
  */
 export function isSignInScreen(pathname: string): boolean {
   return pathname === SIGN_IN_PATH;
+}
+
+/**
+ * The search string a redirect to `target` carries (#234): the Sign in tab for the sign-in screen,
+ * and nothing for any other target. Nothing, not the request's own query: the proxy has always
+ * dropped that, so `/board?x=1` never became `/welcome?x=1`, and that stays true.
+ */
+export function searchFor(target: string): string {
+  return target === SIGN_IN_PATH ? SIGN_IN_SEARCH : "";
 }
 
 export function isWelcome(pathname: string): boolean {
