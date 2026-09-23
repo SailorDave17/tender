@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { explainReason } from "@/auth/callback";
 import { GoogleButton } from "@/auth/GoogleButton";
 import { PasswordFields } from "@/auth/PasswordFields";
@@ -10,12 +10,17 @@ type State = { kind: "idle" } | { kind: "sending" } | { kind: "done"; message: s
 type Mode = "signin" | "signup";
 
 /**
- * /join since #70, mechanisms changed by #82, #99 and #173: two distinct choices. Sign in
+ * /join since #70, mechanisms changed by #82, #99, #173 and #220: two distinct choices. Sign in
  * (returning member) asks for email + password, or offers Google, with a Forgot-my-password link.
- * Sign up (new member) asks for name, invite code, the 18+ attestation and a password, and
- * finishes **here** — the gate creates the account, mints the person row and signs them in, so
- * the browser follows a redirect to the board rather than waiting for an email. Or it finishes
- * with Google, which needs no password. Only sign-up ever sends the code.
+ * Sign up (new member) is about one thing, the invite code, in a large panel before any other
+ * input (#220, owner decision 2026-09-22); then an email and password, or Google, which needs no
+ * password. It finishes **here** — the gate creates the account, mints the person row with a
+ * provisional name and signs them in, so the browser follows a redirect to /welcome ("Finish
+ * your profile", #219) rather than waiting for an email. The name used to be asked on this form
+ * and the 18+ confirmation was a checkbox; since #220 the name is /welcome's and the confirmation
+ * is a line of text beside the create-account buttons — creating the account IS the confirmation,
+ * so both create actions still post `attested: true` and both routes still refuse a request
+ * without it. Only sign-up ever sends the code.
  *
  * **Google is the ID-token flow since #173.** Both tabs render Google Identity Services' own
  * button (`src/auth/GoogleButton.tsx`); Google hands this page an ID token on our own origin, and
@@ -59,6 +64,17 @@ export function JoinForm({
     initialError ? { kind: "done", ok: false, message: explainReason(initialError) } : { kind: "idle" },
   );
   const signUpForm = useRef<HTMLFormElement>(null);
+  // #218: "Already a member? Sign in" removes itself from the page when it switches tabs, so focus
+  // would fall to <body>. It asks for the sign-in email field instead; the tab strip does not, since
+  // the tab it was pressed on is still there to hold focus.
+  const signInEmail = useRef<HTMLInputElement>(null);
+  const focusSignIn = useRef(false);
+  useEffect(() => {
+    if (mode === "signin" && focusSignIn.current) {
+      focusSignIn.current = false;
+      signInEmail.current?.focus();
+    }
+  }, [mode]);
 
   async function post(path: string, payload: unknown): Promise<{ ok: boolean; body: Record<string, unknown> }> {
     let res: Response;
@@ -107,41 +123,34 @@ export function JoinForm({
 
   /**
    * Google's callback on the Sign up tab. The member has already been to Google, so the form's
-   * three required controls are checked here rather than by a submit — `reportValidity` shows
-   * the browser's own bubble on the first empty one and posts nothing, which is what a submit
-   * would have done. The email and password boxes carry no constraint (see the JSX), so they
-   * cannot block this arm. A wrong code comes back from the route as a sentence; the token is
-   * simply dropped, and pressing Google again is a silent re-authentication.
+   * one required control — the invite code — is checked here rather than by a submit:
+   * `reportValidity` shows the browser's own bubble on it when empty and posts nothing, which is
+   * what a submit would have done. The email and password boxes carry no constraint (see the
+   * JSX), so they cannot block this arm. A wrong code comes back from the route as a sentence;
+   * the token is simply dropped, and pressing Google again is a silent re-authentication.
+   *
+   * `attested: true` is posted rather than read off a box (#220): the 18+ confirmation is the
+   * line of text beside this button, and pressing the button is the confirmation. The route
+   * still refuses a request without it, so a caller that skips this screen gets no account.
    */
   async function onGoogleSignUp(credential: string, nonce: string) {
     const form = signUpForm.current;
     if (!form) return;
     if (!form.reportValidity()) {
-      setState({ kind: "done", ok: false, message: "Fill in your name, the invite code and the 18+ box first." });
+      setState({ kind: "done", ok: false, message: "Enter your invite code first." });
       return;
     }
     const f = new FormData(form);
     setState({ kind: "sending" });
-    settle(
-      await post("/api/signup/google", {
-        displayName: f.get("displayName"),
-        code: f.get("code"),
-        attested: f.get("attested") === "on",
-        credential,
-        nonce,
-      }),
-    );
+    settle(await post("/api/signup/google", { code: f.get("code"), attested: true, credential, nonce }));
   }
 
   async function onSignUp(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
     const f = new FormData(form);
-    const common = {
-      displayName: f.get("displayName"),
-      code: f.get("code"),
-      attested: f.get("attested") === "on",
-    };
+    // The code from the panel, and the confirmation this submit IS (#220, see onGoogleSignUp).
+    const common = { code: f.get("code"), attested: true };
     const email = String(f.get("email") ?? "");
     if (!email) {
       // Neither box can be `required`, because *Continue with Google* reads this same form and
@@ -207,7 +216,7 @@ export function JoinForm({
           <p>Already a member? Sign in with your email and password — no invite code needed.</p>
           <label>
             Email
-            <input name="email" type="email" required autoComplete="email" />
+            <input ref={signInEmail} name="email" type="email" required autoComplete="email" />
           </label>
           <label>
             Password
@@ -225,20 +234,43 @@ export function JoinForm({
         </form>
       ) : (
         <form ref={signUpForm} onSubmit={onSignUp} data-form="signup" data-stack>
-          <p>New here? You need this season&apos;s invite code from the club.</p>
-          <label>
-            Your name
-            <input name="displayName" required maxLength={80} autoComplete="name" />
-          </label>
-          <label>
-            Invite code
-            <input name="code" required autoComplete="off" />
-          </label>
-          <label>
-            <input name="attested" type="checkbox" required /> I am 18 or over
-          </label>
+          {/*
+            #218: the way out for a member who landed here on a new phone or browser. The cookie
+            default stays (#123, owner decision 2026-09-22), so this form is what such a member sees
+            first, and the tab strip above was too easy to miss (reported 2026-09-22). One full-width
+            control before any input, larger than a tab. `type="button"`, so it can never submit
+            the form it sits in.
+          */}
+          <button
+            type="button"
+            data-already-member
+            onClick={() => {
+              setMode("signin");
+              setState({ kind: "idle" });
+              focusSignIn.current = true;
+            }}
+          >
+            Already a member? Sign in
+          </button>
+          {/*
+            #220: the invite code is the whole of the first thing a new member sees — its own
+            bordered, tinted region with the page's largest heading, before any other input. (The
+            "Already a member? Sign in" block above is #218's.) A
+            `role="group"` labelled by the heading rather than a second fieldset: the fieldset
+            below is the account method, and two nested fieldsets read as one form in two boxes.
+            The code input is the form's only `required` control, which is what lets the Google
+            arm check it with `reportValidity` (see onGoogleSignUp).
+          */}
+          <section role="group" aria-labelledby="invite-heading" data-invite>
+            <h2 id="invite-heading">Your invite code</h2>
+            <label>
+              Invite code
+              <input name="code" required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+            </label>
+            <p data-hint>It is in the club&apos;s invite email — or ask the organiser.</p>
+          </section>
           <fieldset>
-            <legend>Finish with</legend>
+            <legend>Create your account with</legend>
             <label>
               Email
               <input name="email" type="email" autoComplete="email" />
@@ -255,16 +287,20 @@ export function JoinForm({
               email arm only, via the same `checkNewPassword` the reset landing uses.
             */}
             <PasswordFields passwordName="password" confirmName="confirm" />
+            {/*
+              #220: the 18+ confirmation as a line of text, where the checkbox was (owner decision
+              2026-09-22, accepting that a sentence is weaker evidence than a box that had to be
+              ticked). It precedes BOTH create-account buttons in the same group, so it is read
+              before either is used, and it is body ink rather than a muted hint. Creating the
+              account is the confirmation: both actions post `attested: true`, and both routes
+              still refuse without it.
+            */}
+            <p data-attest>By creating an account you confirm you&apos;re 18 or over.</p>
             <button type="submit" value="email" disabled={busy}>
               {busy ? "Setting up…" : "Create my account"}
             </button>
             {google && (
-              <>
-                <p data-hint>
-                  Or skip the password and use Google — nothing else to fill in:
-                </p>
-                <GoogleButton clientId={googleClientId} text="signup_with" flow="signup" onCredential={onGoogleSignUp} />
-              </>
+              <GoogleButton clientId={googleClientId} text="signup_with" flow="signup" onCredential={onGoogleSignUp} />
             )}
           </fieldset>
         </form>

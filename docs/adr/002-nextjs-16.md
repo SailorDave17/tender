@@ -1,6 +1,6 @@
 # ADR 002 — Next.js 16 as the framework
 
-- Status: accepted 2026-08-21
+- Status: accepted 2026-08-21 — the lab kill condition fired on 2026-09-22 (#185, PR #212), and the owner decided on 2026-09-22 to **stay on Next.js 16**; see *Stay decision, 2026-09-22* under *Kill condition*
 - Phase: 6
 
 ## Context
@@ -21,6 +21,98 @@ Bundle size is watched on the old-Android target (an accessibility bar, not poli
 
 ## Kill condition
 Lighthouse mobile performance on the board page below 80 on a mid-range Android after the first three stories, unrecoverable by ordinary optimisation — reopen toward SvelteKit.
+
+**Retired as the framework trigger, 2026-09-22.** The lab "Performance below 80" condition above
+fired (#185) and no longer decides whether tender reopens its framework. What replaces it is a
+field-data condition: real-user measurements from members' phones, judged against thresholds that
+will be written into this ADR **before any real-user data exists**, so that the data cannot be read
+against a line drawn after seeing it. No thresholds are set yet. The condition above is kept as
+written because it records what was decided in phase 6. The lab reading stays a useful instrument
+for pricing levers; it is no longer the trigger.
+
+### Stay decision, 2026-09-22
+
+**The owner decided on 2026-09-22 to stay on Next.js 16**, after the lab condition fired. The
+ordinary levers are pulled, and the framework question is reopened only by the field condition
+above. Epic #7 resumes on that basis. The option space and the evidence are recorded here so the
+framework is not re-argued from the stale *fired* text below without them.
+
+**Why stay.** Under real-CPU (`devtools`) throttling the board's cost is hydration, not bytes. The
+framework runtime's own floor was about 77 on a near-empty page, so the lab condition as written
+tests whether a framework ships a runtime at all, not whether the board is too heavy. And the best
+case for any rewrite is bounded: with no framework at all the full board read about 86, because
+layout of a page this size costs about 0.5 s in any framework.
+
+**Evidence: Lighthouse `devtools` throttling at #44's fixture** (45 dates, 50 posts, 80 people),
+Lighthouse 12.8.2 mobile. `devtools` is a different instrument from the `simulate` readings in the
+sections below, and its numbers are not comparable with theirs.
+
+| reading | score | TBT | provenance |
+|---|---|---|---|
+| as shipped | 66 (65 / 67 / 66) | 1.08 s | 2026-09-22 forge-session reading, not the repo's harness. **Re-run by "Add a devtools throttling mode to npm run perf:floor" (#216): not reproduced.** That harness read 75 (75 / 79 / 75), TBT 0.71 s, from `next start` of `develop` on localhost, on a host whose `benchmarkIndex` (1,750) sat above the 920–1,680 band. The forge reading's record describes a deployed preview. Neither difference was isolated. See [the devtools reading](../performance-floor.md#the-devtools-reading-2026-09-22--story-216). |
+| 10 upcoming dates | 73 | 0.71 s | 2026-09-22 forge-session reading, not yet re-run by the repo's harness. No reproducing story is filed yet. |
+| near-empty live board | 77 (77 / 81 / 74) | 0.60 s | 2026-09-22 forge-session reading, not yet re-run by the repo's harness. No reproducing story is filed yet. |
+| framework JS blocked, CLS recomputed as perfect | about 86 | 0.50 s | 2026-09-22 forge-session reading, not yet re-run by the repo's harness; the score is arithmetic from the report's own audit scores and weights. No reproducing story is filed yet. |
+
+A later story that re-runs one of these links it from its row.
+
+**Rejected options.**
+
+- **B — rewrite to SvelteKit.** The upside is bounded: about 86 with no framework at all, i.e. about
+  +16 points and about 0.5 s less main-thread blocking, and a SvelteKit port would add some
+  hydration of its own on top of that bound. Set against it: rewriting most of the source, seven
+  months before the pilot, and re-proving auth, push and the PWA on real devices. The source is
+  **14,919** lines of non-test TypeScript under `src/` on `develop` at `beea286`, counted with
+  `git ls-files src | grep -E '\.(ts|tsx)$' | grep -v '\.test\.' | xargs cat | wc -l`. (The
+  decision was argued at 14,830 lines, a figure recorded without its command; this recount is about
+  0.6% higher.)
+- **C — a no-React `/board` inside Next** (a route handler, plain HTML forms, a small script).
+  It chases the same ~86 bound for one page at a fraction of B's cost. The cost is **two rendering
+  models in one app and a duplicated shell**: every shell change becomes two changes that drift, and
+  the smoke and the contrast sweep have to cover both.
+
+**Levers kept:** #211 (the footer layout shift, +4 measured on both routes) and a default date
+window on the board (+7 in the 10-date reading above).
+
+### Measured 2026-09-22 (#185): the condition has FIRED
+
+**`/board` reads 66 on a deployed build of `release`** (60 / 66 / 70), at #44's fixture volume,
+Lighthouse 12.8.2 mobile with simulated throttling — the instrument this condition names — and
+**70 with the one new ordinary lever fixed** (68 / 70 / 78). No run reached 80. Crediting the
+deployed arms with the whole measured cost of how the fixture was served (a tunnel to a local
+stack, priced at +4 against production on the same board shape) still leaves 74–76.
+
+Both halves are now measured:
+
+- **Below 80 on a deployed build: established.** The #44 section below expected a local/deployed
+  gap of about eight points in the deployed build's favour. It did not appear: 66 deployed against
+  68 local on the same tree and fixture. The framework runtime (~457 KB) lands before first paint
+  on a real network too — Vercel's edge serves it in time — so the simulator prices it as
+  render-blocking there as well, and the LCP audit scores 0.24–0.32 in every deployed run.
+- **Unrecoverable by ordinary optimisation: supported.** #44 priced three levers (prefetch off,
+  ~3 points and kept; document cut 71%, none; client components removed, none). #185 found and
+  priced a fourth — a footer layout shift introduced by #154's streaming shell after #44's reading,
+  CLS 0.112–0.234 — and fixing it bought 4 points. The remainder is the runtime #44 attributed it
+  to, which is the thing this ADR chose.
+
+**The cause, in one line:** Next ships its React/Next client runtime to every route, and on this
+page shape it arrives before the first paint on any network measured, so the mobile simulator
+prices ~457 KB of JavaScript onto the critical path of a page that otherwise reads in the 90s
+(#44's framework-blocked bound: 96).
+
+**What the condition does not say, and what it therefore does not decide.** It fired on the
+instrument named; no physical mid-range Android on a cellular network was measured. And
+`/post/[id]` — the other page a crew member opens — passes on the same framework once the footer
+is fixed (82 / 80 / 90). Reopening toward SvelteKit is a decision about the whole app priced
+against one page's score, which is the owner's to take, not this measurement's. The owner took it
+the same day: see *Stay decision, 2026-09-22* above. Full method, the five arms and the tunnel's
+price:
+[`../performance-floor.md`](../performance-floor.md#the-deployed-reading-2026-09-22--story-185).
+
+*(Superseded 2026-09-22 by the field condition above.* This section used to ask for a re-run of
+`perf:floor --no-seed` against the live board "once the club's real board has grown … before any
+migration starts". That re-run is no longer the trigger for anything, and no story holds it. The
+field condition is what reopens the framework.)
 
 ### Measured 2026-09-21 (#44): the local antecedent is met; the ADR's own condition is NOT yet established
 
@@ -58,6 +150,8 @@ So, precisely:
 - **Below 80 locally: established** (72, three runs, none near the floor).
 - **Unrecoverable by ordinary optimisation: supported** (three levers priced, two at zero).
 - **Below 80 on a mid-range Android: NOT established**, and not establishable from a local serve.
+  *(Settled 2026-09-22 by #185, above: established on a deployed build, and the ~8 points did not
+  carry.)*
 
 **What settles it, in order.** Run the same command against the deployed `release` build; that is
 one measurement and it decides whether this section becomes a framework decision or a footnote. Only

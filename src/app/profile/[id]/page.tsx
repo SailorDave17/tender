@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { ProfileCard } from "@/profile/ProfileCard";
 import type { Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function PersonProfilePage({ params }: { params: Promise<{ 
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const [{ data: person }, { data: contact }, { data: skillRows }] = await Promise.all([
     client

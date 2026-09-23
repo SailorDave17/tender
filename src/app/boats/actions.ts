@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { parseBoatForm } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * Add a boat. Through the cookie-bound client, so 0006's boat_insert_own policy is what
@@ -23,7 +24,7 @@ export async function createBoat(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const { data: classes } = await client.from("boat_class").select("name").order("name");
   const parsed = parseBoatForm(

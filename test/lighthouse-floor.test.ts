@@ -1,5 +1,12 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  BENCHMARK_BAND,
+  buildSummary,
+  lighthouseArgs,
+  parseArgs,
+  THROTTLING_METHODS,
   FLOORS,
   fixtureId,
   fixturePlan,
@@ -13,6 +20,9 @@ import {
   refuseNonLocalStack,
   refuseWrongPage,
   readReport,
+  requestHeaders,
+  runTarget,
+  VOLUME,
   summariseRoute,
   verdict,
 } from "../scripts/lighthouse-floor-core.mjs";
@@ -266,6 +276,78 @@ describe("the runner's guards", () => {
   });
 });
 
+describe("runTarget — seeded and unseeded runs (#185)", () => {
+  const plan = fixturePlan({ now: new Date("2026-06-01T12:00:00Z") });
+  const live = "https://abcdefg.supabase.co";
+
+  // The refusal that used to sit at the top of main() now lives here, so it has to be proven
+  // here: a SEEDED run against the live project must still be refused before anything is read.
+  it("refuses a seeded run against a Supabase that is not loopback", () => {
+    expect(() => runTarget({ seed: true, stack: live, plan })).toThrow(/refusing to seed/);
+  });
+
+  it("refuses a seeded run that names its own viewer or route", () => {
+    const stack = "http://127.0.0.1:54321";
+    expect(() => runTarget({ seed: true, stack, viewerEmail: "someone@example.com", plan })).toThrow(/--no-seed/);
+    expect(() => runTarget({ seed: true, stack, routes: ["/board"], plan })).toThrow(/--no-seed/);
+  });
+
+  it("measures the chosen viewer, both routes and the fixture volume on a seeded run", () => {
+    const t = runTarget({ seed: true, stack: "http://127.0.0.1:54321", plan });
+    expect(t).toEqual({
+      email: measuredViewer(plan).email,
+      routes: measuredRoutes(plan),
+      volume: VOLUME,
+      fixtureViewer: true,
+    });
+  });
+
+  // The whole point of --no-seed: it writes nothing, so the live project is a legitimate target.
+  it("lets an unseeded run name the live project, a real viewer and its own routes", () => {
+    const t = runTarget({ seed: false, stack: live, viewerEmail: "crew@example.com", routes: ["/board"], plan });
+    expect(t.email).toBe("crew@example.com");
+    expect(t.routes).toEqual(["/board"]);
+    expect(t.fixtureViewer).toBe(false);
+  });
+
+  // A real board's volume is not something the script can know, so a reading that named its own
+  // viewer or routes must not inherit the fixture's numbers — the doc states the volume by hand.
+  it("claims no volume once the viewer or the routes are named", () => {
+    expect(runTarget({ seed: false, stack: live, viewerEmail: "crew@example.com", plan }).volume).toBeNull();
+    expect(runTarget({ seed: false, stack: live, routes: ["/board"], plan }).volume).toBeNull();
+  });
+
+  it("keeps the fixture viewer and volume on an unseeded re-run that names nothing", () => {
+    const t = runTarget({ seed: false, stack: "http://127.0.0.1:54321", plan });
+    expect(t.volume).toBe(VOLUME);
+    expect(t.fixtureViewer).toBe(true);
+    expect(t.routes).toEqual(measuredRoutes(plan));
+  });
+
+  it("refuses a route that is not a path", () => {
+    expect(() => runTarget({ seed: false, stack: live, routes: ["board"], plan })).toThrow(/a route is a path/);
+  });
+});
+
+describe("requestHeaders (#185)", () => {
+  it("sends only the cookie when no bypass secret is set", () => {
+    expect(requestHeaders({ cookie: "sb-x-auth-token=abc" })).toEqual({ Cookie: "sb-x-auth-token=abc" });
+  });
+
+  // Vercel reads exactly this header name; a near-miss spelling is silently ignored and every
+  // preview request 302s to its SSO page instead.
+  it("adds Vercel's protection-bypass header when the secret is set", () => {
+    expect(requestHeaders({ cookie: "c=1", bypassSecret: "s3cret" })).toEqual({
+      Cookie: "c=1",
+      "x-vercel-protection-bypass": "s3cret",
+    });
+  });
+
+  it("refuses to build headers with no session cookie", () => {
+    expect(() => requestHeaders({ cookie: "" })).toThrow(/no session cookie/);
+  });
+});
+
 describe("readReport", () => {
   it("reports a category as the integer a person reads, not the fraction", () => {
     expect(readReport(lhrFixture({ performance: 0.78 })).performance).toBe(78);
@@ -359,5 +441,198 @@ describe("formatReport", () => {
     const out = formatReport([s], verdict([s]));
     expect(out).toContain("[73 79 78]");
     expect(out).toContain("FAIL");
+  });
+});
+
+/**
+ * #216: a devtools throttling mode, and the host speed that makes a devtools number readable.
+ *
+ * `simulate` and `devtools` agree on the board's score and disagree on its cost (LCP 5.1 s against
+ * 3.0 s, TBT 0.31 s against 1.08 s), so a reading that does not say which it was cannot be compared
+ * with anything. These tests hold the flag to what reaches Lighthouse, and hold the summary to what
+ * Lighthouse reports having done.
+ */
+
+/** A report as Lighthouse writes it under a given method on a host of a given speed. */
+function throttledReport(method: string | null, benchmarkIndex: number | null, performance = 0.66) {
+  const lhr = lhrFixture({ performance }) as ReturnType<typeof lhrFixture> & Record<string, unknown>;
+  if (method) lhr.configSettings = { throttlingMethod: method };
+  if (benchmarkIndex != null) lhr.environment = { benchmarkIndex };
+  return lhr;
+}
+
+const summarise = (method: string, indices: (number | null)[]) =>
+  summariseRoute(
+    "/board",
+    indices.map((i) => readReport(throttledReport(method, i))),
+  );
+
+describe("lighthouseArgs (#216)", () => {
+  const base = { url: "http://localhost:3100/board", headersFile: "h.json", outPath: "o.json" };
+
+  it("passes --throttling-method=devtools when devtools is asked for, and no simulate", () => {
+    const args = lighthouseArgs({ ...base, throttlingMethod: "devtools" });
+    expect(args).toContain("--throttling-method=devtools");
+    expect(args.filter((a) => a.startsWith("--throttling-method"))).toEqual(["--throttling-method=devtools"]);
+  });
+
+  // "Exactly as today": the argument list before #216 was a literal in the runner, so it is pinned
+  // here as that literal, not rebuilt from the function under test.
+  it("builds exactly the pre-#216 arguments when no method is named", () => {
+    expect(lighthouseArgs(base)).toEqual([
+      "--yes",
+      "lighthouse@12",
+      '"http://localhost:3100/board"',
+      "--form-factor=mobile",
+      "--screenEmulation.mobile",
+      "--throttling-method=simulate",
+      "--only-categories=performance,accessibility",
+      '--extra-headers="h.json"',
+      "--output=json",
+      '--output-path="o.json"',
+      '--chrome-flags="--headless=new"',
+      "--quiet",
+    ]);
+  });
+
+  it("refuses a method it does not know rather than handing it on", () => {
+    expect(() => lighthouseArgs({ ...base, throttlingMethod: "provided" })).toThrow(/unknown throttling method/);
+  });
+});
+
+describe("parseArgs --throttling-method (#216)", () => {
+  const seeded = ["--db-container", "supabase_db_stack"];
+
+  it("defaults to simulate, which is what every earlier reading used", () => {
+    expect(parseArgs(seeded).throttlingMethod).toBe("simulate");
+  });
+
+  it("accepts devtools in both spellings of a flag", () => {
+    expect(parseArgs([...seeded, "--throttling-method", "devtools"]).throttlingMethod).toBe("devtools");
+    expect(parseArgs([...seeded, "--throttling-method=devtools"]).throttlingMethod).toBe("devtools");
+  });
+
+  it("refuses any other value, listing the accepted ones", () => {
+    for (const bad of ["provided", "Devtools", "", "simulated"]) {
+      expect(() => parseArgs([...seeded, "--throttling-method", bad])).toThrow(
+        `--throttling-method must be one of ${THROTTLING_METHODS.join(", ")}`,
+      );
+    }
+    expect(THROTTLING_METHODS).toEqual(["simulate", "devtools"]);
+  });
+
+  /**
+   * The ordering half of the AC: the refusal lands before a stack is read, a row is seeded or
+   * Chrome is launched. It runs the REAL runner with every key it would need to go further, and a
+   * `--stack` on a closed port. If the refusal moved after the keys were checked, stderr would carry
+   * "Seeding"; if it were dropped, the run would reach the stack and fail there instead.
+   */
+  it("makes the runner exit non-zero before it seeds anything", () => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL("../scripts/lighthouse-floor.mjs", import.meta.url)),
+        "--db-container",
+        "no_such_container",
+        "--stack",
+        "http://127.0.0.1:9",
+        "--throttling-method",
+        "fast",
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, STACK_ANON_KEY: "anon", STACK_SERVICE_ROLE_KEY: "service" },
+        timeout: 30_000,
+      },
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--throttling-method must be one of simulate, devtools");
+    expect(r.stderr).not.toContain("Seeding");
+    expect(r.stderr).not.toContain("Lighthouse");
+  });
+});
+
+describe("benchmarkIndex and the method, read off the report (#216)", () => {
+  it("keeps each run's environment.benchmarkIndex and the method Lighthouse reports", () => {
+    const r = readReport(throttledReport("devtools", 1234.5));
+    expect(r.benchmarkIndex).toBe(1234.5);
+    expect(r.throttlingMethod).toBe("devtools");
+  });
+
+  it("reads null, not zero, from a report that carries neither", () => {
+    const r = readReport(lhrFixture());
+    expect(r.benchmarkIndex).toBeNull();
+    expect(r.throttlingMethod).toBeNull();
+  });
+
+  it("puts the per-route median benchmarkIndex beside the scores, every run kept", () => {
+    const s = summarise("devtools", [1500, 980, 1210]);
+    expect(s.benchmarkIndex).toEqual({ median: 1210, values: [1500, 980, 1210] });
+    expect(s.throttlingMethod).toBe("devtools");
+    expect(s.performance.median).toBe(66);
+  });
+
+  it("records simulate for a simulate run", () => {
+    expect(summarise("simulate", [1400, 1400, 1400]).throttlingMethod).toBe("simulate");
+  });
+
+  it("refuses to fold runs taken with different methods into one median", () => {
+    expect(() =>
+      summariseRoute("/board", [
+        readReport(throttledReport("devtools", 1200)),
+        readReport(throttledReport("simulate", 1200)),
+      ]),
+    ).toThrow(/mixes throttling methods/);
+  });
+});
+
+describe("the benchmarkIndex band (#216)", () => {
+  const bandWarnings = (v: ReturnType<typeof verdict>) => v.warnings.filter((w) => /benchmarkIndex/.test(w));
+
+  it("is the band #216 AC 5 fixes", () => {
+    expect(BENCHMARK_BAND).toEqual({ min: 920, max: 1680 });
+  });
+
+  it("warns on a devtools run whose median is above the band, naming the band", () => {
+    const [w, ...rest] = bandWarnings(verdict([summarise("devtools", [2400, 2500, 2450])]));
+    expect(rest).toEqual([]);
+    expect(w).toMatch(/benchmarkIndex 2450 is outside 920–1680/);
+    expect(w).toMatch(/does not represent a mid-range phone/);
+  });
+
+  it("warns on a devtools run whose median is below the band", () => {
+    expect(bandWarnings(verdict([summarise("devtools", [900, 919, 700])]))[0]).toMatch(/benchmarkIndex 900 is outside/);
+  });
+
+  // Both edges are inside: the AC says "outside 920-1,680".
+  it("does not warn at either edge of the band or inside it", () => {
+    for (const idx of [920, 1300, 1680]) {
+      expect(bandWarnings(verdict([summarise("devtools", [idx, idx, idx])]))).toEqual([]);
+    }
+  });
+
+  // Only devtools is judged: under simulate the host's CPU does not set the reading the same way,
+  // and every pre-#216 summary would otherwise start warning.
+  it("does not judge a simulate run", () => {
+    expect(bandWarnings(verdict([summarise("simulate", [2400, 2500, 2450])]))).toEqual([]);
+  });
+
+  // `null < 920` is true in JavaScript, so a missing index would otherwise read as a slow host.
+  it("names a devtools run with no benchmarkIndex as unreadable rather than as slow", () => {
+    const [w] = bandWarnings(verdict([summarise("devtools", [null, null, null])]));
+    expect(w).toMatch(/carries no benchmarkIndex/);
+    expect(w).not.toMatch(/is outside/);
+  });
+
+  it("prints the warning and records it in summary.json", () => {
+    const s = summarise("devtools", [2400, 2500, 2450]);
+    const v = verdict([s]);
+    expect(formatReport([s], v)).toMatch(/WARNING .*benchmarkIndex 2450 is outside 920–1680/);
+    const doc = JSON.parse(
+      JSON.stringify(buildSummary({ takenAt: "t", target: {}, volume: VOLUME, summaries: [s], verdict: v })),
+    );
+    expect(doc.verdict.warnings.some((w: string) => /benchmarkIndex 2450 is outside 920–1680/.test(w))).toBe(true);
+    expect(doc.summaries[0].throttlingMethod).toBe("devtools");
+    expect(doc.summaries[0].benchmarkIndex.median).toBe(2450);
   });
 });

@@ -23,7 +23,7 @@ export default function ForgotPage() {
       </p>
       <ForgotForm />
       <p style={{ marginTop: "1rem" }}>
-        <Link href="/join">Back to sign in</Link>
+        <Link href="/join?mode=signin">Back to sign in</Link>
       </p>
     </main>
   );

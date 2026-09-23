@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { parseProfileForm, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * Save the signed-in person's profile. Two writes through the cookie-bound client, so the
@@ -28,7 +29,7 @@ export async function saveProfile(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   // Both lists are re-read here rather than trusted from the form: the page's copy is whatever
   // that render held, and the codes arrive from the client. An unknown code is refused against

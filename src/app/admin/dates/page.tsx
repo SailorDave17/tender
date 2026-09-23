@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { explainRefusal, formatStartsAt } from "@/dates/race-date";
 import { supabaseServer } from "@/lib/supabase/server";
 import { createRaceDate, setPublished } from "./actions";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function AdminDatesPage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
   const { data: me } = await client
     .from("person")
     .select("is_admin")

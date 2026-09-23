@@ -1,11 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { redirectFor } from "@/auth/gate";
+import { needsPersonRead, redirectFor, searchFor, standingFromRow, type Standing } from "@/auth/gate";
 import { env } from "@/lib/env";
 
+/** The header Next's router puts on a prefetch (next/dist/client/components/app-router-headers). */
+const NEXT_ROUTER_PREFETCH = "next-router-prefetch";
+
 /**
- * Runs before every non-asset request: refreshes the session cookie if it is due, and sends a
- * request with no signed-in person away from the gated paths (src/auth/gate.ts decides which).
+ * Runs before every non-asset request: refreshes the session cookie if it is due, sends a
+ * request with no signed-in person away from the gated paths, and since #219 sends a member who
+ * has not finished their profile to /welcome (src/auth/gate.ts decides which).
  *
  * Next 16 calls this `proxy`; the `middleware` convention is deprecated. getClaims() verifies
  * the JWT locally and refreshes it when expired, which is what keeps a session alive across
@@ -38,11 +42,32 @@ export async function proxy(request: NextRequest) {
   );
 
   const { data } = await supabase.auth.getClaims();
-  const target = redirectFor(request.nextUrl.pathname, Boolean(data?.claims));
+  const claims = data?.claims;
+  const pathname = request.nextUrl.pathname;
+
+  // #219: a signed-in member who has not finished their profile is sent to /welcome, which needs
+  // their own person row — one PostgREST read. Next's docs warn off database reads here because
+  // the proxy runs on every request, prefetches included, so the read is spent only where the
+  // answer depends on it (needsPersonRead: the gated prefixes, /welcome and /join) and never on a
+  // router prefetch, whose real navigation comes back through here and is gated then. Everywhere
+  // else a session reads as `finished`, which is exactly the old `signedIn = true`.
+  let standing: Standing = claims ? "finished" : "signed-out";
+  if (claims && needsPersonRead(pathname) && !request.headers.has(NEXT_ROUTER_PREFETCH)) {
+    const { data: row, error } = await supabase
+      .from("person")
+      .select("profile_completed_at")
+      .eq("id", claims.sub)
+      .maybeSingle();
+    standing = standingFromRow(row, error);
+  }
+
+  const target = redirectFor(pathname, standing);
   if (target) {
     const url = request.nextUrl.clone();
     url.pathname = target;
-    url.search = "";
+    // #234: the sign-in screen by its tab, and no other query. `target` is a pathname by contract,
+    // so the query is set here rather than carried in it; see SIGN_IN_URL for why.
+    url.search = searchFor(target);
     // 302, not Next's default 307: a plain "go and sign in" for a GET, and what AC 1 names.
     return NextResponse.redirect(url, 302);
   }

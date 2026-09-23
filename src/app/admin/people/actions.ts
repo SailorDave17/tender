@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { UUID } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 const PEOPLE = "/admin/people";
 
@@ -26,7 +27,7 @@ export async function suspendPerson(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const { error } = await client.from("suspension").insert({ person_id: id, suspended_by: user.id });
   // 23505 is a second tap on a person already suspended: the state asked for already holds.
@@ -42,7 +43,7 @@ export async function liftSuspension(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   // The count is read because an RLS-refused delete is not an error — it matches zero rows and
   // reports success. Zero here is either "already lifted" or "not the admin", and neither is a

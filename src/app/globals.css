@@ -523,6 +523,47 @@ button:disabled {
   color: var(--accent-ink);
 }
 
+/* "Already a member? Sign in" (#218): full width and a type step above the tabs, so a member who
+   landed on Sign up sees the way out before any field. Accent text and border on the surface, both
+   listed pairs; outlined rather than filled so it reads as a way elsewhere, not this form's action. */
+[data-stack] > button[data-already-member] {
+  justify-self: stretch;
+}
+button[data-already-member] {
+  min-height: 3rem;
+  padding: var(--space-2) var(--space-3);
+  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: var(--text-lg);
+}
+
+/* the invite code panel (#220): the one thing the sign-up screen is about, before any other input.
+   Bordered in the accent and tinted --accent-soft, on which --ink and --ink-muted are both listed
+   pairs; the heading is the page's largest type and the input a step up from every other box. */
+[data-invite] {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+[data-invite] h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+}
+[data-invite] input {
+  font-size: var(--text-lg);
+  padding: var(--space-2) var(--space-3);
+}
+/* the 18+ line beside the create-account buttons: body ink, not a muted hint, so it is read */
+[data-attest] {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
 /* banners: the suspension and no-rating notes, the install offer */
 [data-banner] {
   padding: var(--space-3);

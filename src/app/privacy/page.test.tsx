@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ATTEMPT_WINDOW_MS } from "@/auth/attempt-limit";
 import PrivacyPage from "./page";
 
 /**
@@ -42,6 +43,17 @@ describe("/privacy (#147 AC 2)", () => {
 
   it("names the one thing a signed-out visitor does see: the admin's address on /support", () => {
     expect(section("who-sees")).toContain("The one exception is the club admin&#x27;s contact address");
+  });
+
+  it("names the guessing record, what is kept of it and for how long (#206, 0032)", () => {
+    // 0032 stores digests of the source address and the named email for one window. The page must
+    // say that a record exists, that it is not the address itself, and when it goes — the three
+    // things a later change to the window or the keys would make false.
+    const holds = section("holds");
+    expect(holds).toMatch(/data-claim="attempts"/);
+    expect(holds).toMatch(/cannot be turned back into either/);
+    // Derived, not restated: the page's number is a copy of the constant, so a new window reddens here.
+    expect(holds).toContain(`after ${ATTEMPT_WINDOW_MS / 60_000} minutes`);
   });
 
   it("says what deletion keeps, not only what it removes", () => {

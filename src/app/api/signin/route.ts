@@ -1,8 +1,13 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
-import { passwordSignIn } from "@/auth/password";
+import { clientAddress, withAttemptLimit } from "@/auth/attempt-limit";
+import { WRONG_CREDENTIALS, passwordSignIn, type PasswordSignInResult } from "@/auth/password";
 import { rememberDevice } from "@/auth/recognition";
+import { serviceAttemptStore } from "@/lib/auth/attempt-store";
 import { supabaseServer } from "@/lib/supabase/server";
+
+/** A wrong email-and-password's answer, and so the attempt limit's (#206): the two cannot differ. */
+const WRONG = { status: 401, body: { message: WRONG_CREDENTIALS } } as const;
 
 /**
  * Sign in for a returning member (#82): email + password. `signInWithPassword` returns a session
@@ -22,7 +27,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const client = await supabaseServer();
 
-  const result = await passwordSignIn(
+  const attempt = () => passwordSignIn(
     { email: String(body.email ?? ""), password: String(body.password ?? "") },
     {
       authenticate: async (email, password) => {
@@ -39,6 +44,19 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+
+  // #206: every failed sign-in is one 401 with one sentence, so that answer is the failure the
+  // limit counts — per source address, shared with both invite gates, and per email address — and
+  // the answer a caller at either limit gets without GoTrue being asked at all.
+  const result = await withAttemptLimit<PasswordSignInResult>({
+    gate: "signin",
+    ip: clientAddress(request.headers),
+    email: String(body.email ?? ""),
+    store: serviceAttemptStore(),
+    refusal: WRONG,
+    isFailure: (r) => r.status === WRONG.status,
+    attempt,
+  });
 
   // #123: this device has now signed in, so /join opens on Sign in next time. Through the cookie
   // STORE — `signInWithPassword` above wrote the session cookies through `cookies()`, and Next

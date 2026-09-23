@@ -10,12 +10,11 @@
  * filesystem, which are the four things a test cannot supply. Same split as `check-live.mjs` and
  * `verify-migrations.mjs`.
  *
- * THIS RUNS AGAINST A LOCAL STACK, NEVER THE LIVE PROJECT, AND THAT IS ENFORCED RATHER THAN
+ * A SEEDED RUN IS AGAINST A LOCAL STACK, NEVER THE LIVE PROJECT, AND THAT IS ENFORCED RATHER THAN
  * INTENDED. It seeds 80 people, 45 race dates and 50 posts — writes that would be vandalism
- * against production — so `refuseNonLocalStack()` refuses any Supabase URL that is not loopback,
- * before a single row is written. The live project is reached by `check:live` and
- * `verify:migrations`, both of which are read-only by construction; this command is the opposite
- * shape and says so out loud.
+ * against production — so `runTarget()` refuses any Supabase URL that is not loopback before a
+ * single row is written. Only `--no-seed`, which writes nothing, may name the live project (see
+ * *Against a deployment* below).
  *
  * THE TRAP THIS COMMAND IS MOSTLY BUILT AROUND
  *
@@ -30,6 +29,28 @@
  * Both guards, and the choice of WHICH person signs in and WHICH post is opened, live in the core
  * so they can be proven able to refuse without a stack — see `measuredViewer` there, and the
  * measurement defect that made choosing it deliberately necessary.
+ *
+ * AGAINST A DEPLOYMENT (#185)
+ *
+ * ADR 002's condition is about a mid-range Android on a real network, which a local serve cannot
+ * price for this page shape. Two more shapes of run reach a deployed build without weakening the
+ * refusal above:
+ *
+ * - **A seeded preview.** Seed the local stack as usual, expose it through a tunnel, deploy a
+ *   preview whose NEXT_PUBLIC_SUPABASE_URL is the tunnel, and pass that URL as
+ *   `--served-supabase-url`. `@supabase/ssr` names its cookie after the Supabase host
+ *   (`sb-<first label>-auth-token`), so a cookie minted for 127.0.0.1 means nothing to a build
+ *   talking to the tunnel; the token still comes from `--stack`, which stays loopback. Previews sit
+ *   behind Vercel's sign-in, so `VERCEL_AUTOMATION_BYPASS_SECRET` in the environment adds the
+ *   bypass header (see `requestHeaders`).
+ * - **The live project, read-only.** `--no-seed` writes nothing, so it may name any Supabase and a
+ *   real viewer (`--viewer`, with `PERF_VIEWER_PASSWORD` in the environment) and routes
+ *   (`--route`, repeatable). Such a reading claims no volume (see `runTarget`).
+ *
+ * `--throttling-method devtools` (#216) throttles the real network and CPU instead of simulating
+ * them, which is the only way hydration cost shows up at all. Each route's summary records the
+ * method Lighthouse reports having used, plus the host's `benchmarkIndex`. See `THROTTLING_METHODS`
+ * and `BENCHMARK_BAND` in the core for why a devtools reading without that index cannot be read.
  */
 
 import { spawnSync } from "node:child_process";
@@ -40,48 +61,23 @@ import { createServerClient } from "@supabase/ssr";
 
 import {
   FLOORS,
-  VOLUME,
   adminEmailFor,
+  buildSummary,
   fixturePlan,
   fixtureSql,
   formatReport,
-  measuredRoutes,
+  lighthouseArgs,
   measuredViewer,
+  parseArgs,
   readReport,
-  refuseNonLocalStack,
   refuseWrongPage,
+  requestHeaders,
+  runTarget,
   summariseRoute,
   verdict,
 } from "./lighthouse-floor-core.mjs";
 
 const FIXTURE_PASSWORD = "fixture-floor-44-pass";
-
-function parseArgs(argv) {
-  const args = {
-    stack: "http://127.0.0.1:54321",
-    baseUrl: "http://localhost:3100",
-    dbContainer: null,
-    runs: 3,
-    out: "lighthouse",
-    seed: true,
-  };
-  for (let i = 0; i < argv.length; i += 1) {
-    const [flag, inline] = argv[i].split(/=(.*)/s);
-    const value = () => inline ?? argv[++i];
-    if (flag === "--stack") args.stack = value();
-    else if (flag === "--base-url") args.baseUrl = value();
-    else if (flag === "--db-container") args.dbContainer = value();
-    else if (flag === "--runs") args.runs = Number(value());
-    else if (flag === "--out") args.out = value();
-    else if (flag === "--no-seed") args.seed = false;
-    // An unknown flag is refused rather than ignored, as `migrate-live.mjs` refuses one: a
-    // silently dropped flag here is a run measuring something other than what was asked for.
-    else if (flag.startsWith("--")) throw new Error(`unknown flag ${flag}`);
-  }
-  if (!args.dbContainer && args.seed) throw new Error("--db-container is required to seed (e.g. supabase_db_stack)");
-  if (!Number.isInteger(args.runs) || args.runs < 1) throw new Error("--runs must be a positive integer");
-  return args;
-}
 
 async function mintPeople(stack, serviceKey, people) {
   let created = 0;
@@ -123,17 +119,20 @@ function psql(container, sql) {
  * format that the app's own dependency already implements — and that is the one thing that must
  * not drift, because the proxy reads these cookies with that same library.
  */
-async function sessionCookieHeader(stack, anonKey, email) {
+async function sessionCookieHeader(stack, anonKey, email, password, servedSupabaseUrl = stack) {
   const r = await fetch(`${stack}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: anonKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: FIXTURE_PASSWORD }),
+    body: JSON.stringify({ email, password }),
   });
   const token = await r.json();
-  if (!token.access_token) throw new Error(`password grant for ${email} failed: ${r.status} ${JSON.stringify(token)}`);
+  // The grant's own error body is printed, never the request: the request carries the password.
+  if (!token.access_token) throw new Error(`password grant failed: ${r.status} ${JSON.stringify(token)}`);
 
+  // Named for the URL the MEASURED BUILD talks to, which differs from `stack` exactly when that
+  // build reaches this stack through a tunnel — see the file header.
   const jar = new Map();
-  const client = createServerClient(stack, anonKey, {
+  const client = createServerClient(servedSupabaseUrl, anonKey, {
     cookies: {
       getAll: () => [...jar.entries()].map(([name, value]) => ({ name, value })),
       setAll: (list) => {
@@ -156,33 +155,22 @@ async function sessionCookieHeader(stack, anonKey, email) {
  * build-time-env trap, and catching it costs one request instead of a whole run plus a plausible
  * number.
  */
-async function assertSignedIn(baseUrl, route, cookie) {
-  const r = await fetch(new URL(route, baseUrl), { headers: { cookie }, redirect: "manual" });
+async function assertSignedIn(baseUrl, route, headers) {
+  const r = await fetch(new URL(route, baseUrl), { headers, redirect: "manual" });
   if (r.status === 200) return;
   const where = r.headers.get("location");
   throw new Error(
     `${route} answered ${r.status}${where ? ` -> ${where}` : ""} for a signed-in cookie.\n` +
       "  The usual cause is that `next build` ran without NEXT_PUBLIC_SUPABASE_URL/ANON_KEY set to\n" +
       "  this stack: they are inlined into the Edge proxy at BUILD time, so the built proxy is\n" +
-      "  talking to a different project and this session means nothing to it (README, Working on it).",
+      "  talking to a different project and this session means nothing to it (README, Working on it).\n" +
+      "  Against a preview, a 302 to vercel.com/sso-api means VERCEL_AUTOMATION_BYPASS_SECRET is unset\n" +
+      "  or wrong; a 302 to /join means --served-supabase-url does not match the preview's own.",
   );
 }
 
-function runLighthouse({ url, headersFile, outPath, chromePath }) {
-  const args = [
-    "--yes",
-    "lighthouse@12",
-    JSON.stringify(url),
-    "--form-factor=mobile",
-    "--screenEmulation.mobile",
-    "--throttling-method=simulate",
-    "--only-categories=performance,accessibility",
-    `--extra-headers=${JSON.stringify(headersFile)}`,
-    "--output=json",
-    `--output-path=${JSON.stringify(outPath)}`,
-    '--chrome-flags="--headless=new"',
-    "--quiet",
-  ];
+function runLighthouse({ url, headersFile, outPath, chromePath, throttlingMethod }) {
+  const args = lighthouseArgs({ url, headersFile, outPath, throttlingMethod });
   // A report left by an EARLIER invocation at this same path would otherwise be read as this
   // run's when lighthouse writes nothing at all (cairn: an-absent-result-reads-as-a-clean-one).
   // The path is deterministic per route and run, so deleting first is what makes the read honest.
@@ -209,18 +197,21 @@ function runLighthouse({ url, headersFile, outPath, chromePath }) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const nonLocal = refuseNonLocalStack(args.stack);
-  if (nonLocal) throw new Error(nonLocal);
+  const plan = fixturePlan();
+  // Refuses a seeded run against anything but loopback, before a key is even read.
+  const target = runTarget({ seed: args.seed, stack: args.stack, viewerEmail: args.viewer, routes: args.routes, plan });
 
   const keys = {
     anon: process.env.STACK_ANON_KEY,
     service: process.env.STACK_SERVICE_ROLE_KEY,
   };
-  if (!keys.anon || !keys.service) {
-    throw new Error("set STACK_ANON_KEY and STACK_SERVICE_ROLE_KEY from the stack's own `supabase start` output");
+  if (!keys.anon) throw new Error("set STACK_ANON_KEY — the anon key of the Supabase at --stack");
+  if (args.seed && !keys.service) {
+    throw new Error("set STACK_SERVICE_ROLE_KEY from the stack's own `supabase start` output — seeding needs it");
   }
+  const password = target.fixtureViewer ? FIXTURE_PASSWORD : process.env.PERF_VIEWER_PASSWORD;
+  if (!password) throw new Error("--viewer needs PERF_VIEWER_PASSWORD in the environment");
 
-  const plan = fixturePlan();
   const outDir = resolve(args.out);
   mkdirSync(outDir, { recursive: true });
 
@@ -240,19 +231,30 @@ async function main() {
   }
 
   process.stderr.write("Minting a signed-in session cookie...\n");
-  const viewer = measuredViewer(plan);
-  process.stderr.write(`  signing in as ${viewer.email} (rated ${viewer.rating}, not the club admin, owns an open post)
-`);
-  const cookie = await sessionCookieHeader(args.stack, keys.anon, viewer.email);
+  if (target.fixtureViewer) {
+    const viewer = measuredViewer(plan);
+    process.stderr.write(`  signing in as ${viewer.email} (rated ${viewer.rating}, not the club admin, owns an open post)\n`);
+  } else {
+    // A named viewer is a real account; its address is not printed, since run logs get pasted.
+    process.stderr.write("  signing in as the viewer named by --viewer\n");
+  }
+  const cookie = await sessionCookieHeader(
+    args.stack,
+    keys.anon,
+    target.email,
+    password,
+    args.servedSupabaseUrl ?? args.stack,
+  );
+  const headers = requestHeaders({ cookie, bypassSecret: process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? null });
   const headersFile = join(outDir, "extra-headers.json");
-  writeFileSync(headersFile, JSON.stringify({ Cookie: cookie }, null, 2));
+  writeFileSync(headersFile, JSON.stringify(headers, null, 2));
 
   // Both routes, with the post resolved to the arm the viewer was chosen for — the OPEN post
   // they own, which renders the full candidate list. `measuredViewer` in the core carries why,
   // and why a MATCHED post is the light arm rather than the heavy one it was first taken for.
-  const routes = measuredRoutes(plan);
-  for (const route of routes) await assertSignedIn(args.baseUrl, route, cookie);
-  process.stderr.write(`  both routes answer 200 for this session\n`);
+  const { routes } = target;
+  for (const route of routes) await assertSignedIn(args.baseUrl, route, headers);
+  process.stderr.write(`  ${routes.length} route(s) answer 200 for this session\n`);
 
   const chromePath = process.env.CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
   const summaries = [];
@@ -262,8 +264,8 @@ async function main() {
     for (let run = 1; run <= args.runs; run += 1) {
       const url = new URL(route, args.baseUrl).toString();
       const outPath = join(outDir, `${route.replaceAll("/", "_").replace(/^_/, "")}-run${run}.json`);
-      process.stderr.write(`Lighthouse ${route} run ${run}/${args.runs}...\n`);
-      const lhr = runLighthouse({ url, headersFile, outPath, chromePath });
+      process.stderr.write(`Lighthouse ${route} run ${run}/${args.runs} (${args.throttlingMethod})...\n`);
+      const lhr = runLighthouse({ url, headersFile, outPath, chromePath, throttlingMethod: args.throttlingMethod });
       const wrongPage = refuseWrongPage(url, lhr);
       if (wrongPage) throw new Error(wrongPage);
       reports.push(readReport(lhr));
@@ -276,7 +278,18 @@ async function main() {
   const summaryPath = join(outDir, "summary.json");
   writeFileSync(
     summaryPath,
-    JSON.stringify({ takenAt: new Date().toISOString(), volume: VOLUME, floors: FLOORS, summaries, verdict: v }, null, 2),
+    JSON.stringify(
+      buildSummary({
+        takenAt: new Date().toISOString(),
+        // Where it was measured. No viewer address and no secret: this file gets committed.
+        target: { baseUrl: args.baseUrl, seeded: args.seed, servedSupabaseUrl: args.servedSupabaseUrl ?? args.stack },
+        volume: target.volume,
+        summaries,
+        verdict: v,
+      }),
+      null,
+      2,
+    ),
   );
 
   process.stdout.write(`\n${formatReport(summaries, v, FLOORS)}\n\n`);

@@ -12,6 +12,7 @@ import { UUID, explainPostRefusal } from "@/post/post-form";
 import { ratingLabel, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
 import { acceptAnswer, answerPost, closePost, setMatchStatus } from "../actions";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export default async function PostPage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   const data = await loadBoardData(client);
   // 0024's list, for the candidate rows' competence text. Read here rather than in loadBoardData

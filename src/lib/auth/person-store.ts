@@ -26,6 +26,9 @@ export function adminPersonStore(admin: SupabaseClient): PersonStore {
         id: row.id,
         display_name: row.display_name,
         adult_attested_at: row.adult_attested_at,
+        // #220: written as an explicit NULL, or 0031's `default now()` marks the member finished
+        // and they never see /welcome. The same line is in /api/join's inline copy.
+        profile_completed_at: row.profile_completed_at,
       });
       if (p.error) return { error: p.error.message };
       const c = await admin.from("person_contact").insert({ person_id: row.id, email: row.email });

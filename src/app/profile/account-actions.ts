@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { confirmed, deleteAccount } from "@/profile/delete-account";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * Delete the signed-in person's own account (story #42 AC 2).
@@ -32,7 +33,7 @@ export async function deleteMyAccount(formData: FormData): Promise<void> {
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
   if (!confirmed(formData.get("confirm"))) redirect("/profile?error=delete-unconfirmed");
 
   const result = await deleteAccount({

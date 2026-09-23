@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
+import { clientAddress, withAttemptLimit } from "@/auth/attempt-limit";
 import { findAuthUser } from "@/auth/find-user";
-import { join } from "@/auth/join";
+import { WRONG_CODE, join, type JoinResult } from "@/auth/join";
 import { rememberDevice } from "@/auth/recognition";
+import { adminAttemptStore } from "@/lib/auth/attempt-store";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -22,16 +24,23 @@ import { supabaseServer } from "@/lib/supabase/server";
  * The person store is byte-for-byte the callback's, deliberately: two writers of `person` would be
  * two chances to disagree about what a row is. Whether to stamp an existing user is not decided
  * here either — join() decides, this supplies the effect (#85 AC 4).
+ *
+ * Since #220 the form sends no name: the row is minted with a provisional `display_name` and
+ * `profile_completed_at` NULL, and the member is sent to /welcome to say who they are. A posted
+ * `displayName` is ignored rather than refused.
+ *
+ * Since #206 the whole gate runs inside the attempt limit: a wrong code counts against this
+ * source address and this email address, and a caller at either limit gets WRONG_CODE without the
+ * gate running at all.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const admin = supabaseAdmin();
   const client = await supabaseServer();
 
-  const result = await join(
+  const attempt = () => join(
     {
       email: String(body.email ?? ""),
-      displayName: String(body.displayName ?? ""),
       code: String(body.code ?? ""),
       attested: body.attested === true,
       password: String(body.password ?? ""),
@@ -77,6 +86,9 @@ export async function POST(request: NextRequest) {
             id: row.id,
             display_name: row.display_name,
             adult_attested_at: row.adult_attested_at,
+            // #220: written as an explicit NULL, or 0031's `default now()` marks the member
+            // finished and they never see /welcome. The same line is in person-store.ts.
+            profile_completed_at: row.profile_completed_at,
           });
           if (p.error) return { error: p.error.message };
           const c = await admin.from("person_contact").insert({ person_id: row.id, email: row.email });
@@ -97,6 +109,16 @@ export async function POST(request: NextRequest) {
       },
     },
   );
+
+  const result = await withAttemptLimit<JoinResult>({
+    gate: "join",
+    ip: clientAddress(request.headers),
+    email: String(body.email ?? ""),
+    store: adminAttemptStore(admin),
+    refusal: WRONG_CODE,
+    isFailure: (r) => r.status === WRONG_CODE.status,
+    attempt,
+  });
 
   // #123: a sign-up that finished here IS a sign-in on this device — `join()` ends by calling
   // `signInWithPassword` through the cookie-bound client — so the next visit to /join opens on

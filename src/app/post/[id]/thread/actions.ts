@@ -6,6 +6,7 @@ import { notifyMessageLive } from "@/notify/live";
 import { UUID } from "@/post/post-form";
 import { sendMessageRefusal } from "@/post/thread-view";
 import { supabaseServer } from "@/lib/supabase/server";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
  * Send a message in a match's thread (story #35 AC 2). One write, through the caller's own
@@ -51,7 +52,7 @@ export async function sendMessage(postId: string, _prev: SendState, formData: Fo
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
 
   // The match and its race date, read as the caller: 0008's policy hands a party the match on a
   // post they can see, so a non-party gets nothing here and is refused before the insert. The

@@ -71,6 +71,11 @@ describe("the Forgot screen keeps one arm and it is the reset (#99 AC 7)", () =>
     expect(html).toMatch(/never had one|no password|first/i);
     expect(html).toMatch(/set (a )?new password|set your first/i);
   });
+
+  it("'Back to sign in' opens the Sign in tab by name (#218)", () => {
+    // Somebody on /forgot has an account by definition; plain /join would put a new device on Sign up.
+    expect(forgot()).toMatch(/<a href="\/join\?mode=signin">Back to sign in<\/a>/);
+  });
 });
 
 describe("the Sign up tab finishes here, not in an inbox (#99 AC 7)", () => {

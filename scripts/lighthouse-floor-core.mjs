@@ -36,6 +36,102 @@
 export const FLOORS = { performance: 80, accessibility: 90, cls: 0.1 };
 
 /**
+ * The two ways Lighthouse can throttle, and the first is the default because every reading before
+ * #216 was taken with it. Story #216.
+ *
+ * They agree on a score and disagree on its cost. `simulate` records an unthrottled trace and
+ * replays it under a slow-4G model, so it prices BYTES and barely models the main thread;
+ * `devtools` really throttles the network and slows the CPU 4×, so hydration shows up as blocking
+ * time. On #44's board the two read 70 and 66 with LCP 5.1 s against 3.0 s and TBT 0.31 s against
+ * 1.08 s. A lever that `simulate` prices at nothing can be worth points under `devtools`, which is
+ * why a reading here always records which of the two it was.
+ */
+export const THROTTLING_METHODS = ["simulate", "devtools"];
+
+/**
+ * The host speed `devtools` throttling is calibrated for. Lighthouse's 4× CPU slowdown turns a
+ * mid-range desktop into roughly a mid-range phone, and `environment.benchmarkIndex` is how fast
+ * this host actually was. Outside this band the multiplier over- or under-throttles, and the TBT
+ * column describes some other phone. The band is the one the forge session that read 66 measured
+ * on this machine (920–1,680; a running Docker stack moves it), as #216 AC 5 fixes it.
+ */
+export const BENCHMARK_BAND = { min: 920, max: 1680 };
+
+/**
+ * The command line, parsed before anything touches Docker, GoTrue or Chrome. `main()` calls this
+ * first, so a refusal here is a refusal before any stack is read, any row is seeded and any browser
+ * is launched. That ordering is the reason it lives in the core, where a test can call it.
+ */
+export function parseArgs(argv) {
+  const args = {
+    stack: "http://127.0.0.1:54321",
+    baseUrl: "http://localhost:3100",
+    dbContainer: null,
+    runs: 3,
+    out: "lighthouse",
+    seed: true,
+    servedSupabaseUrl: null,
+    viewer: null,
+    routes: [],
+    throttlingMethod: "simulate",
+  };
+  for (let i = 0; i < argv.length; i += 1) {
+    const [flag, inline] = argv[i].split(/=(.*)/s);
+    const value = () => inline ?? argv[++i];
+    if (flag === "--stack") args.stack = value();
+    else if (flag === "--served-supabase-url") args.servedSupabaseUrl = value();
+    else if (flag === "--viewer") args.viewer = value();
+    else if (flag === "--route") args.routes.push(value());
+    else if (flag === "--base-url") args.baseUrl = value();
+    else if (flag === "--db-container") args.dbContainer = value();
+    else if (flag === "--runs") args.runs = Number(value());
+    else if (flag === "--out") args.out = value();
+    else if (flag === "--no-seed") args.seed = false;
+    else if (flag === "--throttling-method") {
+      // Refused rather than passed through: Lighthouse would reject an unknown method itself, but
+      // only after the stack had been seeded and Chrome launched, and a typo that it ACCEPTED
+      // (`provided`, which throttles nothing) would record an unthrottled run as a reading.
+      const method = value();
+      if (!THROTTLING_METHODS.includes(method)) {
+        throw new Error(`--throttling-method must be one of ${THROTTLING_METHODS.join(", ")}, not ${JSON.stringify(method)}`);
+      }
+      args.throttlingMethod = method;
+    }
+    // An unknown flag is refused rather than ignored, as `migrate-live.mjs` refuses one: a
+    // silently dropped flag here is a run measuring something other than what was asked for.
+    else if (flag.startsWith("--")) throw new Error(`unknown flag ${flag}`);
+  }
+  if (!args.dbContainer && args.seed) throw new Error("--db-container is required to seed (e.g. supabase_db_stack)");
+  if (!Number.isInteger(args.runs) || args.runs < 1) throw new Error("--runs must be a positive integer");
+  return args;
+}
+
+/**
+ * The arguments `npx` is handed for one Lighthouse run. Pure, so the throttling method a run asked
+ * for can be seen reaching Lighthouse without launching it. The runner spawns with `shell: true`,
+ * which is why the URL and paths are quoted here.
+ */
+export function lighthouseArgs({ url, headersFile, outPath, throttlingMethod = "simulate" }) {
+  if (!THROTTLING_METHODS.includes(throttlingMethod)) {
+    throw new Error(`unknown throttling method ${JSON.stringify(throttlingMethod)}`);
+  }
+  return [
+    "--yes",
+    "lighthouse@12",
+    JSON.stringify(url),
+    "--form-factor=mobile",
+    "--screenEmulation.mobile",
+    `--throttling-method=${throttlingMethod}`,
+    "--only-categories=performance,accessibility",
+    `--extra-headers=${JSON.stringify(headersFile)}`,
+    "--output=json",
+    `--output-path=${JSON.stringify(outPath)}`,
+    '--chrome-flags="--headless=new"',
+    "--quiet",
+  ];
+}
+
+/**
  * The fixture's volume, from #44 AC 1. `matchedPosts` is 30 and `openPosts` is 20 because
  * `match.post_id` is UNIQUE in 0008 — one match per post — so the AC's "20 posts and 30 matches"
  * cannot mean 20 posts in total. 50 posts, 30 of them crewed, is the only reading that satisfies
@@ -252,6 +348,64 @@ export function refuseNonLocalStack(url) {
 }
 
 /**
+ * Who signs in, which routes are measured, and what volume the reading may claim — decided once,
+ * here, for both shapes of run. Story #185.
+ *
+ * A SEEDED run measures the fixture and nothing else: the viewer and the routes are the ones
+ * `measuredViewer` chose, and naming another viewer or route is refused rather than honoured,
+ * because a seeded run's whole value is that its number is comparable with every other seeded
+ * run's. Letting a flag swap the viewer would reintroduce, by argument, the lighter-page defect
+ * `measuredViewer` exists to prevent.
+ *
+ * An UNSEEDED run writes nothing, so it may point at any Supabase — the live project included,
+ * which is how ADR 002's condition gets re-read once the club's real board has grown. There the
+ * viewer and routes may be named, and when either is, the reading claims NO volume: the script
+ * cannot know what a real board carries, so `volume` is null and the doc has to state it beside
+ * the number. Only an unseeded run over the fixture's own viewer and routes inherits `VOLUME`.
+ *
+ * @param {{ seed: boolean, stack: string, viewerEmail?: string | null, routes?: string[],
+ *           plan: ReturnType<typeof fixturePlan> }} options
+ */
+export function runTarget({ seed, stack, viewerEmail = null, routes = [], plan }) {
+  if (seed) {
+    const refusal = refuseNonLocalStack(stack);
+    if (refusal) throw new Error(refusal);
+    if (viewerEmail || routes.length) {
+      throw new Error("a seeded run measures the fixture's chosen viewer and routes — pass --no-seed to name your own");
+    }
+    return { email: measuredViewer(plan).email, routes: measuredRoutes(plan), volume: VOLUME, fixtureViewer: true };
+  }
+  for (const r of routes) {
+    if (!r.startsWith("/")) throw new Error(`a route is a path, not ${JSON.stringify(r)}`);
+  }
+  const named = Boolean(viewerEmail) || routes.length > 0;
+  return {
+    email: viewerEmail ?? measuredViewer(plan).email,
+    routes: routes.length ? routes : measuredRoutes(plan),
+    volume: named ? null : VOLUME,
+    fixtureViewer: !viewerEmail,
+  };
+}
+
+/**
+ * The headers every request of the run carries: the session cookie, and — only when the secret is
+ * set — Vercel's protection-bypass header, without which a PREVIEW deployment answers every
+ * request with a 302 to Vercel's own sign-in (measured on #185: `ssoProtection` is
+ * `all_except_custom_domains`, so production's custom domain is open and every preview is not).
+ * That 302 is `/join`'s trap in a second dress — a page nobody asked for — so `refuseWrongPage`
+ * would catch it; the header is what makes the preview measurable at all.
+ *
+ * The secret comes from the environment and never from a flag, so it does not land in shell
+ * history or in the committed summary.
+ *
+ * @param {{ cookie: string, bypassSecret?: string | null }} options
+ */
+export function requestHeaders({ cookie, bypassSecret = null }) {
+  if (!cookie) throw new Error("no session cookie — the run would measure a signed-out redirect");
+  return bypassSecret ? { Cookie: cookie, "x-vercel-protection-bypass": bypassSecret } : { Cookie: cookie };
+}
+
+/**
  * Did Lighthouse measure the page that was asked for? Returns a refusal message or null.
  *
  * This is the guard that makes every other number in the report worth reading. If the build was
@@ -284,11 +438,17 @@ const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
  * Every insert is `on conflict do nothing` so a re-seed over a live stack is a no-op rather than a
  * failure, and the runner can be run twice without a reset.
  */
+/**
+ * The club row's invite code on a seeded stack. Exported because the smoke signs a newcomer up
+ * with it through the real form (#220), so the literal has one home.
+ */
+export const FIXTURE_INVITE_CODE = "FIXTURE";
+
 export function fixtureSql(plan, { clubName = "Fixture Sailing Club", adminEmail = null } = {}) {
   const lines = ["begin;"];
 
   lines.push(
-    `insert into public.club (id, name, brand_disc, brand_mark, invite_code, admin_email) values (${fixtureId("club", 0) && q(fixtureId("club", 0))}, ${q(clubName)}, '#1f3b2c', '#edf0ea', 'FIXTURE', ${adminEmail ? q(adminEmail) : "null"}) on conflict (id) do nothing;`,
+    `insert into public.club (id, name, brand_disc, brand_mark, invite_code, admin_email) values (${fixtureId("club", 0) && q(fixtureId("club", 0))}, ${q(clubName)}, '#1f3b2c', '#edf0ea', ${q(FIXTURE_INVITE_CODE)}, ${adminEmail ? q(adminEmail) : "null"}) on conflict (id) do nothing;`,
   );
 
   for (const p of plan.people) {
@@ -357,6 +517,10 @@ export function readReport(lhr) {
     requests: lhr?.audits?.["network-requests"]?.details?.items?.length ?? null,
     /** Every shifting element Lighthouse attributed, so a CLS figure can be argued about later. */
     shifts: (lhr?.audits?.["layout-shifts"]?.details?.items ?? []).length,
+    /** What Lighthouse says it did, read off the report rather than off the flag that asked for it. */
+    throttlingMethod: lhr?.configSettings?.throttlingMethod ?? null,
+    /** How fast this host was. A `devtools` number without it cannot be read — see BENCHMARK_BAND. */
+    benchmarkIndex: lhr?.environment?.benchmarkIndex ?? null,
   };
 }
 
@@ -377,9 +541,15 @@ export function median(values) {
 export function summariseRoute(route, reports) {
   if (!reports.length) throw new Error(`route ${route} has no reports`);
   const pick = (k) => reports.map((r) => r[k]);
+  // One route is read with one instrument. A median across the two methods would be a number
+  // neither of them produced.
+  const methods = [...new Set(pick("throttlingMethod"))];
+  if (methods.length > 1) throw new Error(`route ${route} mixes throttling methods: ${methods.join(", ")}`);
   return {
     route,
     runs: reports.length,
+    throttlingMethod: methods[0],
+    benchmarkIndex: { median: median(pick("benchmarkIndex")), values: pick("benchmarkIndex") },
     performance: { median: median(pick("performance")), values: pick("performance") },
     accessibility: { median: median(pick("accessibility")), values: pick("accessibility") },
     cls: { median: median(pick("cls")), values: pick("cls") },
@@ -421,15 +591,42 @@ export function verdict(summaries, floors = FLOORS) {
         warnings.push(`${s.route}: ${metric} runs straddle the floor of ${floor} — ${vs.join(" / ")}`);
       }
     }
+    // A warning, not a failure: the reading is real, it just describes a different phone. Only
+    // `devtools` is judged, because only there does the host's own CPU speed set the result. A
+    // missing index is named separately, since `null < 920` is true and would otherwise be
+    // reported as a slow host.
+    if (s.throttlingMethod === "devtools") {
+      const band = `${BENCHMARK_BAND.min}–${BENCHMARK_BAND.max}`;
+      const idx = s.benchmarkIndex?.median;
+      if (typeof idx !== "number") {
+        warnings.push(`${s.route}: devtools run carries no benchmarkIndex, so it cannot be read as a mid-range phone (band ${band})`);
+      } else if (idx < BENCHMARK_BAND.min || idx > BENCHMARK_BAND.max) {
+        warnings.push(
+          `${s.route}: benchmarkIndex ${Math.round(idx)} is outside ${band}, so this devtools reading does not represent a mid-range phone`,
+        );
+      }
+    }
   }
   return { pass: failures.length === 0, failures, warnings };
+}
+
+/**
+ * What `summary.json` holds, which is the file that gets committed. It carries no viewer address
+ * and no secret. The verdict goes in whole, so every warning the run printed (a straddle, a host
+ * outside BENCHMARK_BAND) is on the record beside the numbers it qualifies.
+ */
+export function buildSummary({ takenAt, target, volume, summaries, verdict: v, floors = FLOORS }) {
+  // `volume` is null when the run named its own viewer or routes; the doc states it by hand then.
+  return { takenAt, target, volume, floors, summaries, verdict: v };
 }
 
 /** The run as a person reads it. Kept here so the runner holds no formatting worth testing. */
 export function formatReport(summaries, v, floors = FLOORS) {
   const out = [];
   for (const s of summaries) {
-    out.push(`${s.route}  (${s.runs} run${s.runs === 1 ? "" : "s"}, Lighthouse ${s.lighthouseVersion})`);
+    out.push(
+      `${s.route}  (${s.runs} run${s.runs === 1 ? "" : "s"}, Lighthouse ${s.lighthouseVersion}, ${s.throttlingMethod ?? "unknown"} throttling)`,
+    );
     out.push(
       `  performance   ${String(s.performance.median).padStart(3)}  [${s.performance.values.join(" ")}]  floor ${floors.performance}`,
     );
@@ -442,6 +639,7 @@ export function formatReport(summaries, v, floors = FLOORS) {
     out.push(
       `  LCP ${Math.round(s.lcp.median ?? 0)} ms · TBT ${Math.round(s.tbt.median ?? 0)} ms · TTFB ${Math.round(s.ttfb.median ?? 0)} ms · ${s.requests} requests`,
     );
+    out.push(`  benchmarkIndex ${s.benchmarkIndex?.median ?? "n/a"}  [${(s.benchmarkIndex?.values ?? []).join(" ")}]`);
   }
   for (const w of v.warnings) out.push(`WARNING  ${w}`);
   for (const f of v.failures) out.push(`FAIL     ${f}`);

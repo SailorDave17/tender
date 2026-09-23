@@ -176,7 +176,9 @@ export function inviteEmail(to: string, code: string, siteUrl: string): Message 
       `You've been invited to Tender, where Mad Cow skippers post the boats that need crew and`,
       `crew say which days they can sail.`,
       ``,
-      `Join here: ${siteUrl}/join`,
+      // #218: the sign-up tab by name. Plain /join opens on Sign in for a device that has signed in
+      // here before (#123), which is not where someone holding a fresh invite code needs to be.
+      `Join here: ${siteUrl}/join?mode=signup`,
       `Your invite code: ${code}`,
       ``,
       `Once you're in, add Tender to your home screen so a skipper's post can reach your phone:`,

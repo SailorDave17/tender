@@ -3,6 +3,7 @@ import { suspendedSince } from "@/moderation/suspension";
 import { installSummary, type InstallRow } from "@/push/install";
 import { supabaseServer } from "@/lib/supabase/server";
 import { liftSuspension, suspendPerson } from "./actions";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export default async function AdminPeoplePage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
   const { data: me } = await client.from("person").select("is_admin").eq("id", user.id).maybeSingle();
   if (!me?.is_admin) notFound();
 

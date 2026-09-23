@@ -44,7 +44,7 @@ npm run check:live # read-only probe of the live Supabase project; needs .env.lo
 npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- --dry-run rehearses
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
-npm run perf:floor -- --db-container supabase_db_<dir>  # ADR 002's kill condition, re-measured
+npm run perf:floor -- --db-container supabase_db_<dir>  # Lighthouse on /board and /post, at a fixture volume
 npm run smoke -- --db-container supabase_db_<dir>       # the core path in a real browser (CI runs it on every PR)
 ```
 
@@ -238,19 +238,23 @@ footer would be indistinguishable from a page that has none.
 
 ## The performance floor
 
-**`npm run perf:floor` re-measures ADR 002's kill condition** with the instrument that ADR names —
-Lighthouse mobile, simulated throttling, against a production build served locally with a fixture
-of 80 people, 45 race dates and 50 posts, signed in through a real session cookie. Method, the
-current reading and the levers already priced are in
-[`docs/performance-floor.md`](docs/performance-floor.md); the short version is that `/board` reads
-**72** and `/post/[id]` reads **83** against a floor of 80, so the condition's *local* antecedent is
-met — but the ADR says *on a mid-range Android*, and a local serve is known to under-read this page
-shape by about eight points, so [ADR 002](docs/adr/002-nextjs-16.md) records the measurement and the
-one run against `release` that would make it decisive.
+**`npm run perf:floor` measures `/board` and `/post/[id]` with Lighthouse** — mobile, simulated
+throttling — against a production build served locally with a fixture of 80 people, 45 race dates
+and 50 posts, signed in through a real session cookie. It prices levers against a floor of 80; it
+does **not** decide the framework. On a **deployed** build of `release` at that volume (#185,
+2026-09-22) `/board` read **66**, and **70** with a new footer layout shift fixed. ADR 002's lab
+condition fired on that reading, and the owner decided the same day to stay on Next.js 16. The
+framework is now reopened only by field data from members' phones, against thresholds
+[ADR 002](docs/adr/002-nextjs-16.md) will carry before any such data exists. `/post/[id]` read 78,
+and 82 with the footer fixed. Method, readings and the levers priced are in
+[`docs/performance-floor.md`](docs/performance-floor.md).
 
-It **writes** — 80 people, 45 dates, 50 posts — so it refuses any Supabase URL that is not
-loopback before touching a row. It is the opposite shape from `check:live` and `verify:migrations`,
-which are read-only by construction, and it says so rather than relying on the flag being passed.
+A seeded run **writes** — 80 people, 45 dates, 50 posts — so it refuses any Supabase URL that is
+not loopback before touching a row. It is the opposite shape from `check:live` and
+`verify:migrations`, which are read-only by construction, and it says so rather than relying on the
+flag being passed. `--no-seed` writes nothing and may therefore read the live project as a named
+crew account; the doc's *Against a deployment* has both recipes, including the seeded Vercel
+preview #185 used.
 
 Two traps it guards, both of which produce a *reassuring* number rather than an error:
 
@@ -283,7 +287,9 @@ answers "I can"; the skipper accepts. It then checks that the crew's phone reach
 data included, and present after in the same read and in the contact panel. Before any of that,
 it fetches `/support` and `/privacy` with no session and redirects off (#147), and requires 200,
 the page's own content (a streamed page answers 200 even when it fails), and on `/support` the
-address the seed put on the club row. The job starts a local
+address the seed put on the club row. Last, since #220, a third browser **signs up**: the Sign up
+tab, the seeded invite code, an email and a password, then `/welcome` ("Finish your profile", #219)
+pre-filled with the provisional name, then the board as the name they gave. The job starts a local
 Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
 pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
 `test/smoke.test.ts` holds both of those lines.
@@ -320,8 +326,9 @@ What it cannot see:
   notifications, which also shows each notify call was reached.
 - **The hosted project's grants.** The stack is the CLI's image, whose default privileges differ
   from the live project's. That seam is `check:live`'s and #48's, not this job's.
-- **Google sign-up, the invite gate, and the password reset.** Those are the other entrances to a
-  session; this job exercises the one a returning member uses.
+- **Google sign-up and the password reset.** Those are the other entrances to a session; this job
+  exercises the one a returning member uses and, since #220, the email sign-up with the invite
+  code. The local GoTrue has no Google provider, so the Google entrance stays unwalked here.
 
 Everything that decides an outcome is in `scripts/smoke-core.mjs`, exercised with no stack and no
 browser. The steps themselves were proven against a local stack by three mutations, each red at the
@@ -722,6 +729,31 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    rules do the rest; the log rows go first because `person_id` is already null afterwards. If a
    member's own deletion lands on `/join?deleted=partial`, their rows are gone and the auth user is
    not — delete it under Authentication → Users.
+7. **Guessing is bounded, and you should know how** (#206, security-audit SA-5, `0032`). A wrong
+   invite code at `/api/join` or `/api/signup/google` and a wrong email-and-password at
+   `/api/signin` are **failures**, and they count against two keys in a **15-minute window**:
+   **20 per source address**, shared across all three routes so guesses cannot be spread between
+   them, and **10 per email address**, on join and sign-in, which is what stops a guesser who
+   rotates addresses. `/api/forgot` counts every request, 20 per source address, on a budget of
+   its own. A caller at a limit gets the same answer a wrong code or password gets, so the limit
+   tells a guesser nothing. The numbers are `src/auth/attempt-limit.ts`'s, owner decision
+   2026-09-23. The address limit is loose on purpose: members at the clubhouse or a regatta share
+   one address, and a tight limit would lock the dock out. **If a whole clubhouse is locked out
+   anyway, it lifts on its own within 15 minutes**, or at once with `delete from
+   public.auth_attempt;` in the SQL editor. **If the code itself may have leaked, rotate it** on
+   `/admin`: the limit slows guessing and does nothing about a code that is already known.
+   What is stored is a SHA-256 digest of the address and the email, never either one, and every
+   row is deleted after the window, as `/privacy` says.
+
+   **Supabase's own sign-in limit does not do this job.** *Read 2026-09-23 from the project's auth
+   config*: `rate_limit_token_refresh` is 150, and the Supabase docs say password sign-in
+   (`/auth/v1/token`) falls under that limit, **150 requests per 5 minutes per IP address**.
+   The IP it counts is the caller's, and Tender's caller is its own server: sign-in runs from a
+   Vercel function with the publishable key, and Supabase counts the end user's address only when
+   the server sends `Sb-Forwarded-For` with a secret key, which Tender does not. So that limit is
+   shared by every member signing in through the same Vercel address, and it bounds no individual
+   guesser. It is on, and it is left alone. *(The per-IP keying is from the docs, not measured
+   here.)*
 
 ## Brand
 

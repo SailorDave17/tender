@@ -347,3 +347,105 @@ describe("the gate pass is gone — cookie, secret and every spelling of the nam
     expect("   **`GATE_PASS" + "_SECRET`**, any long random string").toMatch(new RegExp(`\\*\\*\`${NEEDLES[0]}\``));
   });
 });
+
+/**
+ * #206. `attempt-limit.test.ts` and `test/auth-attempt.test.ts` prove the limit; neither reads a
+ * route, so a route that dropped the wrapper, named the wrong gate, or refused with a sentence of
+ * its own would leave both green. Each route is read for the four things that make the limit this
+ * story's: it wraps its decision, it names its own gate, its refusal is the SAME value its wrong
+ * answer is (the limit is not an oracle only while those cannot differ), and its email key is
+ * present exactly where the owner chose one.
+ */
+describe("every guessing surface runs inside the attempt limit (#206)", () => {
+  const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
+  const call = (src: string) => src.slice(src.indexOf("withAttemptLimit<"), src.indexOf("});", src.indexOf("withAttemptLimit<")));
+
+  it("/api/join: gate join, WRONG_CODE as the refusal and the failure, keyed by email as well", async () => {
+    const c = call(await read("../app/api/join/route.ts"));
+    expect(c).toMatch(/gate: "join"/);
+    expect(c).toMatch(/refusal: WRONG_CODE,/);
+    expect(c).toMatch(/isFailure: \(r\) => r\.status === WRONG_CODE\.status/);
+    expect(c).toMatch(/email: String\(body\.email/);
+    expect(c).toMatch(/ip: clientAddress\(request\.headers\)/);
+  });
+
+  it("/api/signup/google: gate signup-google, WRONG_CODE, and NO email key — there is none before the exchange", async () => {
+    const c = call(await read("../app/api/signup/google/route.ts"));
+    expect(c).toMatch(/gate: "signup-google"/);
+    expect(c).toMatch(/refusal: WRONG_CODE,/);
+    expect(c).toMatch(/isFailure: \(r\) => r\.status === WRONG_CODE\.status/);
+    expect(c).not.toMatch(/email:/);
+  });
+
+  it("/api/signin: gate signin, refused with WRONG_CREDENTIALS' own 401, keyed by email as well", async () => {
+    const src = await read("../app/api/signin/route.ts");
+    expect(src).toMatch(/const WRONG = \{ status: 401, body: \{ message: WRONG_CREDENTIALS \} \}/);
+    const c = call(src);
+    expect(c).toMatch(/gate: "signin"/);
+    expect(c).toMatch(/refusal: WRONG,/);
+    expect(c).toMatch(/isFailure: \(r\) => r\.status === WRONG\.status/);
+    expect(c).toMatch(/email: String\(body\.email/);
+  });
+
+  it("/api/forgot: gate forgot, every request counts, and the refusal is the same generic sentence", async () => {
+    const c = call(await read("../app/api/forgot/route.ts"));
+    expect(c).toMatch(/gate: "forgot"/);
+    expect(c).toMatch(/refusal: \{ status: 200, body: \{ message: GENERIC_OK \} \}/);
+    expect(c).toMatch(/isFailure: \(\) => true/);
+  });
+
+  it("/api/signin and /api/forgot reach the service role only through the attempt store, never as a client", async () => {
+    // The #82 test above refuses `supabaseAdmin` in /api/signin's text so it can never read the
+    // invite code or create a user. #206 needs the service role there for 0032's two calls, and
+    // takes it through serviceAttemptStore, which hands back those two calls and not a client.
+    for (const path of ["../app/api/signin/route.ts", "../app/api/forgot/route.ts"]) {
+      const src = await read(path);
+      expect(src, path).toMatch(/store: serviceAttemptStore\(\)/);
+      expect(src, path).not.toMatch(/supabaseAdmin/);
+    }
+    const store = await read("../lib/auth/attempt-store.ts");
+    expect(store.match(/\.rpc\("([a-z_]+)"/g)).toEqual(['.rpc("begin_auth_attempt"', '.rpc("settle_auth_attempt"']);
+    expect(store).not.toMatch(/\.from\(|\.auth\./);
+  });
+
+  it("/api/signin/google is deliberately NOT limited: a Google token cannot be guessed (owner decision, #206)", async () => {
+    // A negative control with a reason: limiting it would add a way to lock members out and bound
+    // nothing a guesser can use. If that changes, this is the line that should be argued with.
+    const src = await read("../app/api/signin/google/route.ts");
+    expect(src).not.toMatch(/withAttemptLimit/);
+  });
+});
+
+/**
+ * #234. The proxy gate's own redirect is proven in proxy.test.ts; the pages and server actions each
+ * carry a second wall, `if (!user) redirect(…)`, and 27 of them sent a signed-out member to plain
+ * `/join`, which opens on Sign up for a new device. No unit test renders them, so the tree is read.
+ */
+describe("every signed-out redirect in a page or action opens the Sign in tab (#234)", () => {
+  it("no bare redirect to /join is left under src/, and the constant is what replaced them", async () => {
+    const files = await sourceFiles(new URL("../", import.meta.url));
+    expect(files.length, "the scan really walked src/").toBeGreaterThan(40);
+    // BUILT, not written: this file is under src/ and a literal would be the scan's first hit.
+    const BARE = "redirect(" + '"/join")';
+    const bare: string[] = [];
+    let viaConstant = 0;
+    for (const f of files) {
+      const src = await readFile(f, "utf8");
+      if (src.includes(BARE)) bare.push(f.pathname);
+      // Built for the same reason as BARE: the literal would count this file (measured, 28 not 27).
+      viaConstant += src.split("redirect(" + "SIGN_IN_URL)").length - 1;
+    }
+    expect(bare).toEqual([]);
+    // A positive control on the replacement: all 27 went to the constant, not somewhere else.
+    expect(viaConstant).toBe(27);
+    // ...and the needle matches the shape it hunts for.
+    // (The sample is built too: written out, it was this scan's one hit on its first run.)
+    expect("if (!user) " + BARE + ";").toContain(BARE);
+  });
+
+  it("sign-out keeps plain /join on purpose: that device has signed in, so it opens on Sign in", async () => {
+    const src = await readFile(new URL("../app/auth/signout/route.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/url\.pathname = "\/join";/);
+    expect(src).toMatch(/Deliberately plain `\/join`, not `SIGN_IN_URL` \(#234\)/);
+  });
+});

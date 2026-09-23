@@ -9,6 +9,7 @@ import { rotateInviteCode } from "./actions";
 import { ClockPulse } from "./ClockPulse";
 import { EmailUsage } from "./EmailUsage";
 import { SeasonSummary } from "./SeasonSummary";
+import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,7 @@ export default async function AdminPage({
   const {
     data: { user },
   } = await client.auth.getUser();
-  if (!user) redirect("/join");
+  if (!user) redirect(SIGN_IN_URL);
   const { data: me } = await client.from("person").select("is_admin").eq("id", user.id).maybeSingle();
   if (!me?.is_admin) notFound();
 

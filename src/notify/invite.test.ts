@@ -129,6 +129,14 @@ describe("the email itself (AC 4)", () => {
     expect(local.text).toContain("http://localhost:3100/join");
     expect(local.text).not.toContain("madcowsailing");
   });
+
+  it("links to the sign-up tab by name, not to plain /join (#218 AC 3)", () => {
+    // The two tests above hold `${SITE}/join` as a substring, which the plain link satisfies too,
+    // so neither can tell the two apart. This one reads the whole link, to the end of its line.
+    const message = inviteEmail("newcomer@example.org", CODE, SITE);
+    const link = message.text.split("\n").find((line) => line.startsWith("Join here: "));
+    expect(link).toBe(`Join here: ${SITE}/join?mode=signup`);
+  });
 });
 
 describe("sending (AC 1)", () => {
