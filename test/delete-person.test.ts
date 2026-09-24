@@ -362,6 +362,7 @@ describe("0027 — AC 4: every security definer runs after the deletion", () => 
       "rotate_invite_code",
       "set_club_theme",
       "set_match_status",
+      "withdrawn_post_day", // 0034 — called on the leaver's ownerless boat below
     ]);
   });
 
@@ -438,6 +439,24 @@ describe("0027 — AC 4: every security definer runs after the deletion", () => 
     // same-value write on the sailed match is the no-op 0021 defines, returning the prior status.
     const r = await as(db, "authenticated", `select public.set_match_status('${M_A}', 'sailed') as prior`, SKIPPER);
     expect(r.rows).toEqual([{ prior: "sailed" }]);
+  });
+
+  it("withdrawn_post_day: on the leaver's ownerless boat, the surviving crew is answered and nobody matches the null sides", async () => {
+    // 0034 (#199). P_B is Kestrel's — Lee's boat, owner_id null since Lee left. `b.owner_id =
+    // auth.uid()` is NULL there, which the where clause reads as false, so the null owner admits
+    // nobody; Di, M_B's surviving party, still gets the day through her answer row. PAST2 is
+    // unpublished for this test only and put back after.
+    await db.exec(`update public.race_date set published = false where id = '${PAST2}'`);
+    try {
+      const di = await as(db, "authenticated", `select public.withdrawn_post_day('${P_B}') is not null as told`, CREW2);
+      expect(di.rows).toEqual([{ told: true }]); // positive control, same post
+      for (const who of [OTHER, SKIPPER, ADMIN]) {
+        const r = await as(db, "authenticated", `select public.withdrawn_post_day('${P_B}') is not null as told`, who);
+        expect(r.rows, who).toEqual([{ told: false }]);
+      }
+    } finally {
+      await db.exec(`update public.race_date set published = true where id = '${PAST2}'`);
+    }
   });
 
   it("delete_person by the admin route: Di goes too, and M_B stands with both sides null", async () => {

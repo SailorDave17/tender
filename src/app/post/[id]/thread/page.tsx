@@ -4,6 +4,7 @@ import { formatStartsAt, whenLabel } from "@/dates/race-date";
 import { FORMER_MEMBER, matchRole, partyName } from "@/post/match-view";
 import { UUID } from "@/post/post-form";
 import { SendMessageForm } from "@/post/SendMessageForm";
+import { WithdrawnPost, readWithdrawnDay } from "@/post/withdrawn";
 import { THREAD_CLOSED_NOTE, messageText, threadClosesAt, threadIsOpen } from "@/post/thread-view";
 import { SUSPENDED_NOTE } from "@/moderation/suspension";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -54,7 +55,14 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
     .eq("post_id", id)
     .maybeSingle();
   // No match on this post, or a match the caller cannot see: either way there is no thread here.
-  if (!match) notFound();
+  // Except that an unpublished race day hides the match from its own two parties too (0008 reads
+  // post under 0006's policy), and a message push lands here — so they are told the day was
+  // withdrawn, and anyone else still gets "Not here" (#199, 0034).
+  if (!match) {
+    const withdrawn = await readWithdrawnDay(client, id);
+    if (withdrawn) return <WithdrawnPost startsAt={withdrawn} />;
+    notFound();
+  }
 
   // A non-party is refused the thread even though 0008 lets them see the match itself — the
   // thread is not a view of the match, it is a private conversation inside it.

@@ -99,4 +99,7 @@ export const EXPECTED_FUNCTIONS = [
   // 0032 (#206), begin_auth_attempt's other half, refused to anon the same way. A nil uuid names
   // no reservation, and the GET's read-only transaction would stop the delete regardless.
   { name: "settle_auth_attempt", args: { p_id: NIL_UUID } },
+  // 0034 (#199). Answers only to a post's own people; the anon probe is refused (42501, execute
+  // revoked from anon by name), which reads PRESENT. It only reads, and a nil uuid names no post.
+  { name: "withdrawn_post_day", args: { p_post: NIL_UUID } },
 ];
