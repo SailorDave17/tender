@@ -1,9 +1,10 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
-import { chromium, type Browser } from "playwright-core";
+import { chromium, type Browser, type Page } from "playwright-core";
 import { fitGoogleButton } from "@/auth/GoogleButton";
 import { GLOBALS_CSS } from "./tokens";
 import { IDS, ME, NOW, fakeClient } from "./surfaces";
@@ -23,6 +24,12 @@ import { IDS, ME, NOW, fakeClient } from "./surfaces";
  * AC 8: the contrast proof extended to the RENDERED surfaces: every element with text on every
  *       surface, in both schemes, with the ratio computed from Chrome's own `color` and the first
  *       opaque background behind it, and the lowest three printed per surface and scheme.
+ *
+ * #229: axe-core 4.13.0 (`AXE_VERSION`) runs over the same nine surfaces, in both schemes, under
+ *       the WCAG 2.2 A/AA tags, and any violation reddens that surface's test. It reads what the
+ *       sweep reads: server HTML with no script run, so whatever a client effect adds after
+ *       hydration (the install sheet, Google's button) is not in it, and neither is the head Next
+ *       builds from `metadata`, apart from the title added below.
  *
  * The pages are the real Server Components rendered through the real root layout; what is faked
  * is the database (test/surfaces.ts), the club row, the session, the cookie jar and the Server
@@ -94,7 +101,11 @@ let browser: Browser;
 beforeAll(async () => {
   vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
   try {
-    const { default: RootLayout } = await import("@/app/layout");
+    const { default: RootLayout, metadata } = await import("@/app/layout");
+    // #229: the <title> Next builds from the layout's `metadata`, without which axe's
+    // document-title fails every surface for a head this harness never built. /support and
+    // /privacy carry their own titles in production; the rule asks only that one exists.
+    const title = typeof metadata.title === "string" ? `<title>${metadata.title}</title>` : "";
     const extra = JOIN_TABS.map((tab) => ({
       name: joinWithGoogle(tab),
       as: "",
@@ -106,7 +117,7 @@ beforeAll(async () => {
       for (const [k, v] of Object.entries("env" in s ? s.env : {})) vi.stubEnv(k, v);
       try {
         const doc = renderToStaticMarkup(await RootLayout({ children: await s.render() }));
-        const html = `<!doctype html>${doc.replace("<body>", `<head><style>${css}</style></head><body>`)}`;
+        const html = `<!doctype html>${doc.replace("<body>", `<head>${title}<style>${css}</style></head><body>`)}`;
         if (!html.includes("<style>")) throw new Error(`${s.name}: no <body> to attach the stylesheet to`);
         pages.set(s.name, html);
       } finally {
@@ -188,6 +199,100 @@ describe("every text element on every surface clears its bar, computed in Chrome
     );
     for (const i of items) expect(i.ratio, `${scheme} ${name}: ${i.label} ${i.fg} on ${i.bg}`).toBeGreaterThanOrEqual(i.bar);
     expect(scrollWidth, `${name} scrolls sideways at 390px`).toBeLessThanOrEqual(390);
+  });
+});
+
+/**
+ * #229. The version the next audit compares against; the test below fails when the installed axe
+ * is another one, so this line and the header cannot fall behind a dependency bump. `wcag22aa` is
+ * the tag that switches `target-size` on: it is off by default, and a run asked only for the 2.1
+ * tags skips it without a word.
+ */
+const AXE_VERSION = "4.13.0";
+const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
+const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
+
+type AxeRule = { id: string; nodes: number; targets: string[] };
+type AxeRead = { version: string; ran: string[]; violations: AxeRule[]; incomplete: AxeRule[] };
+
+async function runAxe(page: Page, tags: string[] = WCAG_TAGS): Promise<AxeRead> {
+  if (await page.evaluate(`typeof window.axe === "undefined"`)) await page.addScriptTag({ content: AXE });
+  // `resultTypes` keeps full node detail for the two types read here; a passing rule is still
+  // listed, with one node, which is all the rules-applied count needs.
+  return (await page.evaluate(`(async () => {
+    const r = await axe.run(document, { runOnly: { type: "tag", values: ${JSON.stringify(tags)} }, resultTypes: ["violations", "incomplete"] });
+    const shape = (v) => ({ id: v.id, nodes: v.nodes.length, targets: v.nodes.slice(0, 3).map((n) => n.target.join(" ")) });
+    return {
+      version: axe.version,
+      ran: [...r.passes, ...r.violations, ...r.incomplete].map((v) => v.id),
+      violations: r.violations.map(shape),
+      incomplete: r.incomplete.map(shape),
+    };
+  })()`)) as AxeRead;
+}
+const listed = (rules: AxeRule[]) => rules.map((v) => `${v.id} (${v.nodes})`).join(", ") || "none";
+
+describe("axe-core finds no WCAG 2.2 A/AA violation on any surface, in either scheme (#229 AC 1)", () => {
+  // One test per surface with both schemes inside it, so a defect planted in one surface reddens
+  // exactly one test (AC 2). `incomplete` is axe saying it could not decide; it is printed for a
+  // person to read and not asserted. One page per surface, with the scheme switched in place: a
+  // second context and a second 580 KB injection per surface cost these cases ~15 s against ~11 s,
+  // and while that version stood, shell-focus's Chrome timed out in 3 of 12 full runs (#247's
+  // shape) against 0 of 4 on develop. Measured 2026-09-24; the sample is small.
+  it.each(SURFACES.map((s) => s.name))("%s", async (name) => {
+    const found: string[] = [];
+    const { page, close } = await open(name, { width: 390, height: 800 }, "light");
+    try {
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        expect(await page.evaluate(`matchMedia("(prefers-color-scheme: ${scheme})").matches`), `${name} is in the ${scheme} scheme`).toBe(true);
+        // Links carry `transition: color var(--dur)` (globals.css), so a switch made in place
+        // leaves them fading from the light colour, and axe read every link as failing in dark
+        // until this waited for the fade to end.
+        await page.evaluate(`Promise.all(document.getAnimations().map((a) => a.finished))`);
+        const r = await runAxe(page);
+        console.log(`#229 axe ${r.version} ${scheme.padEnd(5)} ${name.padEnd(28)} ${String(r.ran.length).padStart(2)} rules applied; incomplete: ${listed(r.incomplete)}`);
+        expect(r.ran.length, `${scheme} ${name}: axe applied no rules`).toBeGreaterThan(10);
+        found.push(...r.violations.map((v) => `${scheme}: ${v.id} (${v.nodes}) at ${v.targets.join(" | ")}`));
+      }
+    } finally {
+      await close();
+    }
+    // The list goes in the message too: vitest shortens a long array to `[ …(2) ]` on the line
+    // a reader sees first, which would hide the rule.
+    expect(found, `${name}: axe violations: ${found.join("; ")}`).toEqual([]);
+  });
+
+  it(`runs axe-core ${AXE_VERSION}, the version this file's header records`, async () => {
+    const { page, close } = await open("/join", { width: 390, height: 800 }, "light");
+    try {
+      expect((await runAxe(page)).version).toBe(AXE_VERSION);
+    } finally {
+      await close();
+    }
+  });
+
+  it("the 2.2 tag is in force: two planted 20px buttons side by side redden target-size, which the 2.1 tags never run (AC 3)", async () => {
+    // Side by side, because a small target with room around it passes on axe's spacing exception
+    // (measured on 4.13.0: a lone 20px button passes, a touching pair fails on both, the same pair
+    // 10px apart passes). The inline style has to undo globals.css's 44px floor on every button,
+    // or the plant measures 44x20.
+    const { page, close } = await open("/join", { width: 390, height: 800 }, "light");
+    try {
+      const small = "width:20px;height:20px;min-width:0;min-height:0;padding:0";
+      await page.evaluate(`document.querySelector("main").insertAdjacentHTML("afterbegin",
+        '<div data-planted style="display:flex">' +
+        '<button type="button" style="${small}">a</button><button type="button" style="${small}">b</button></div>')`);
+      const sizes = await page.evaluate(`[...document.querySelectorAll("[data-planted] button")].map((b) => b.getBoundingClientRect().width + "x" + b.getBoundingClientRect().height)`);
+      expect(sizes, "the planted buttons are 20px").toEqual(["20x20", "20x20"]);
+      const withTag = await runAxe(page);
+      console.log(`#229 planted 20px buttons: ${listed(withTag.violations)}`);
+      expect(withTag.violations.find((v) => v.id === "target-size")?.nodes, "target-size names both planted buttons").toBe(2);
+      const without = await runAxe(page, WCAG_TAGS.filter((t) => t !== "wcag22aa"));
+      expect(without.ran, "control: without wcag22aa, target-size never runs").not.toContain("target-size");
+    } finally {
+      await close();
+    }
   });
 });
 

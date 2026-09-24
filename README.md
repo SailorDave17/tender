@@ -791,5 +791,7 @@ under *the surfaces* — and carry no inline style the tokens could express; the
 rung badge's `--rung` / `--rung-dark`, which is the ladder's data. `test/surfaces.test.ts` renders
 each surface through the real layout with fixtures (`test/surfaces.ts`), then reads it in Chrome
 at 390px in both schemes: every text element's contrast computed and the lowest printed, the
-board's rows and rules, the join tabs' selected state. The rung colours have a dark value each
+board's rows and rules, the join tabs' selected state, and axe-core's WCAG 2.2 A/AA rules over
+every surface (#229; the version is pinned and recorded in the file's header, and `target-size`
+runs only because `wcag22aa` is asked for). The rung colours have a dark value each
 (`RUNG_COLOUR[n].dark`), proven in `test/rung-contrast.test.ts`.
