@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 /**
- * perf:floor — measure ADR 002's kill condition with the instrument ADR 002 names. Story #44.
+ * perf:floor — measure the board and post pages against the performance floors. Story #44.
  *
  *     npm run perf:floor -- --db-container supabase_db_<dir> --base-url http://localhost:3100
+ *
+ * It prices levers against the floors; it does not decide the framework. ADR 002's lab kill
+ * condition was retired as the framework trigger on 2026-09-22 (#213), and ADR 002's framework
+ * trigger is now field data from members' phones, which this command does not read. A failing
+ * floor is a lever to price — see docs/performance-floor.md.
  *
  * Everything that decides an outcome — the fixture, the score reading, the median, the verdict —
  * is in `lighthouse-floor-core.mjs`, where `test/lighthouse-floor.test.ts` exercises it with no
@@ -32,8 +37,8 @@
  *
  * AGAINST A DEPLOYMENT (#185)
  *
- * ADR 002's condition is about a mid-range Android on a real network, which a local serve cannot
- * price for this page shape. Two more shapes of run reach a deployed build without weakening the
+ * The floors are about a mid-range Android on a real network, which a local serve cannot price for
+ * this page shape. Two more shapes of run reach a deployed build without weakening the
  * refusal above:
  *
  * - **A seeded preview.** Seed the local stack as usual, expose it through a tunnel, deploy a
