@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { BuildStamp } from "@/build/BuildStamp";
 import { DockHeight } from "./DockHeight";
+import { NavLinks } from "./NavLinks";
 import type { ShellPerson } from "./session";
 
 /**
@@ -23,6 +24,12 @@ import type { ShellPerson } from "./session";
  * on the dock" and a thumb reaches the bottom of the screen, not the top — so "Post" is within
  * reach from the board without a stretch. On a wider screen the same list sits in the header.
  * Sign-out stays in the header on every width; it is not a destination.
+ *
+ * THE CURRENT SCREEN'S TAB IS MARKED (story #242), by `aria-current="page"` and the outline
+ * `globals.css` draws for it. Until #242 the outline sat on Post permanently, as #154's call to
+ * action, and with nothing else marked it read as "you are here" on every screen. The mark is
+ * decided in `NavLinks` from `usePathname()`, in the browser, because this shell is rendered by
+ * the root layout and a layout does not re-render on a client-side navigation.
  *
  * `#main` is the skip link's target and carries `tabindex="-1"` so focus actually lands there.
  * The page's own `<main>` sits inside it; the frame is the div's, the landmark is the page's.
@@ -66,25 +73,9 @@ export function AppShell({
         ) : null}
         <nav aria-label="Tender" data-nav data-signed-in={person ? "true" : undefined}>
           {person ? (
-            <>
-              <Link href="/board" prefetch={false}>
-                Board
-              </Link>
-              <Link href="/post/new" prefetch={false} data-primary>
-                Post
-              </Link>
-              <Link href="/boats" prefetch={false}>
-                Boats
-              </Link>
-              <Link href="/profile" prefetch={false}>
-                Profile
-              </Link>
-              {person.isAdmin ? (
-                <Link href="/admin" prefetch={false}>
-                  Admin
-                </Link>
-              ) : null}
-            </>
+            // #242: the links, and the mark on the current screen's tab, are a client component;
+            // this shell stays a server component.
+            <NavLinks isAdmin={person.isAdmin} />
           ) : (
             // #218: the Sign in tab by name. Plain /join opens on Sign up for a device that has
             // not signed in here before (#123), which is not what a link saying "Sign in" means.
