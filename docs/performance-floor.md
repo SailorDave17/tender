@@ -1,13 +1,19 @@
 # Performance floor — the board and post pages
 
-What ADR 002's kill condition reads today, how it was measured, and which levers were priced
-against it. Story #44 took the local reading; story #185 took the deployed one, which is the
-reading that decides the condition — **jump to [The deployed reading, 2026-09-22](#the-deployed-reading-2026-09-22--story-185)**.
+What `/board` and `/post/[id]` read against the floors, how it was measured, and which levers were
+priced against them. Story #44 took the local reading; story #185 took the deployed one —
+**jump to [The deployed reading, 2026-09-22](#the-deployed-reading-2026-09-22--story-185)**.
 Story #216 added a `devtools` throttling mode and took the repo's first reading with it,
 [a different instrument from every other row here](#the-devtools-reading-2026-09-22--story-216).
 
+**The floors price levers; they do not decide the framework.** The performance floor of 80 began
+as ADR 002's lab kill condition, which fired on #185's deployed reading. On 2026-09-22 the owner
+stayed on Next.js 16 and retired that condition as the framework trigger (#213). ADR 002's
+framework trigger is now field data from members' phones, which `perf:floor` does not read — see
+[What this means for ADR 002](#what-this-means-for-adr-002). A failing floor is a lever to price.
+
 Re-run it with `npm run perf:floor` (see *Running it* at the foot). The command is the record's
-instrument, not a convenience: a kill condition nobody can re-run is a sentence, not a condition.
+instrument, not a convenience: a reading nobody can re-run is a sentence, not a measurement.
 
 ## The floors
 

@@ -1,14 +1,18 @@
 /**
  * perf:floor — the half that decides things, with no Docker, no browser and no network in it.
- * Story #44, which measures ADR 002's kill condition with the instrument that ADR names.
+ * Story #44, which measures the board and post pages against the floors in `FLOORS`.
  *
  * WHAT QUESTION THIS ANSWERS
  *
- * ADR 002 chose Next.js and wrote its own kill condition: *Lighthouse mobile performance on the
- * board page below 80 ... unrecoverable by ordinary optimisation — reopen toward SvelteKit.* A
- * kill condition nobody can re-run is a sentence, not a condition, so the point of this file is
- * that the measurement survives the session that took it. #44 is the first run; the value is in
- * the second, after the board has grown.
+ * Whether `/board` and `/post/[id]` meet the floors at a stated volume, and, when one does not,
+ * what each lever is worth against it. A reading nobody can re-run is a sentence, not a
+ * measurement, so the point of this file is that the measurement survives the session that took
+ * it. #44 is the first run; the value is in the second, after the board has grown.
+ *
+ * It does NOT decide the framework. The performance floor of 80 began as ADR 002's lab kill
+ * condition, which fired on #185's deployed reading; on 2026-09-22 the owner stayed on Next.js 16
+ * and retired that condition as the trigger (#213). ADR 002's framework trigger is now field data
+ * from members' phones, which nothing here reads. A failing floor is a lever to price.
  *
  * WHY THE FIXTURE IS GENERATED HERE RATHER THAN CHECKED IN AS SQL
  *
@@ -358,7 +362,7 @@ export function refuseNonLocalStack(url) {
  * `measuredViewer` exists to prevent.
  *
  * An UNSEEDED run writes nothing, so it may point at any Supabase — the live project included,
- * which is how ADR 002's condition gets re-read once the club's real board has grown. There the
+ * which is how the floors get re-read against the club's real board once it has grown. There the
  * viewer and routes may be named, and when either is, the reading claims NO volume: the script
  * cannot know what a real board carries, so `volume` is null and the doc has to state it beside
  * the number. Only an unseeded run over the fixture's own viewer and routes inherits `VOLUME`.
@@ -643,6 +647,6 @@ export function formatReport(summaries, v, floors = FLOORS) {
   }
   for (const w of v.warnings) out.push(`WARNING  ${w}`);
   for (const f of v.failures) out.push(`FAIL     ${f}`);
-  out.push(v.pass ? "PASS — every floor met." : "FAIL — ADR 002's kill condition is in play; see docs/performance-floor.md.");
+  out.push(v.pass ? "PASS — every floor met." : "FAIL — a floor was missed; see docs/performance-floor.md for the levers priced against it.");
   return out.join("\n");
 }

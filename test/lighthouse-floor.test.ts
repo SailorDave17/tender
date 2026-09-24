@@ -442,6 +442,22 @@ describe("formatReport", () => {
     expect(out).toContain("[73 79 78]");
     expect(out).toContain("FAIL");
   });
+
+  // #222: ADR 002's lab condition was retired as the framework trigger on 2026-09-22 (#213), so a
+  // failing floor is a lever to price, not a reason to reopen the framework. The negative match is
+  // on the vocabulary a reader restoring the old sentence would write, not on the old sentence.
+  it("ends a failing run on the floor and the doc, naming no kill condition and no framework", () => {
+    const s = summariseRoute(
+      "/board",
+      [73, 79, 78].map((p) => readReport(lhrFixture({ performance: p / 100 }))),
+    );
+    const v = verdict([s]);
+    expect(v.pass).toBe(false);
+    const last = formatReport([s], v).split("\n").at(-1);
+    expect(last).toMatch(/^FAIL — a floor was missed/);
+    expect(last).toContain("docs/performance-floor.md");
+    expect(last).not.toMatch(/kill condition|framework|ADR|in play/i);
+  });
 });
 
 /**
