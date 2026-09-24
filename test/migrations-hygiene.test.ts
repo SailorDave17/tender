@@ -285,6 +285,12 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       // 0021 (#37) — the one client route to a match's status: takes the caller from auth.uid(),
       // refuses the wrong party and the wrong time, and lets the transition trigger decide the rest.
       "public.set_match_status",
+      // 0034 (#199) — tells a post's own people (boat owner, answerers — which covers both match
+      // parties) the day of a post whose race date was unpublished, and NULL to anyone else.
+      // Definer because 0006's policy hides such a post from its own skipper, which is the defect.
+      // It reads post, race_date, boat and answer and returns one timestamp — never a person, never
+      // contact — and it is in no policy, so person_contact's read path is untouched.
+      "public.withdrawn_post_day",
     ]);
   });
 });
