@@ -599,10 +599,16 @@ button[data-already-member] {
 [data-banner] [data-install-action="prompt"] {
   margin-top: var(--space-2);
 }
-/* #217: beside the long iOS wording, flex shrank "Not now" narrower than its own label. Once the
-   sheet scrolls its content, that overflow is clipped rather than spilling past the button. */
-[data-banner="install"] [data-install-action="dismiss"] {
-  flex-shrink: 0;
+/* #217: "Not now" sits beside the wording while both fit, and wraps below it when they cannot share
+   a row — large text on a narrow phone, sooner on wider fonts (CI's runner at 150%). Without this,
+   flex squeezed "Not now" narrower than its own label beside the long iOS wording, and the
+   scrolling sheet clipped it. The wording's 10rem basis is what keeps the two side by side at
+   ordinary sizes; without it the row wraps whenever it is allowed to. */
+[data-banner="install"] {
+  flex-wrap: wrap;
+}
+[data-banner="install"] > div {
+  flex: 1 1 10rem;
 }
 /* #217: the install offer is a sheet fixed to the bottom of the screen, above the phone's docked
    navigation, rather than a block above the race days. It arrives after hydration, and only when

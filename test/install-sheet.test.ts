@@ -92,6 +92,9 @@ const CASES: Case[] = [
   // The sheet taller than the stylesheet's 12rem fallback on every machine, not only on CI's fonts
   // (where the iOS wording read 244px at 125% text on 360px, over a 240px fallback).
   { name: "crew 320×640 at 150% text (sheet over the fallback)", viewport: { width: 320, height: 640 }, admin: false, text: 1.5 },
+  // WCAG 1.4.4's ceiling. CI's wider fonts pushed "Not now" out of the sheet at 150% (PR #240's
+  // fourth run); 200% reproduces that overflow on any machine's fonts, not only the runner's.
+  { name: "crew 320×640 at 200% text (row must wrap)", viewport: { width: 320, height: 640 }, admin: false, text: 2 },
 ];
 
 let browser: Browser;
@@ -211,6 +214,8 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
               ceiling,
               viewport: window.innerHeight,
               overflowY: getComputedStyle(aside).overflowY,
+              // "Not now" beside the wording: its top above the wording's bottom, i.e. the same row.
+              dismissBeside: aside.querySelector('[data-install-action="dismiss"]').getBoundingClientRect().top < aside.querySelector("p").getBoundingClientRect().bottom,
               actions: [...aside.querySelectorAll("[data-install-action]")].map((b) => {
                 // Capped at half the screen, the sheet can scroll its own wording: reach each
                 // action the way a member would, by scrolling the sheet, never the page.
@@ -232,7 +237,7 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
             };
           })()`)) as {
             position: string; shadow: string; top: number; bottom: number; height: number; navTop: number | null; navHeight: number | null; ceiling: number;
-            viewport: number; overflowY: string; actions: { action: string; height: number; onTop: boolean; labelFits: boolean; inside: boolean }[];
+            viewport: number; overflowY: string; dismissBeside: boolean; actions: { action: string; height: number; onTop: boolean; labelFits: boolean; inside: boolean }[];
           };
           console.log(`${kind}, ${c.name}: sheet ${placed.top.toFixed(0)}–${placed.bottom.toFixed(0)}px (${placed.height.toFixed(0)} of a ${placed.ceiling}px ceiling), nav ${placed.navHeight}px at ${placed.navTop}`);
 
@@ -243,6 +248,9 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
           // Owner's review of the preview: flush on the navigation, lifted off the list by a shadow.
           expect(Math.abs(placed.bottom - placed.navTop!), "the sheet sits flush on the nav").toBeLessThan(0.5);
           expect(placed.shadow).not.toBe("none");
+          // The owner approved "Not now" beside the wording. At ordinary text on a 360px phone or
+          // wider it must stay there; at 320px or at large text it may wrap below (see globals.css).
+          if (c.text === 1 && c.viewport.width >= 360) expect(placed.dismissBeside, '"Not now" beside the wording').toBe(true);
           // --install-sheet is the room the page makes, and it is the sheet's measured height —
           // not the 12rem fallback, which CI's fonts overran at 125% text (244px against 240).
           expect(Math.abs(placed.ceiling - placed.height)).toBeLessThan(0.5);
