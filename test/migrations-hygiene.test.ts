@@ -239,6 +239,11 @@ describe("person_contact's read path has no security definer in it (ADR 003 kill
       "public.admin_from_club", // 0009 — trigger functions, not in any read path
       "public.admin_from_contact",
       "public.answer_counts",
+      // 0033 (#201) — the person_blank_log trigger function: blanks a deleted person's addresses in
+      // notification_log however the person row goes. Definer because a direct service-role delete
+      // would otherwise need update on notification_log, which 0010 grants no one. It writes
+      // notification_log only, is in no policy, and so is not in person_contact's read path.
+      "public.blank_person_log",
       "public.current_invite_code",
       // 0027 (#42) — the one route to deleting a person. Definer because authenticated holds no
       // delete on person (0002) and must not gain one; refuses anyone but the person themself or
