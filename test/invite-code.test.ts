@@ -16,13 +16,19 @@ import { as, freshDb } from "./pglite";
  *
  * The fixture is shared down the file and the code's value is carried forward between tests:
  * a deny that fails to refuse would rotate the code and every later read reddens with it.
+ *
+ * Since #243, 0035 replaces rotate_invite_code()'s body: a 30-character alphabet with no 0 or 1,
+ * bytes 6 and 8 of each UUID skipped, and rejection sampling. Every test here runs against that
+ * body, which is how the anon and 42501 cases above prove 0035's `create or replace` kept 0003's
+ * grants (#243 AC 3). The last two describes are #243's own.
  */
 
 const ADMIN = "11111111-1111-4111-8111-111111111111";
 const CREW = "22222222-2222-4222-8222-222222222222";
 const SEED = "rotate-me";
-/** 0003's alphabet: 0–9 and A–Z without I, L, O and U. */
-const CODE = /^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/;
+/** 0035's alphabet: 2–9 and A–Z without I, L, O and U. Sorted, so a sorted set can be compared to it. */
+const ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+const CODE = new RegExp(`^[${ALPHABET}]{8}$`);
 
 const rotate = `select public.rotate_invite_code() as code`;
 const current = `select public.current_invite_code() as code`;
@@ -123,14 +129,95 @@ describe("invite code (0003) — AC 1: admin-only, replaced in one call, returne
       const code = ((await as(db, "authenticated", rotate, ADMIN)).rows[0] as { code: string }).code;
       expect(code).toMatch(CODE);
       // A code of one repeated letter is what reading the same byte eight times produces;
-      // a real draw does it once in 32^7.
+      // a real draw does it once in 30^7.
       expect(new Set(code).size, code).toBeGreaterThan(1);
       seen.add(code);
       for (const ch of code) letters.add(ch);
     }
     expect(seen.size).toBe(20);
-    // 160 draws from a 32-letter alphabet; a byte read off the same offset every time, or a
+    // 160 draws from a 30-letter alphabet; a byte read off the same offset every time, or a
     // constant, would show as a handful of letters. (P(fewer than 16 distinct) is negligible.)
     expect(letters.size).toBeGreaterThanOrEqual(16);
   });
+});
+
+/**
+ * `n` rotations as the admin, in statements of 1,000. One statement of 20,000 took 19 s where 20
+ * of 1,000 took 4.4 s (measured): every update inside one statement leaves a dead version of the
+ * club row that the next `select … from club` walks past, so the cost grows with the square.
+ */
+async function draw(n: number): Promise<string[]> {
+  const codes: string[] = [];
+  for (let done = 0; done < n; done += 1000) {
+    const batch = Math.min(1000, n - done);
+    const r = await as(db, "authenticated", `select public.rotate_invite_code() as code from generate_series(1, ${batch})`, ADMIN);
+    for (const row of r.rows) codes.push((row as { code: string }).code);
+  }
+  return codes;
+}
+
+describe("invite code (0035) — #243 AC 1: no 0 or 1, and every character at every position", () => {
+  it("1,000 rotations: 8 characters from the 30, none of 0, 1, I, L, O or U, all 30 at each of the 8 positions", async () => {
+    const codes = await draw(1000);
+    expect(codes).toHaveLength(1000);
+    expect(codes.filter((c) => !CODE.test(c))).toEqual([]);
+    expect(codes.filter((c) => /[01ILOU]/.test(c))).toEqual([]);
+    // The per-position half is what 0003 fails: its 7th character came from byte 6, the UUID's
+    // version byte, so it was only ever 0–9 or A–F. A pooled check cannot see one bad position
+    // among eight good ones. By chance a character goes missing from a position here about once
+    // in 10^12 runs (30 × 8 × (29/30)^1000).
+    const missing = Array.from({ length: 8 }, (_, p) => {
+      const seen = new Set(codes.map((c) => c[p]));
+      return `${p + 1}: ${[...ALPHABET].filter((ch) => !seen.has(ch)).join("")}`;
+    }).filter((line) => !line.endsWith(": "));
+    expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * Pearson's χ² for how `chars` spread over the 30 against an even spread. A character outside the
+ * alphabet counts for nothing, so an alphabet change reads as its missing letters.
+ */
+function chiSquare(chars: string[]): number {
+  const counts = new Map<string, number>();
+  for (const ch of chars) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  const expected = chars.length / ALPHABET.length;
+  let x = 0;
+  for (const ch of ALPHABET) x += ((counts.get(ch) ?? 0) - expected) ** 2 / expected;
+  return x;
+}
+
+/**
+ * The bar: 29 degrees of freedom, and P(χ² ≥ 100) is 9.8 × 10⁻¹⁰ for a truly even draw (the
+ * regularised incomplete gamma, computed), so the nine readings below give a false red about once
+ * in 10^8 runs.
+ */
+const CHI_BAR = 100;
+
+describe("invite code (0035) — the draw is even: the skipped bytes and the rejection (#243)", () => {
+  it("the bar is crossed by exactly the bias `byte % 30` carries without rejection, and an even spread reads 0", () => {
+    // Every byte value 200 times, reduced as 0035 would without its `>= 240` line: the first 16
+    // characters get 9 in 256, the other 14 get 8. This is the control that the statistic and the
+    // bar can see the defect the rejection exists to remove.
+    const unrejected = Array.from({ length: 256 * 200 }, (_, i) => ALPHABET[(i % 256) % 30]);
+    expect(chiSquare(unrejected)).toBeGreaterThan(CHI_BAR);
+    expect(chiSquare(Array.from({ length: 3000 }, (_, i) => ALPHABET[i % 30]))).toBe(0);
+  });
+
+  it("20,000 rotations: no position, and not the pool, departs from an even spread over the 30", async () => {
+    // Why each reading is here, and what it catches (simulated before it was written):
+    //   - byte 6 read after all (the version byte, 0x40–0x4F): the position it lands on sees 16
+    //     of the 30, far over the bar;
+    //   - byte 8 read after all (the variant byte, 0x80–0xBF): % 30 gives four characters 3 in 64
+    //     and the rest 2 in 64, which lands at the 8th position about two times in three — caught
+    //     in 400 of 400 simulated runs at this size, 92% at 10,000;
+    //   - the rejection removed: 9-in-256 against 8-in-256 is too small for one position (λ ≈ 68)
+    //     and certain in the pool of 160,000 characters (λ ≈ 547).
+    const codes = await draw(20_000);
+    const readings = [
+      ...Array.from({ length: 8 }, (_, p) => ({ where: `position ${p + 1}`, x: chiSquare(codes.map((c) => c[p])) })),
+      { where: "pooled", x: chiSquare(codes.flatMap((c) => [...c])) },
+    ];
+    expect(readings.filter((r) => r.x >= CHI_BAR).map((r) => `${r.where}: χ² = ${r.x.toFixed(1)}`)).toEqual([]);
+  }, 90_000);
 });

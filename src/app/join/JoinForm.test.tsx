@@ -281,6 +281,11 @@ describe("#220 AC 1 — the sign-up tab is the invite code, then the account", (
     expect(inputs[0].required).toBe(true);
   });
 
+  it("the code box asks a phone keyboard for capitals, since every code is minted in capitals (#243)", () => {
+    const { form } = signUpForm();
+    expect(form.querySelector('input[name="code"]')?.getAttribute("autocapitalize")).toBe("characters");
+  });
+
   it("the 18+ statement is rendered beside both Create my account and the Google button", () => {
     const { form, q } = signUpForm();
     const attest = form.querySelector<HTMLElement>("[data-attest]");
