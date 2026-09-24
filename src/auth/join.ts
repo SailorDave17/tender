@@ -138,9 +138,15 @@ export const AFTER_SIGNUP = WELCOME_PATH;
  */
 export const WRONG_CODE = { status: 403, body: { message: "That invite code is not this season's." } } as const;
 
+/**
+ * Whether the code a person typed is this season's. NFKC folds a fullwidth or pasted look-alike to
+ * its plain form, `trim` drops the spaces a copy picks up, and since #243 case is folded on BOTH
+ * sides: `rotate_invite_code()` mints capitals only (0035), so `abcd2345` copied off a board is the
+ * same code, and a club row seeded by hand in lower case still matches what a member types.
+ */
 export function codesMatch(supplied: string, expected: string): boolean {
-  const a = Buffer.from(supplied.normalize("NFKC").trim());
-  const b = Buffer.from(expected.normalize("NFKC").trim());
+  const a = Buffer.from(supplied.normalize("NFKC").trim().toUpperCase());
+  const b = Buffer.from(expected.normalize("NFKC").trim().toUpperCase());
   // timingSafeEqual throws on unequal lengths; compare lengths first and let that be the answer,
   // which leaks only the length, never the bytes.
   if (a.length !== b.length) return false;

@@ -38,6 +38,26 @@ describe("which tab /join opens on (#123 AC 3)", () => {
     expect(initialMode("signin", true)).toBe("signin");
   });
 
+  it("a URL carrying an invite code opens on Sign up on a device that has signed in (#226 AC 2)", () => {
+    // The invite link as sent: both parameters, on a recognised device.
+    expect(initialMode("signup", true, "SPINNAKER")).toBe("signup");
+    // The code alone is enough — only an invite link carries one, and its holder is new here...
+    expect(initialMode(undefined, true, "SPINNAKER")).toBe("signup");
+    expect(initialMode("banana", true, "SPINNAKER")).toBe("signup");
+    // ...and the control: the same device with no code still opens on Sign in, so the line above
+    // is the code deciding and not the device.
+    expect(initialMode(undefined, true, undefined)).toBe("signin");
+  });
+
+  it("an empty code says nothing, and an explicit mode still outranks a code (#226)", () => {
+    expect(initialMode(undefined, true, "")).toBe("signin");
+    expect(initialMode(undefined, true, "   ")).toBe("signin");
+    expect(initialMode(undefined, true, null)).toBe("signin");
+    // `mode` names the tab outright; nothing sends signin with a code, and if something did, the
+    // name it gave wins, as it does over the cookie.
+    expect(initialMode("signin", false, "SPINNAKER")).toBe("signin");
+  });
+
   it("ignores a parameter that is neither, and falls back to the device", () => {
     // `?mode=banana` is not a third tab; it is a URL nobody meant, and the device still knows.
     expect(initialMode("banana", false)).toBe("signup");

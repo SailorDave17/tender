@@ -9,6 +9,7 @@ import { CandidateList, RungBadge } from "@/post/CandidateList";
 import { MatchPanel, type Contact, type StatusForm } from "@/post/MatchPanel";
 import { FORMER_MEMBER, counterpartyOf, explainAcceptRefusal, explainStatusRefusal, matchControls } from "@/post/match-view";
 import { UUID, explainPostRefusal } from "@/post/post-form";
+import { WithdrawnPost, readWithdrawnDay } from "@/post/withdrawn";
 import { ratingLabel, type Skill } from "@/profile/profile";
 import { supabaseServer } from "@/lib/supabase/server";
 import { acceptAnswer, answerPost, closePost, setMatchStatus } from "../actions";
@@ -33,6 +34,10 @@ export const dynamic = "force-dynamic";
  * Ownership is decided here from the boat row the viewer can read; the database decides it
  * again on Close (0006's update policy), on every answer (0007) and inside accept_answer()
  * (0008), so a forged form gets zero rows or 42501, never a write it should not have had.
+ *
+ * A post whose race day was unpublished is readable by nobody (0006), so for its own people —
+ * the skipper and anyone who answered — the page says the day was withdrawn instead of "Not here"
+ * (story #199; withdrawn.tsx).
  */
 export default async function PostPage({
   params,
@@ -54,7 +59,13 @@ export default async function PostPage({
   // because /board shows no competence label and should not pay for the round trip.
   const { data: skillRows } = await client.from("skill").select("code, label, level, sort").order("sort");
   const post = data.posts.find((p) => p.id === id);
-  if (!post) notFound();
+  if (!post) {
+    // An unpublished race day hides the post from everyone, its own skipper included (0006). Its
+    // own people are told the day was withdrawn; anyone else still gets "Not here" (#199, 0034).
+    const withdrawn = await readWithdrawnDay(client, id);
+    if (withdrawn) return <WithdrawnPost startsAt={withdrawn} />;
+    notFound();
+  }
   const boat = data.boats.get(post.boat_id);
   const date = data.dates.find((d) => d.id === post.race_date_id);
   if (!boat || !date) notFound();

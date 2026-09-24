@@ -122,6 +122,18 @@ describe("/api/join — the inline person writer (#220 AC 3)", () => {
     expect(created[0].user_metadata).toEqual({ adult_attested_at: expect.any(String) });
   });
 
+  it("the right code in lower case with spaces round it: accepted, one auth user (#243 AC 2)", async () => {
+    const res = await joinPOST(post("https://tender.test/api/join", {
+      email: "new@example.test",
+      code: ` ${INVITE.toLowerCase()} `,
+      attested: true,
+      password: "a-long-enough-password",
+    }));
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(created).toHaveLength(1);
+    expect(personRows()).toHaveLength(1);
+  });
+
   it("a wrong code: 403, no auth user, no row (#220 AC 3)", async () => {
     const res = await joinPOST(post("https://tender.test/api/join", {
       email: "new@example.test",
@@ -182,6 +194,14 @@ describe("/api/signup/google — adminPersonStore, the shared writer (#220 AC 4)
     const res = await googleSignupPOST(post("https://tender.test/api/signup/google", { code: INVITE, attested: true, ...GOOD }));
     expect(res.status).toBe(200);
     expect(personRows()[0].display_name).toBe("Ann Example");
+  });
+
+  it("the right code in lower case with spaces round it: accepted, one row (#243 AC 2)", async () => {
+    const res = await googleSignupPOST(
+      post("https://tender.test/api/signup/google", { code: ` ${INVITE.toLowerCase()} `, attested: true, ...GOOD }),
+    );
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(personRows()).toHaveLength(1);
   });
 
   it("a wrong code: 403, no exchange, no row", async () => {

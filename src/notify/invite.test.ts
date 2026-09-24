@@ -5,6 +5,7 @@ import {
   INVITE_MAX,
   KIND_INVITE,
   inviteEmail,
+  inviteLink,
   parseAddressList,
   sendInvites,
   type InviteStore,
@@ -108,11 +109,14 @@ describe("parsing a pasted list (AC 1)", () => {
 });
 
 describe("the email itself (AC 4)", () => {
-  it("carries the code and the join link exactly once each, and no other person's data", () => {
+  it("carries the join link once and the code twice — its own line and the link (#226) — and no other person's data", () => {
     const message = inviteEmail("newcomer@example.org", CODE, SITE);
     const occurrences = (needle: string) => message.text.split(needle).length - 1;
 
-    expect(occurrences(CODE)).toBe(1);
+    // #226 put the code in the link, so it is in the body twice. It was "exactly once" until then;
+    // the second copy is the link's, and the line below is the one for typing on another device.
+    expect(occurrences(CODE)).toBe(2);
+    expect(occurrences(`Your invite code: ${CODE}\n`)).toBe(1);
     expect(occurrences(`${SITE}/join`)).toBe(1);
 
     // Nobody else's address is in it. The only address anywhere is the recipient's, and that is
@@ -130,12 +134,35 @@ describe("the email itself (AC 4)", () => {
     expect(local.text).not.toContain("madcowsailing");
   });
 
-  it("links to the sign-up tab by name, not to plain /join (#218 AC 3)", () => {
+  it("links to the sign-up tab by name, carrying the current code (#218 AC 3, #226 AC 1)", () => {
     // The two tests above hold `${SITE}/join` as a substring, which the plain link satisfies too,
     // so neither can tell the two apart. This one reads the whole link, to the end of its line.
     const message = inviteEmail("newcomer@example.org", CODE, SITE);
     const link = message.text.split("\n").find((line) => line.startsWith("Join here: "));
-    expect(link).toBe(`Join here: ${SITE}/join?mode=signup`);
+    expect(link).toBe(`Join here: ${SITE}/join?mode=signup&code=${CODE}`);
+  });
+
+  it("URL-encodes the code, and the link decodes back to exactly it (#226 AC 1)", () => {
+    // CODE above is URL-safe, so it cannot tell an encoded link from a raw one. A hand-seeded club
+    // row can hold anything; this one carries each character a query string would misread.
+    const awkward = "A B&c=d+e/f?g#h%";
+    const message = inviteEmail("newcomer@example.org", awkward, SITE);
+    const line = message.text.split("\n").find((l) => l.startsWith("Join here: "));
+    expect(line).toBe(`Join here: ${inviteLink(SITE, awkward)}`);
+    const url = new URL(line!.slice("Join here: ".length));
+    expect(url.pathname).toBe("/join");
+    expect([...url.searchParams.keys()]).toEqual(["mode", "code"]);
+    expect(url.searchParams.get("mode")).toBe("signup");
+    expect(url.searchParams.get("code")).toBe(awkward);
+  });
+
+  it("the email is built with the code the store holds when it sends (#226 AC 1)", async () => {
+    // inviteEmail is handed a code; this is the claim that sendInvites hands it the CURRENT one,
+    // read from the store at send time, rather than one fixed anywhere else.
+    const f = fixture();
+    await sendInvites("newcomer@example.org", f.deps);
+    expect(f.sent).toHaveLength(1);
+    expect(f.sent[0].text).toContain(`Join here: ${SITE}/join?mode=signup&code=${CODE}\n`);
   });
 });
 

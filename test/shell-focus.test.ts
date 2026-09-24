@@ -37,6 +37,13 @@ vi.mock("@/brand/club-theme", () => ({
 vi.mock("@/shell/session", () => ({
   currentPerson: async () => ({ id: "p-1", email: "a@example.test", displayName: "Ada", isAdmin: true }),
 }));
+// #242: the screen the page is on, as `NavLinks` reads it. Null for the page the tests above
+// build, which is no screen at all and marks no tab; `pageAt` below sets it per render.
+let pathname: string | null = null;
+vi.mock("next/navigation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/navigation")>()),
+  usePathname: () => pathname,
+}));
 
 const css = readFileSync(GLOBALS_CSS, "utf8");
 
@@ -81,12 +88,19 @@ type Stop = {
 let browser: Browser;
 let html: string;
 
-beforeAll(async () => {
+/** The real root layout around the fixture page, as `path` would render it, stylesheet inlined. */
+async function pageAt(path: string | null): Promise<string> {
+  pathname = path;
   const { default: RootLayout } = await import("@/app/layout");
   const doc = renderToStaticMarkup(await RootLayout({ children: fixturePage() }));
   // the layout renders no <head> (Next adds it), so the stylesheet goes in one here
-  html = `<!doctype html>${doc.replace("<body>", `<head><style>${css}</style></head><body>`)}`;
-  if (!html.includes("<style>")) throw new Error("the layout's <body> was not found to attach the stylesheet to");
+  const out = `<!doctype html>${doc.replace("<body>", `<head><style>${css}</style></head><body>`)}`;
+  if (!out.includes("<style>")) throw new Error("the layout's <body> was not found to attach the stylesheet to");
+  return out;
+}
+
+beforeAll(async () => {
+  html = await pageAt(null);
   browser = await chromium.launch({ channel: "chrome", headless: true });
 }, 60_000);
 
@@ -205,7 +219,7 @@ describe("a phone at 390px: 44×44 targets and the navigation within thumb reach
       const read = (await page.evaluate(`(() => {
         const nav = document.querySelector("[data-nav]");
         const r = nav.getBoundingClientRect();
-        const post = nav.querySelector('a[data-primary]');
+        const post = [...nav.querySelectorAll("a")].find((a) => a.textContent.trim() === "Post");
         const p = post.getBoundingClientRect();
         return { position: getComputedStyle(nav).position, top: r.top, bottom: r.bottom, inner: window.innerHeight,
                  postText: post.textContent.trim(), postBottom: p.bottom, postHeight: p.height };
@@ -236,4 +250,68 @@ describe("a phone at 390px: 44×44 targets and the navigation within thumb reach
       await context.close();
     }
   });
+});
+
+type TabRead = { label: string; current: boolean; border: string; x: number; width: number; height: number };
+
+/** Each nav link's computed top border and its box, read in Chrome on the page as `path` renders it. */
+async function readTabs(path: string | null, viewport: { width: number; height: number }): Promise<{ tabs: TabRead[]; navHeight: number }> {
+  const doc = await pageAt(path);
+  const context = await browser.newContext({ viewport });
+  try {
+    const page = await context.newPage();
+    await page.setContent(doc);
+    return (await page.evaluate(`(() => {
+      const nav = document.querySelector("[data-nav]");
+      const tabs = [...nav.querySelectorAll("a")].map((a) => {
+        const cs = getComputedStyle(a);
+        const r = a.getBoundingClientRect();
+        return { label: a.textContent.trim(), current: a.getAttribute("aria-current") === "page",
+                 border: cs.borderTopStyle + " " + cs.borderTopWidth, x: r.x, width: r.width, height: r.height };
+      });
+      return { tabs, navHeight: nav.getBoundingClientRect().height };
+    })()`)) as { tabs: TabRead[]; navHeight: number };
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * #242 AC 3 — Post carries no outline off /post/new; the outline marks the current screen's tab.
+ * Read as the COMPUTED border in Chrome with the real stylesheet, because the defect was a rule
+ * (`[data-nav] a[data-primary]`), and a markup assertion cannot see a rule that still matches.
+ * And the mark moving must not move the dock: every tab's box is the same whichever is marked.
+ */
+describe("the outline marks the current tab, and Post only on /post/new (#242 AC 3)", () => {
+  for (const viewport of [{ width: 390, height: 800 }, { width: 1024, height: 800 }]) {
+    it(`${viewport.width}px: only the marked tab has a border, and Post has none on /board`, async () => {
+      const board = await readTabs("/board", viewport);
+      const post = await readTabs("/post/new", viewport);
+      for (const [name, read, marked] of [["/board", board, "Board"], ["/post/new", post, "Post"]] as const) {
+        console.log(`${viewport.width}px ${name}: ${read.tabs.map((t) => `${t.label} ${t.border}`).join(" · ")}`);
+        expect(read.tabs.filter((t) => t.current).map((t) => t.label)).toEqual([marked]);
+        for (const t of read.tabs) {
+          expect(t.border, `${name}: ${t.label}`).toBe(t.label === marked ? "solid 2px" : "none 0px");
+        }
+      }
+      // The criterion in its own words: Post, on a screen that is not /post/new, has no outline.
+      expect(board.tabs.find((t) => t.label === "Post")?.border).toBe("none 0px");
+    });
+
+    it(`${viewport.width}px: the tabs keep their size and place as the mark moves`, async () => {
+      const [board, post, none] = [
+        await readTabs("/board", viewport),
+        await readTabs("/post/new", viewport),
+        await readTabs("/welcome", viewport),
+      ];
+      expect(none.tabs.filter((t) => t.current)).toEqual([]);
+      const boxes = (r: { tabs: TabRead[] }) => r.tabs.map(({ label, x, width, height }) => ({ label, x, width, height }));
+      expect(boxes(post)).toEqual(boxes(board));
+      expect(boxes(none)).toEqual(boxes(board));
+      expect(post.navHeight).toBe(board.navHeight);
+      expect(none.navHeight).toBe(board.navHeight);
+      // and a marked tab is still a 44px target
+      for (const t of board.tabs) expect(t.height, t.label).toBeGreaterThanOrEqual(44);
+    });
+  }
 });

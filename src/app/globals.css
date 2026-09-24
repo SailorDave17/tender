@@ -269,8 +269,17 @@ input[type="radio"] {
   padding: 0 var(--space-3);
   border-radius: var(--radius);
 }
-[data-nav] a[data-primary] {
+/* #242: the outline marks the screen you are on. Until then it sat on Post permanently (#154's
+   call to action), which read as "you are here" on every screen. A border, a shape and not only a
+   colour (WCAG 1.4.1), and one forced-colours mode keeps. The links are content-box, so the
+   padding gives back the border's 2px a side and min-height its 4px: every tab's box is the same
+   size whichever one is marked, and the dock does not shift or change height as the mark moves.
+   NOT min-width — it sizes the content box, which the padding change already leaves alone, and
+   subtracting there too made a short label 4px narrower when marked (measured, 64 against 68). */
+[data-nav] a[aria-current="page"] {
   border: 2px solid currentColor;
+  padding: 0 calc(var(--space-3) - 2px);
+  min-height: calc(2.75rem - 4px);
 }
 /* On a phone the navigation docks to the bottom edge, where a thumb is. */
 @media (max-width: 39.99rem) {
@@ -573,6 +582,13 @@ button[data-already-member] {
 [data-invite] input {
   font-size: var(--text-lg);
   padding: var(--space-2) var(--space-3);
+}
+/* Google's button (#227): sized to this wrapper by `fitGoogleButton`, so the wrapper must not be
+   sized by the button. Both /join tabs put it in a grid (`[data-stack]`, the fieldset), whose
+   column grows to its widest item's min-content. Without this, a button drawn wide stays wide
+   when the screen narrows, and holds the column, the fieldset and the page open behind it. */
+[data-google] {
+  contain: inline-size;
 }
 /* the 18+ line beside the create-account buttons: body ink, not a muted hint, so it is read */
 [data-attest] {

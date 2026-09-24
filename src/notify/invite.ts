@@ -167,6 +167,17 @@ export type InviteResult = {
   refusal?: { reason: "cap"; fits: number } | { reason: "too_many"; max: number } | { reason: "empty" };
 };
 
+/**
+ * The link an invite email carries (#226): the Sign up tab, with this season's code in it, so the
+ * invitee arrives with the code already in the panel and never types it. The code is already in
+ * the email body, so the link reveals nothing the email does not. URL-encoded, because the code is
+ * whatever the club row holds: `rotate_invite_code()` (0003) mints URL-safe letters, but a club
+ * seeded by hand holds whatever was typed. Exported so the smoke's own link is held equal to it.
+ */
+export function inviteLink(siteUrl: string, code: string): string {
+  return `${siteUrl}/join?mode=signup&code=${encodeURIComponent(code)}`;
+}
+
 /** What an invitee reads. Exported so the copy is tested (AC 4), not so anything else sends it. */
 export function inviteEmail(to: string, code: string, siteUrl: string): Message {
   return {
@@ -178,7 +189,9 @@ export function inviteEmail(to: string, code: string, siteUrl: string): Message 
       ``,
       // #218: the sign-up tab by name. Plain /join opens on Sign in for a device that has signed in
       // here before (#123), which is not where someone holding a fresh invite code needs to be.
-      `Join here: ${siteUrl}/join?mode=signup`,
+      // #226: and the code, so the panel arrives filled in. The code stays on its own line below
+      // for anyone who opens the email on one device and signs up on another.
+      `Join here: ${inviteLink(siteUrl, code)}`,
       `Your invite code: ${code}`,
       ``,
       `Once you're in, add Tender to your home screen so a skipper's post can reach your phone:`,
