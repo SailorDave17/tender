@@ -436,6 +436,15 @@ without it read the same CLS, 0 in all twelve runs, and `/board` under `devtools
   after hydration into `--dock`, which the sheet and the body's bottom padding both read. The
   padding had been a fixed 3.5rem since #154, so on a wrapped nav every page's last lines ended
   behind it. That is fixed by the same variable.
+- **So is the sheet's own height.** CI's second run failed on the room the page makes for the
+  sheet. That had been a fixed 12rem, and the runner's fonts set the iOS wording at 244 px at 125%
+  text on 360 px. `src/install/sheet.ts` now measures the sheet into `--install-sheet`, and 12rem
+  is only the pre-measurement fallback. The sheet is also capped at half the screen above the nav,
+  with its wording scrolling inside it (the owner's call). At 150% text on a 320 × 640 phone, the
+  iOS wording otherwise reached 436 px and left the race days 38 px.
+- **The Lighthouse rows predate the last two changes** (the measured sheet and the cap). At
+  Lighthouse's 412 × 823 the sheet is 128 px against a 383 px cap, so the cap does not bind. The
+  measurement only changes the page's foot padding, which moves nothing on screen.
 - **`simulate` read 0 on `develop` as well**, which is why it cannot be this story's evidence.
   It is recorded because it is the ADR's instrument, and #217 did not move it.
 

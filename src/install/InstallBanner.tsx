@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DISMISSED_KEY, type InstallAdvice, installAdvice } from "./prompt";
+import { watchSheet } from "./sheet";
 
 /**
  * The "add Tender to your home screen" banner on /board (story #28 AC 3).
@@ -109,6 +110,14 @@ export function InstallBanner() {
       window.removeEventListener("appinstalled", onInstalled);
     };
   }, []);
+
+  // #217: the sheet is fixed to the bottom of the screen, and the page makes room for it by its
+  // measured height (`./sheet`) rather than by a guess at how its wording wraps.
+  useEffect(() => {
+    if (advice === null) return;
+    const sheet = document.querySelector<HTMLElement>('[data-banner="install"]');
+    return sheet ? watchSheet(sheet) : undefined;
+  }, [advice]);
 
   const install = useCallback(async () => {
     if (!deferred) return;

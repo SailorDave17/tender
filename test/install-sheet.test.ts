@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { InstallBannerView } from "@/install/InstallBanner";
 import { installAdvice } from "@/install/prompt";
+import { watchSheet } from "@/install/sheet";
 import { watchDock } from "@/shell/dock";
 import { GLOBALS_CSS } from "./tokens";
 
@@ -88,6 +89,9 @@ const CASES: Case[] = [
   { name: "admin 360×640 (nav on two rows)", viewport: { width: 360, height: 640 }, admin: true, text: 1 },
   { name: "crew 360×640 at 125% text", viewport: { width: 360, height: 640 }, admin: false, text: 1.25 },
   { name: "admin 412×823 at 125% text", viewport: { width: 412, height: 823 }, admin: true, text: 1.25 },
+  // The sheet taller than the stylesheet's 12rem fallback on every machine, not only on CI's fonts
+  // (where the iOS wording read 244px at 125% text on 360px, over a 240px fallback).
+  { name: "crew 320×640 at 150% text (sheet over the fallback)", viewport: { width: 320, height: 640 }, admin: false, text: 1.5 },
 ];
 
 let browser: Browser;
@@ -150,6 +154,7 @@ async function openBoard(o: Open): Promise<{ tab: Page; shifts: Shift[]; close: 
     shifts.length = 0;
     const banner = ${JSON.stringify(o.kind ? banners.get(o.kind) : "")};
     if (banner) document.querySelector("main h1").insertAdjacentHTML("afterend", banner);
+    ${o.watch ?? true ? `if (banner) (${watchSheet.toString()})(document.querySelector('[data-banner="install"]'));` : ""}
     await frames(3);
     await new Promise((done) => setTimeout(done, 100));
     return shifts;
@@ -203,7 +208,15 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
               navTop: nav && getComputedStyle(nav).position === "fixed" ? nav.getBoundingClientRect().top : null,
               navHeight: nav ? nav.getBoundingClientRect().height : null,
               ceiling,
+              viewport: window.innerHeight,
+              overflowY: getComputedStyle(aside).overflowY,
               actions: [...aside.querySelectorAll("[data-install-action]")].map((b) => {
+                // Capped at half the screen, the sheet can scroll its own wording: reach each
+                // action the way a member would, by scrolling the sheet, never the page.
+                const below = b.getBoundingClientRect().bottom - aside.getBoundingClientRect().bottom;
+                if (below > 0) aside.scrollTop += below;
+                const above = aside.getBoundingClientRect().top - b.getBoundingClientRect().top;
+                if (above > 0) aside.scrollTop -= above;
                 const r = b.getBoundingClientRect();
                 const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
                 return { action: b.getAttribute("data-install-action"), height: r.height, onTop: b === hit || b.contains(hit) };
@@ -211,7 +224,7 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
             };
           })()`)) as {
             position: string; top: number; bottom: number; height: number; navTop: number | null; navHeight: number | null; ceiling: number;
-            actions: { action: string; height: number; onTop: boolean }[];
+            viewport: number; overflowY: string; actions: { action: string; height: number; onTop: boolean }[];
           };
           console.log(`${kind}, ${c.name}: sheet ${placed.top.toFixed(0)}–${placed.bottom.toFixed(0)}px (${placed.height.toFixed(0)} of a ${placed.ceiling}px ceiling), nav ${placed.navHeight}px at ${placed.navTop}`);
 
@@ -219,8 +232,12 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
           expect(placed.top).toBeGreaterThanOrEqual(0);
           expect(placed.navTop, "a signed-in phone docks its navigation").not.toBeNull();
           expect(placed.bottom).toBeLessThanOrEqual(placed.navTop!);
-          // --install-sheet is the room the page makes; a sheet taller than it would cover the foot.
-          expect(placed.height).toBeLessThanOrEqual(placed.ceiling);
+          // --install-sheet is the room the page makes, and it is the sheet's measured height —
+          // not the 12rem fallback, which CI's fonts overran at 125% text (244px against 240).
+          expect(Math.abs(placed.ceiling - placed.height)).toBeLessThan(0.5);
+          // Never more than half the screen above the nav: the race days keep the other half.
+          expect(placed.overflowY).toBe("auto");
+          expect(placed.height).toBeLessThanOrEqual((placed.viewport - placed.navHeight!) / 2 + 0.5);
           expect(placed.actions.map((a) => a.action).sort()).toEqual(kind === "browser-prompt" ? ["dismiss", "prompt"] : ["dismiss"]);
           for (const a of placed.actions) {
             expect(a.onTop, `${a.action} is the element at its own centre`).toBe(true);
@@ -315,20 +332,27 @@ describe("the page's foot clears a wrapped navigation (#217, the dock measured)"
     expect(fallback.stamp).toBeGreaterThan(fallback.navTop);
   });
 
-  it("unmeasured (no script, or no ResizeObserver), a one-row nav still has the sheet above it", async () => {
-    // The stylesheet's own 3.5rem is the fallback until `watchDock` runs. It is right for a
-    // one-row nav, which is the case this reads; the wrapped cases above need the measurement.
+  it("unmeasured (no script, or no ResizeObserver), a one-row nav and sheet still clear each other", async () => {
+    // The stylesheet's own 3.5rem and 12rem are the fallbacks until `watchDock` and `watchSheet`
+    // run. They are right for a one-row nav and a sheet of ordinary size, which is the case this
+    // reads; the wrapped and enlarged cases above need the measurements.
     const { tab, close } = await openBoard({ viewport: { width: 360, height: 640 }, kind: "browser-prompt", watch: false });
     try {
       const read = (await tab.evaluate(`(() => ({
         position: getComputedStyle(document.querySelector('[data-banner="install"]')).position,
         sheetBottom: document.querySelector('[data-banner="install"]').getBoundingClientRect().bottom,
+        sheetHeight: document.querySelector('[data-banner="install"]').getBoundingClientRect().height,
+        room: parseFloat(getComputedStyle(document.body).paddingBottom),
         navTop: document.querySelector("[data-nav][data-signed-in]").getBoundingClientRect().top,
-        inline: document.documentElement.style.getPropertyValue("--dock"),
-      }))()`)) as { position: string; sheetBottom: number; navTop: number; inline: string };
-      expect(read.inline).toBe("");
+        navHeight: document.querySelector("[data-nav][data-signed-in]").getBoundingClientRect().height,
+        inline: ["--dock", "--install-sheet"].map((p) => document.documentElement.style.getPropertyValue(p)).join(""),
+      }))()`)) as { position: string; sheetBottom: number; sheetHeight: number; room: number; navTop: number; navHeight: number; inline: string };
+      console.log(`unmeasured: ${JSON.stringify(read)}`);
+      expect(read.inline, "neither measurement ran").toBe("");
       expect(read.position).toBe("fixed");
       expect(read.sheetBottom).toBeLessThanOrEqual(read.navTop);
+      // The 12rem fallback covers a one-row sheet: the room made is at least the sheet and the nav.
+      expect(read.room).toBeGreaterThanOrEqual(read.sheetHeight + read.navHeight);
     } finally {
       await close();
     }
