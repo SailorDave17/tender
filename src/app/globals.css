@@ -96,6 +96,10 @@
   --measure-wide: 48rem;
   --radius: 0.5rem;
   --radius-pill: 999px;
+  /* Something that floats over the page, cast upward: the install sheet (#217). One value for
+     both schemes — only colour tokens take a dark value here (`test/tokens.test.ts`) — dark
+     enough to read on the dark page without being heavy on the light one. */
+  --lift: 0 -2px 14px rgb(0 0 0 / 0.35);
 
   /* ---- motion ---------------------------------------------------------------------------- */
   --dur: 150ms;
@@ -595,6 +599,11 @@ button[data-already-member] {
 [data-banner] [data-install-action="prompt"] {
   margin-top: var(--space-2);
 }
+/* #217: beside the long iOS wording, flex shrank "Not now" narrower than its own label. Once the
+   sheet scrolls its content, that overflow is clipped rather than spilling past the button. */
+[data-banner="install"] [data-install-action="dismiss"] {
+  flex-shrink: 0;
+}
 /* #217: the install offer is a sheet fixed to the bottom of the screen, above the phone's docked
    navigation, rather than a block above the race days. It arrives after hydration, and only when
    the browser says an install is possible, so in the flow it pushed the whole list down (CLS on
@@ -615,9 +624,13 @@ button[data-already-member] {
 [data-banner="install"] {
   position: fixed;
   right: var(--space-2);
-  bottom: calc(var(--dock, 0rem) + var(--space-2));
+  /* Flush on the navigation, lifted off the list by a shadow (owner's review of the preview). */
+  bottom: var(--dock, 0rem);
   left: var(--space-2);
   z-index: 4;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: var(--lift);
   max-width: var(--measure);
   /* At most half the screen above the nav, its wording scrolling inside: at 150% text on a
      320×640 phone the iOS wording is 436px, which left the race days 38px (owner's call). */

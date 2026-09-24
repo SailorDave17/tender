@@ -204,6 +204,7 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
             probe.remove();
             return {
               position: getComputedStyle(aside).position,
+              shadow: getComputedStyle(aside).boxShadow,
               top: rect.top, bottom: rect.bottom, height: rect.height,
               navTop: nav && getComputedStyle(nav).position === "fixed" ? nav.getBoundingClientRect().top : null,
               navHeight: nav ? nav.getBoundingClientRect().height : null,
@@ -218,13 +219,20 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
                 const above = aside.getBoundingClientRect().top - b.getBoundingClientRect().top;
                 if (above > 0) aside.scrollTop -= above;
                 const r = b.getBoundingClientRect();
+                const s = aside.getBoundingClientRect();
                 const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-                return { action: b.getAttribute("data-install-action"), height: r.height, onTop: b === hit || b.contains(hit) };
+                return {
+                  action: b.getAttribute("data-install-action"), height: r.height, onTop: b === hit || b.contains(hit),
+                  // The whole label inside the button, and the whole button inside the sheet: a
+                  // centre point on top says nothing about a label clipped at the edge.
+                  labelFits: b.scrollWidth <= b.clientWidth,
+                  inside: r.left >= s.left && r.right <= s.right - parseFloat(getComputedStyle(aside).borderRightWidth),
+                };
               }),
             };
           })()`)) as {
-            position: string; top: number; bottom: number; height: number; navTop: number | null; navHeight: number | null; ceiling: number;
-            viewport: number; overflowY: string; actions: { action: string; height: number; onTop: boolean }[];
+            position: string; shadow: string; top: number; bottom: number; height: number; navTop: number | null; navHeight: number | null; ceiling: number;
+            viewport: number; overflowY: string; actions: { action: string; height: number; onTop: boolean; labelFits: boolean; inside: boolean }[];
           };
           console.log(`${kind}, ${c.name}: sheet ${placed.top.toFixed(0)}–${placed.bottom.toFixed(0)}px (${placed.height.toFixed(0)} of a ${placed.ceiling}px ceiling), nav ${placed.navHeight}px at ${placed.navTop}`);
 
@@ -232,6 +240,9 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
           expect(placed.top).toBeGreaterThanOrEqual(0);
           expect(placed.navTop, "a signed-in phone docks its navigation").not.toBeNull();
           expect(placed.bottom).toBeLessThanOrEqual(placed.navTop!);
+          // Owner's review of the preview: flush on the navigation, lifted off the list by a shadow.
+          expect(Math.abs(placed.bottom - placed.navTop!), "the sheet sits flush on the nav").toBeLessThan(0.5);
+          expect(placed.shadow).not.toBe("none");
           // --install-sheet is the room the page makes, and it is the sheet's measured height —
           // not the 12rem fallback, which CI's fonts overran at 125% text (244px against 240).
           expect(Math.abs(placed.ceiling - placed.height)).toBeLessThan(0.5);
@@ -241,6 +252,8 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
           expect(placed.actions.map((a) => a.action).sort()).toEqual(kind === "browser-prompt" ? ["dismiss", "prompt"] : ["dismiss"]);
           for (const a of placed.actions) {
             expect(a.onTop, `${a.action} is the element at its own centre`).toBe(true);
+            expect(a.labelFits, `${a.action}'s label fits inside the button`).toBe(true);
+            expect(a.inside, `${a.action} sits wholly inside the sheet`).toBe(true);
             expect(a.height).toBeGreaterThanOrEqual(44);
           }
 
