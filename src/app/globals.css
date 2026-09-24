@@ -283,7 +283,9 @@ input[type="radio"] {
     box-shadow: 0 -1px 0 var(--brand-mark);
   }
   body:has([data-nav][data-signed-in]) {
-    padding-bottom: 3.5rem;
+    /* #217: the nav's real height (`src/shell/dock.ts`), which is 3.5rem only while its links
+       fit on one row — two rows with the Admin link at ≤360px, more at a larger text size. */
+    padding-bottom: var(--dock, 3.5rem);
   }
 }
 
@@ -601,7 +603,9 @@ button[data-already-member] {
    scroll padding the height of the sheet, so the last race day scrolls clear of it and a control
    focused under it is scrolled into view above it (WCAG 2.4.11). `--install-sheet` is a ceiling
    on the sheet's height, not a measurement: `test/install-sheet.test.ts` holds both wordings
-   under it at 320–412 px, and holds the sheet clear of the navigation. */
+   under it at 320–412 px, and holds the sheet clear of the navigation. `--dock` is the docked
+   navigation's height: 3.5rem here until hydration, then its measured height from
+   `src/shell/dock.ts`, because a wrapped nav is taller (104px with the Admin link at 360px). */
 @media (max-width: 39.99rem) {
   html:has([data-nav][data-signed-in]) {
     --dock: 3.5rem;

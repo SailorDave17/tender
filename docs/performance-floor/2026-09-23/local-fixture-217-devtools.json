@@ -1,5 +1,5 @@
 {
-  "takenAt": "2026-09-24T00:16:56.300Z",
+  "takenAt": "2026-09-24T01:44:27.678Z",
   "target": {
     "baseUrl": "http://localhost:3100",
     "seeded": true,
@@ -25,18 +25,18 @@
       "runs": 3,
       "throttlingMethod": "devtools",
       "benchmarkIndex": {
-        "median": 1854,
+        "median": 1539.5,
         "values": [
-          1854,
-          1882.5,
-          1490.5
+          1576.5,
+          1539.5,
+          1468
         ]
       },
       "performance": {
-        "median": 81,
+        "median": 74,
         "values": [
-          81,
-          81,
+          75,
+          74,
           73
         ]
       },
@@ -57,27 +57,27 @@
         ]
       },
       "lcp": {
-        "median": 2371.895,
+        "median": 2633.966,
         "values": [
-          2371.895,
-          2348.396,
-          2588.703
+          2577.537,
+          2667.306,
+          2633.966
         ]
       },
       "tbt": {
-        "median": 642.762,
+        "median": 991.8439999999998,
         "values": [
-          642.762,
-          639.7549999999997,
-          1124.654000000001
+          940.7250000000006,
+          991.8439999999998,
+          1046.0900000000006
         ]
       },
       "ttfb": {
-        "median": 186.221,
+        "median": 253.02599999999998,
         "values": [
-          134.555,
-          186.221,
-          221.94500000000002
+          183.41,
+          262.986,
+          253.02599999999998
         ]
       },
       "requests": 14,
@@ -88,19 +88,19 @@
       "runs": 3,
       "throttlingMethod": "devtools",
       "benchmarkIndex": {
-        "median": 1755.5,
+        "median": 1780.5,
         "values": [
-          1755.5,
-          1568,
-          1764
+          1577,
+          1780.5,
+          1930.5
         ]
       },
       "performance": {
         "median": 84,
         "values": [
-          88,
-          84,
-          83
+          77,
+          86,
+          84
         ]
       },
       "accessibility": {
@@ -120,27 +120,27 @@
         ]
       },
       "lcp": {
-        "median": 2159.15,
+        "median": 2226.744,
         "values": [
-          2099.7,
-          2159.15,
-          2230.28
+          2429.78,
+          2153.189,
+          2226.744
         ]
       },
       "tbt": {
-        "median": 562.3770000000004,
+        "median": 548.1759999999995,
         "values": [
-          430.961,
-          562.3770000000004,
-          599.8629999999998
+          860.6830000000002,
+          475.1069999999995,
+          548.1759999999995
         ]
       },
       "ttfb": {
-        "median": 137.534,
+        "median": 140.369,
         "values": [
-          175.15800000000002,
-          127.01199999999999,
-          137.534
+          246.059,
+          140.369,
+          133.173
         ]
       },
       "requests": 17,
@@ -148,12 +148,13 @@
     }
   ],
   "verdict": {
-    "pass": true,
-    "failures": [],
+    "pass": false,
+    "failures": [
+      "/board: performance 74 is below 80"
+    ],
     "warnings": [
-      "/board: performance runs straddle the floor of 80 — 81 / 81 / 73",
-      "/board: benchmarkIndex 1854 is outside 920–1680, so this devtools reading does not represent a mid-range phone",
-      "/post/00003dbe-0000-4000-8000-000000000002: benchmarkIndex 1756 is outside 920–1680, so this devtools reading does not represent a mid-range phone"
+      "/post/00003dbe-0000-4000-8000-000000000002: performance runs straddle the floor of 80 — 77 / 86 / 84",
+      "/post/00003dbe-0000-4000-8000-000000000002: benchmarkIndex 1781 is outside 920–1680, so this devtools reading does not represent a mid-range phone"
     ]
   }
 }

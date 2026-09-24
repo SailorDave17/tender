@@ -411,20 +411,31 @@ plus the change. Lighthouse 12.8.2, mobile preset, every run shown. Machine-read
 | arm | throttling | route | performance | CLS | shifts attributed | benchmarkIndex |
 |---|---|---|---|---|---|---|
 | `develop` (control) | `devtools` | `/board` | **76** (76 / 80 / 75) | **0.123** (0.123 / 0.123 / 0.123) | `main > ol` in 3 of 3 | 1,723 |
-| #217 | `devtools` | `/board` | **81** (81 / 81 / 73) | **0.000** (0 / 0 / 0) | none | 1,854 |
+| #217 | `devtools` | `/board` | **74** (75 / 74 / 73) | **0.000** (0 / 0 / 0) | none | 1,540 |
 | `develop` (control) | `devtools` | `/post/[id]` | 87 (89 / 84 / 87) | 0.000 | none | 1,732 |
-| #217 | `devtools` | `/post/[id]` | 84 (88 / 84 / 83) | 0.000 | none | 1,756 |
+| #217 | `devtools` | `/post/[id]` | 84 (77 / 86 / 84) | 0.000 | none | 1,781 |
 | `develop` (control) | `simulate` | `/board` | 76 (76 / 76 / 68) | 0.000 | none | 1,822 |
-| #217 | `simulate` | `/board` | 75 (72 / 78 / 75) | 0.000 | none | 1,592 |
+| #217 | `simulate` | `/board` | 77 (67 / 77 / 77) | 0.000 | none | 1,375 |
 | `develop` (control) | `simulate` | `/post/[id]` | 85 (82 / 86 / 85) | 0.000 | none | 1,676 |
-| #217 | `simulate` | `/post/[id]` | 85 (83 / 86 / 85) | 0.000 | none | 1,640 |
+| #217 | `simulate` | `/post/[id]` | 84 (84 / 82 / 86) | 0.000 | none | 1,469 |
+
+The #217 rows are the shipped build, which includes `DockHeight` (below). An earlier #217 build
+without it read the same CLS, 0 in all twelve runs, and `/board` under `devtools` at 81 (81 / 81 /
+73).
 
 - **The banner was on screen in both `devtools` arms.** Lighthouse's final screenshot shows
   `browser-prompt` above the race days on `develop` and as the bottom sheet on #217. So the 0 is a
   reading with the banner present, not a run where `beforeinstallprompt` never fired.
-- **Performance is not claimed.** `/board`'s `devtools` median moved 76 → 81 and crossed the floor,
-  but both medians straddle it, and every `devtools` host index is above the 920–1,680 band
-  (`verdict.warnings` says so). The `simulate` medians are level. The CLS column is the result.
+- **Performance is not claimed.** `/board`'s `devtools` median read 81 on one #217 build and 74 on
+  the next, against the control's 76. That is the instrument's spread on this host, not a
+  difference between the arms, and the medians straddle the floor. The CLS column is the result.
+- **The docked navigation is not always 56 px, and the sheet sits on its measured height.** CI's
+  first run of #217's test failed at 320 px: on the runner's fonts the nav wrapped to two rows
+  (104 px), and a sheet offset by a fixed 3.5rem sat on it. *Measured* locally too: 104 px with the
+  Admin link at 360 px or narrower, and 69–129 px at 125% text. `src/shell/dock.ts` measures it
+  after hydration into `--dock`, which the sheet and the body's bottom padding both read. The
+  padding had been a fixed 3.5rem since #154, so on a wrapped nav every page's last lines ended
+  behind it. That is fixed by the same variable.
 - **`simulate` read 0 on `develop` as well**, which is why it cannot be this story's evidence.
   It is recorded because it is the ADR's instrument, and #217 did not move it.
 
@@ -432,7 +443,9 @@ plus the change. Lighthouse 12.8.2, mobile preset, every run shown. Machine-read
 both wordings, after the board's heading at 320, 360 and 412 px. With the sheet there are no shift
 entries. With the placement rule stripped, the list shifts 0.13–0.19. The same file holds the sheet
 clear of the navigation, both actions on top and at least 44 px, the foot and a Tab-focused covered
-control clear of it, and, with no advice, a board with nothing reserved.
+control clear of it, and, with no advice, a board with nothing reserved. It covers a one-row nav and
+the wrapped ones (the Admin link at 320 and 360 px, 125% text) by running the real `watchDock` in
+the page, and it checks the unmeasured fallback against a one-row nav.
 
 ## Running it
 

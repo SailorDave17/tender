@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { InstallBannerView } from "@/install/InstallBanner";
 import { installAdvice } from "@/install/prompt";
+import { watchDock } from "@/shell/dock";
 import { GLOBALS_CSS } from "./tokens";
 
 /**
@@ -23,16 +24,24 @@ import { GLOBALS_CSS } from "./tokens";
  * paired with the same arrival under the stylesheet with #217's placement rule stripped, which
  * must move the list; otherwise a 0 says nothing about the rule.
  *
+ * THE NAV IS NOT ALWAYS 56PX. CI's first run of this file failed at 320px: on the runner's fonts
+ * the docked nav wrapped to two rows (104px) and the sheet, offset by a fixed 3.5rem, sat on it.
+ * *Measured* here too: 104px with the Admin link at ≤360px, 69–129px at 125% text. So the page
+ * runs the real `watchDock` (`src/shell/dock.ts`), which the shell's `DockHeight` runs after
+ * hydration, and the placement cases include a wrapped nav on every machine — the Admin link at
+ * 320 and 360px, and 125% text — rather than relying on the runner's fonts to produce one.
+ *
  * WHAT THIS CANNOT SEE: whether a real browser fires `beforeinstallprompt`, and when. That, and
  * the size the shift reaches on a throttled load, are `npm run perf:floor`'s; the reading is in
  * `docs/performance-floor.md`.
  */
 
+const who = vi.hoisted(() => ({ admin: false }));
 vi.mock("@/brand/club-theme", () => ({
   loadClubTheme: async () => ({ name: "Hoover Sailing Club", disc: "#395FAC", mark: "#FCCF0B" }),
 }));
 vi.mock("@/shell/session", () => ({
-  currentPerson: async () => ({ id: "p-cy", email: "cy@example.test", displayName: "Cy", isAdmin: false }),
+  currentPerson: async () => ({ id: "p-cy", email: "cy@example.test", displayName: "Cy", isAdmin: who.admin }),
 }));
 
 const css = readFileSync(GLOBALS_CSS, "utf8");
@@ -64,14 +73,25 @@ function boardPage() {
   return h("main", null, h("h1", null, "Tender"), h("ol", null, ...days));
 }
 
+type Viewport = { width: number; height: number };
 const PHONES = [
   { name: "320×640", width: 320, height: 640 },
   { name: "360×640", width: 360, height: 640 },
   { name: "412×823 (Lighthouse mobile)", width: 412, height: 823 },
 ] as const;
 
+/** Who is looking and how: a crew member at default text, then the cases where the nav wraps. */
+type Case = { name: string; viewport: Viewport; admin: boolean; text: number };
+const CASES: Case[] = [
+  ...PHONES.map((p) => ({ name: `crew ${p.name}`, viewport: p, admin: false, text: 1 })),
+  { name: "admin 320×640 (nav on two rows)", viewport: { width: 320, height: 640 }, admin: true, text: 1 },
+  { name: "admin 360×640 (nav on two rows)", viewport: { width: 360, height: 640 }, admin: true, text: 1 },
+  { name: "crew 360×640 at 125% text", viewport: { width: 360, height: 640 }, admin: false, text: 1.25 },
+  { name: "admin 412×823 at 125% text", viewport: { width: 412, height: 823 }, admin: true, text: 1.25 },
+];
+
 let browser: Browser;
-let boardDoc: string;
+const boardDocs = new Map<boolean, string>();
 const banners = new Map<Kind, string>();
 
 function withSheet(doc: string, sheet: string): string {
@@ -82,7 +102,12 @@ function withSheet(doc: string, sheet: string): string {
 
 beforeAll(async () => {
   const { default: RootLayout } = await import("@/app/layout");
-  boardDoc = renderToStaticMarkup(await RootLayout({ children: boardPage() }));
+  for (const admin of [false, true]) {
+    who.admin = admin;
+    const doc = renderToStaticMarkup(await RootLayout({ children: boardPage() }));
+    if (doc.includes('href="/admin"') !== admin) throw new Error(`the admin=${admin} render did not ${admin ? "" : "not "}carry the Admin link`);
+    boardDocs.set(admin, doc);
+  }
   for (const kind of KINDS) {
     const html = renderToStaticMarkup(createElement(InstallBannerView, { advice: ADVICE[kind] }));
     if (!html.includes(`data-install-advice="${kind}"`)) throw new Error(`${kind}: the view did not render that advice`);
@@ -97,14 +122,20 @@ afterAll(async () => {
 
 const FRAMES = `const frames = (n) => new Promise((done) => { const step = () => (n-- ? requestAnimationFrame(step) : done()); step(); });`;
 
+type Shift = { value: number; sources: string[] };
+type Open = { sheet?: string; viewport: Viewport; kind: Kind | null; admin?: boolean; text?: number; watch?: boolean };
+
 /**
- * Open the board with a layout-shift observer running, then let the banner (or nothing) arrive
- * after the heading, as hydration does. Returns the tab, and the shifts the arrival caused.
+ * Open the board with a layout-shift observer running and, as hydration does, the dock measured
+ * and then the banner (or nothing) arriving after the heading. Returns the tab, and the shifts
+ * the arrival caused.
  */
-async function openBoard(sheet: string, viewport: { width: number; height: number }, kind: Kind | null): Promise<{ tab: Page; shifts: Shift[]; close: () => Promise<void> }> {
-  const context = await browser.newContext({ viewport });
+async function openBoard(o: Open): Promise<{ tab: Page; shifts: Shift[]; close: () => Promise<void> }> {
+  const context = await browser.newContext({ viewport: o.viewport });
   const tab = await context.newPage();
-  await tab.setContent(withSheet(boardDoc, sheet));
+  await tab.setContent(withSheet(boardDocs.get(o.admin ?? false)!, o.sheet ?? css));
+  if (o.text && o.text !== 1) await tab.evaluate(`document.documentElement.style.fontSize = "${o.text * 100}%"`);
+  if (o.watch ?? true) await tab.evaluate(`void (${watchDock.toString()})()`);
   const shifts = (await tab.evaluate(`(async () => { ${FRAMES}
     const name = (node) => {
       if (!node || node.nodeType !== 1) return String(node && node.nodeName);
@@ -117,7 +148,7 @@ async function openBoard(sheet: string, viewport: { width: number; height: numbe
     }).observe({ type: "layout-shift", buffered: true });
     await frames(3);
     shifts.length = 0;
-    const banner = ${JSON.stringify(kind ? banners.get(kind) : "")};
+    const banner = ${JSON.stringify(o.kind ? banners.get(o.kind) : "")};
     if (banner) document.querySelector("main h1").insertAdjacentHTML("afterend", banner);
     await frames(3);
     await new Promise((done) => setTimeout(done, 100));
@@ -126,7 +157,6 @@ async function openBoard(sheet: string, viewport: { width: number; height: numbe
   return { tab, shifts, close: () => context.close() };
 }
 
-type Shift = { value: number; sources: string[] };
 const total = (shifts: Shift[]) => shifts.reduce((sum, s) => sum + s.value, 0);
 const fmt = (shifts: Shift[]) =>
   `CLS ${total(shifts).toFixed(4)} [${shifts.map((s) => `${s.value.toFixed(4)} ${s.sources.join(",")}`).join("; ") || "no shifts"}]`;
@@ -135,9 +165,9 @@ describe("the banner's arrival moves nothing on the board (#217 AC 1's mechanism
   for (const vp of PHONES) {
     for (const kind of KINDS) {
       it(`${kind} at ${vp.name}: no shift with the sheet, the list shifts without it`, async () => {
-        const fixed = await openBoard(css, vp, kind);
+        const fixed = await openBoard({ viewport: vp, kind });
         await fixed.close();
-        const control = await openBoard(withoutTheRule(css), vp, kind);
+        const control = await openBoard({ sheet: withoutTheRule(css), viewport: vp, kind });
         await control.close();
         console.log(`${kind} ${vp.name} with #217: ${fmt(fixed.shifts)}`);
         console.log(`${kind} ${vp.name} without:   ${fmt(control.shifts)}`);
@@ -153,10 +183,10 @@ describe("the banner's arrival moves nothing on the board (#217 AC 1's mechanism
 });
 
 describe("the sheet is on screen, clear of the navigation, and hides nothing for good (#217 AC 2)", () => {
-  for (const vp of PHONES) {
+  for (const c of CASES) {
     for (const kind of KINDS) {
-      it(`${kind} at ${vp.name}: its actions are on top and reachable, and nothing is left under it`, async () => {
-        const { tab, close } = await openBoard(css, vp, kind);
+      it(`${kind}, ${c.name}: its actions are on top and reachable, and nothing is left under it`, async () => {
+        const { tab, close } = await openBoard({ viewport: c.viewport, kind, admin: c.admin, text: c.text });
         try {
           const placed = (await tab.evaluate(`(() => {
             const aside = document.querySelector('[data-banner="install"]');
@@ -171,6 +201,7 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
               position: getComputedStyle(aside).position,
               top: rect.top, bottom: rect.bottom, height: rect.height,
               navTop: nav && getComputedStyle(nav).position === "fixed" ? nav.getBoundingClientRect().top : null,
+              navHeight: nav ? nav.getBoundingClientRect().height : null,
               ceiling,
               actions: [...aside.querySelectorAll("[data-install-action]")].map((b) => {
                 const r = b.getBoundingClientRect();
@@ -179,10 +210,10 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
               }),
             };
           })()`)) as {
-            position: string; top: number; bottom: number; height: number; navTop: number | null; ceiling: number;
+            position: string; top: number; bottom: number; height: number; navTop: number | null; navHeight: number | null; ceiling: number;
             actions: { action: string; height: number; onTop: boolean }[];
           };
-          console.log(`${kind} ${vp.name}: sheet ${placed.top.toFixed(0)}–${placed.bottom.toFixed(0)}px (${placed.height.toFixed(0)} of a ${placed.ceiling}px ceiling), nav at ${placed.navTop}`);
+          console.log(`${kind}, ${c.name}: sheet ${placed.top.toFixed(0)}–${placed.bottom.toFixed(0)}px (${placed.height.toFixed(0)} of a ${placed.ceiling}px ceiling), nav ${placed.navHeight}px at ${placed.navTop}`);
 
           expect(placed.position).toBe("fixed");
           expect(placed.top).toBeGreaterThanOrEqual(0);
@@ -218,11 +249,16 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
             const top = document.querySelector('[data-banner="install"]').getBoundingClientRect().top;
             const buttons = [...document.querySelectorAll("[data-day-control]")];
             const i = buttons.findIndex((b) => b.getBoundingClientRect().bottom > top);
-            buttons[i - 1].focus({ preventScroll: true });
+            // Start from the control before it — or, when even the first race day is under the
+            // sheet (125% text on a 640px screen), from the header's sign-out, and Tab forward.
+            (i > 0 ? buttons[i - 1] : document.querySelector("[data-signout]")).focus({ preventScroll: true });
             return i;
           })()`)) as number;
-          expect(covered).toBeGreaterThan(0);
-          await tab.keyboard.press("Tab");
+          expect(covered).toBeGreaterThanOrEqual(0);
+          for (let presses = 0; presses < 12; presses++) {
+            await tab.keyboard.press("Tab");
+            if (await tab.evaluate(`document.activeElement.getAttribute("data-day-control") === "${covered}"`)) break;
+          }
           const focused = (await tab.evaluate(`(async () => { ${FRAMES}
             await frames(2);
             const el = document.activeElement;
@@ -232,7 +268,7 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
               sheetTop: document.querySelector('[data-banner="install"]').getBoundingClientRect().top,
             };
           })()`)) as { index: number; bottom: number; sheetTop: number };
-          console.log(`${kind} ${vp.name}: Tab onto day ${focused.index} (was under the sheet): its bottom ${focused.bottom.toFixed(0)}px, sheet top ${focused.sheetTop.toFixed(0)}px`);
+          console.log(`${kind}, ${c.name}: Tab onto day ${focused.index} (was under the sheet): its bottom ${focused.bottom.toFixed(0)}px, sheet top ${focused.sheetTop.toFixed(0)}px`);
           expect(focused.index).toBe(covered);
           expect(focused.bottom).toBeLessThanOrEqual(focused.sheetTop);
         } finally {
@@ -243,22 +279,93 @@ describe("the sheet is on screen, clear of the navigation, and hides nothing for
   }
 });
 
+describe("the page's foot clears a wrapped navigation (#217, the dock measured)", () => {
+  // The body's bottom padding was a fixed 3.5rem, so on a two-row nav the page's last lines ended
+  // behind it — before #217, on every page. It now reads the measured `--dock`. The control runs
+  // the same page without the measurement, and must show the stamp under the nav.
+  const wrapped = { width: 320, height: 640 };
+  const footOf = async (watch: boolean) => {
+    const { tab, close } = await openBoard({ viewport: wrapped, kind: null, admin: true, watch });
+    try {
+      return (await tab.evaluate(`(async () => { ${FRAMES}
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        await frames(2);
+        const nav = document.querySelector("[data-nav][data-signed-in]").getBoundingClientRect();
+        return {
+          navHeight: nav.height, navTop: nav.top,
+          padding: parseFloat(getComputedStyle(document.body).paddingBottom),
+          stamp: document.querySelector("footer[data-build-stamp]").getBoundingClientRect().bottom,
+        };
+      })()`)) as { navHeight: number; navTop: number; padding: number; stamp: number };
+    } finally {
+      await close();
+    }
+  };
+
+  it("admin at 320×640: the padding is the nav's height and the stamp ends above it; unmeasured, it does not", async () => {
+    const measured = await footOf(true);
+    const fallback = await footOf(false);
+    console.log(`measured: ${JSON.stringify(measured)}`);
+    console.log(`fallback: ${JSON.stringify(fallback)}`);
+    expect(measured.navHeight).toBeGreaterThan(56);
+    expect(measured.padding).toBe(measured.navHeight);
+    expect(measured.stamp).toBeLessThanOrEqual(measured.navTop);
+    // The control: 3.5rem under a taller nav leaves the stamp behind it.
+    expect(fallback.padding).toBe(56);
+    expect(fallback.stamp).toBeGreaterThan(fallback.navTop);
+  });
+
+  it("unmeasured (no script, or no ResizeObserver), a one-row nav still has the sheet above it", async () => {
+    // The stylesheet's own 3.5rem is the fallback until `watchDock` runs. It is right for a
+    // one-row nav, which is the case this reads; the wrapped cases above need the measurement.
+    const { tab, close } = await openBoard({ viewport: { width: 360, height: 640 }, kind: "browser-prompt", watch: false });
+    try {
+      const read = (await tab.evaluate(`(() => ({
+        position: getComputedStyle(document.querySelector('[data-banner="install"]')).position,
+        sheetBottom: document.querySelector('[data-banner="install"]').getBoundingClientRect().bottom,
+        navTop: document.querySelector("[data-nav][data-signed-in]").getBoundingClientRect().top,
+        inline: document.documentElement.style.getPropertyValue("--dock"),
+      }))()`)) as { position: string; sheetBottom: number; navTop: number; inline: string };
+      expect(read.inline).toBe("");
+      expect(read.position).toBe("fixed");
+      expect(read.sheetBottom).toBeLessThanOrEqual(read.navTop);
+    } finally {
+      await close();
+    }
+  });
+
+  it("on a wide screen the nav is not docked, and the measurement leaves nothing behind", async () => {
+    const { tab, close } = await openBoard({ viewport: { width: 1024, height: 768 }, kind: null });
+    try {
+      const read = (await tab.evaluate(`(() => ({
+        inline: document.documentElement.style.getPropertyValue("--dock"),
+        padding: getComputedStyle(document.body).paddingBottom,
+      }))()`)) as { inline: string; padding: string };
+      expect(read.inline).toBe("");
+      expect(read.padding).toBe("0px");
+    } finally {
+      await close();
+    }
+  });
+});
+
 describe("with no advice the board is as it was (#217 AC 3)", () => {
   it("no sheet, no room reserved at the foot, and the heading runs straight into the race days", async () => {
-    const { tab, shifts, close } = await openBoard(css, { width: 360, height: 640 }, null);
+    const { tab, shifts, close } = await openBoard({ viewport: { width: 360, height: 640 }, kind: null });
     try {
       const read = (await tab.evaluate(`(() => ({
         sheet: document.querySelectorAll('[data-banner="install"]').length,
         next: document.querySelector("main h1").nextElementSibling.tagName.toLowerCase(),
         bodyPadding: getComputedStyle(document.body).paddingBottom,
+        navHeight: document.querySelector("[data-nav][data-signed-in]").getBoundingClientRect().height,
         scrollPadding: getComputedStyle(document.documentElement).scrollPaddingBottom,
-      }))()`)) as { sheet: number; next: string; bodyPadding: string; scrollPadding: string };
+      }))()`)) as { sheet: number; next: string; bodyPadding: string; navHeight: number; scrollPadding: string };
       console.log(`no advice: ${JSON.stringify(read)}`);
       expect(shifts).toEqual([]);
       expect(read.sheet).toBe(0);
       expect(read.next).toBe("ol");
-      // The docked navigation's own 3.5rem, and nothing for a sheet that is not there.
-      expect(read.bodyPadding).toBe("56px");
+      // The docked navigation's own height, and nothing for a sheet that is not there.
+      expect(read.bodyPadding).toBe(`${read.navHeight}px`);
       expect(read.scrollPadding).toBe("auto");
     } finally {
       await close();
