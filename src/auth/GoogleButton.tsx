@@ -25,6 +25,12 @@ import { useEffect, useRef, useState } from "react";
  * `data-google` is the probe handle. `client_id` is the public web client id — the same one the
  * Supabase provider holds, so GoTrue accepts the token's audience — inlined from
  * `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. The page hides this component when that is unset.
+ *
+ * **The width is the slot's, not ours (#227).** GIS draws the button at exactly the `width` it is
+ * given. A fixed 300 made the sign-up fieldset 326px wide and scrolled /join's Sign up tab
+ * sideways at a 320px screen (WCAG 1.4.10), and the Sign in tab below about 316px. *Measured*
+ * with GIS's real script: 342px against 320. `fitGoogleButton` below draws it at the wrapper's
+ * width within GIS's range, and again whenever that width changes.
  */
 
 export type GoogleButtonText = "signin_with" | "signup_with" | "continue_with";
@@ -79,6 +85,44 @@ export async function makeNonce(
   return { raw, hashed };
 }
 
+/**
+ * Draws GIS's button into `slot` at `wrapper`'s width, and redraws it when that width changes
+ * (#227). GIS takes a `width` of 200–400px; *measured* on its real script, a request of 500 draws
+ * 400, and the box it draws is exactly the width requested. So below 200 the button overflows,
+ * which starts at a screen under about 258px on Sign up, below the 320px WCAG 1.4.10 asks for.
+ *
+ * The wrapper's width must not depend on the button, or a button drawn wide on a wide screen holds
+ * its column open when the screen narrows (a phone turned upright) and this never sees a change.
+ * `[data-google]` carries `contain: inline-size` in `globals.css` for that reason.
+ *
+ * SELF-CONTAINED ON PURPOSE, like `watchDock` (`src/shell/dock.ts`): no imports and no closure over
+ * module state, so `test/surfaces.test.ts` can hand this exact function to Chrome and measure /join
+ * at 320px with a stand-in for GIS. `window.google` must be initialised first. Returns the teardown.
+ */
+export function fitGoogleButton(wrapper: HTMLElement, slot: HTMLElement, text: GoogleButtonText): () => void {
+  let drawn = 0;
+  const fit = () => {
+    const width = Math.max(200, Math.min(400, Math.floor(wrapper.clientWidth)));
+    if (width === drawn) return;
+    drawn = width;
+    slot.replaceChildren();
+    window.google?.accounts.id.renderButton(slot, {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      text,
+      shape: "rectangular",
+      width,
+    });
+  };
+  fit();
+  if (typeof ResizeObserver === "undefined") return () => {};
+  // A redraw changes only the slot's content, never the wrapper's width, so this cannot loop.
+  const observer = new ResizeObserver(fit);
+  observer.observe(wrapper);
+  return () => observer.disconnect();
+}
+
 export function GoogleButton({
   clientId,
   text,
@@ -91,7 +135,9 @@ export function GoogleButton({
   flow: "signin" | "signup";
   onCredential: (credential: string, nonce: string) => void;
 }) {
+  const wrapper = useRef<HTMLDivElement>(null);
   const slot = useRef<HTMLDivElement>(null);
+  const stopFitting = useRef<() => void>(null);
   const [nonce, setNonce] = useState<{ raw: string; hashed: string } | null>(null);
 
   useEffect(() => {
@@ -101,31 +147,25 @@ export function GoogleButton({
     });
     return () => {
       live = false;
+      stopFitting.current?.();
     };
   }, []);
 
   function ready() {
     const gsi = window.google?.accounts.id;
-    if (!gsi || !slot.current || !nonce) return;
+    if (!gsi || !wrapper.current || !slot.current || !nonce) return;
     gsi.initialize({
       client_id: clientId,
       callback: (r) => onCredential(r.credential, nonce.raw),
       nonce: nonce.hashed,
       ux_mode: "popup",
     });
-    slot.current.replaceChildren();
-    gsi.renderButton(slot.current, {
-      type: "standard",
-      theme: "outline",
-      size: "large",
-      text,
-      shape: "rectangular",
-      width: 300,
-    });
+    stopFitting.current?.();
+    stopFitting.current = fitGoogleButton(wrapper.current, slot.current, text);
   }
 
   return (
-    <div data-google={flow}>
+    <div ref={wrapper} data-google={flow}>
       <div ref={slot} />
       {nonce && <Script src={GSI_SCRIPT} strategy="afterInteractive" onReady={ready} />}
     </div>
