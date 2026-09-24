@@ -413,12 +413,21 @@ describe("join — an address that already carries an attested member (AC 4)", (
 });
 
 describe("codesMatch", () => {
-  it("is exact after trimming and unicode normalisation", () => {
+  it("is exact after trimming, unicode normalisation and case folding", () => {
     expect(codesMatch(" HSC-2027 ", "HSC-2027")).toBe(true);
-    expect(codesMatch("hsc-2027", "HSC-2027")).toBe(false);
     expect(codesMatch("", "HSC-2027")).toBe(false);
+    expect(codesMatch("HSC-2028", "HSC-2027")).toBe(false);
     // NFKC: a fullwidth digit folds to its ASCII form, so a pasted code still matches.
     expect(codesMatch("HSC-２０２７", "HSC-2027")).toBe(true);
+  });
+
+  it("folds case on both sides (#243): lower case copied off a board matches, and so does a hand-seeded lower-case row", () => {
+    expect(codesMatch("abcd2345", "ABCD2345")).toBe(true);
+    expect(codesMatch("aBcD2345", "ABCD2345")).toBe(true);
+    // The stored side folds too: README's seed and a club row typed by hand need not be capitals.
+    expect(codesMatch("CHANGEME", "changeme")).toBe(true);
+    // Folding is not loosening: a different code in lower case is still a different code.
+    expect(codesMatch("abcd2346", "ABCD2345")).toBe(false);
   });
 });
 
@@ -637,5 +646,32 @@ describe("googleSignup — the gate, then the exchange and the row, in one reque
     expect(calls).toEqual(["inviteCode", "exchange", "exists", "setMetadata", "insert", "signOut"]);
     // The gate always hands over its attestation, so the delete branch is unreachable from here.
     expect(deleted).toEqual([]);
+  });
+});
+
+/**
+ * #243 AC 2, at the two gates the routes call. `/api/join` and `/api/signup/google` hand the posted
+ * `code` to these unchanged (`String(body.code ?? "")`), and `src/auth/person-writers.test.ts`
+ * drives the same inputs through the real handlers.
+ */
+describe("a correct code typed in lower case, or with surrounding spaces, is accepted (#243 AC 2)", () => {
+  const TYPED = ["hsc-2027", "  HSC-2027  ", "\thsc-2027 "];
+
+  it("join: each form signs the member up, exactly as the capitals do", async () => {
+    for (const code of TYPED) {
+      const { deps, calls } = fakes();
+      const r = await join({ ...good, code }, deps);
+      expect(r, JSON.stringify(code)).toEqual({ status: 200, body: { redirect: AFTER_SIGNUP } });
+      expect(calls.createUser, JSON.stringify(code)).toBe(1);
+    }
+  });
+
+  it("googleSignup: each form exchanges the token and mints the row", async () => {
+    for (const code of TYPED) {
+      const { deps, calls } = googleFakes();
+      const r = await googleSignup({ ...googleGood, code }, deps);
+      expect(r, JSON.stringify(code)).toEqual({ status: 200, body: { redirect: "/welcome" } });
+      expect(calls, JSON.stringify(code)).toEqual(["inviteCode", "exchange", "exists", "setMetadata", "insert"]);
+    }
   });
 });

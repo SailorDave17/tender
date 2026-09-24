@@ -271,6 +271,8 @@ export function JoinForm({
             it stays an ordinary editable box — a rotated code in an old link has to be
             replaceable by typing — and the hint says where it came from. Nothing about the check
             moves: the route compares whatever is in the box, as it did when it was typed.
+            #243: `autoCapitalize="characters"` so a phone keyboard offers capitals, since every
+            code is minted in capitals. The route folds case anyway, so lower case still matches.
           */}
           <section role="group" aria-labelledby="invite-heading" data-invite>
             <h2 id="invite-heading">Your invite code</h2>
@@ -281,7 +283,7 @@ export function JoinForm({
                 required
                 defaultValue={linkCode}
                 autoComplete="off"
-                autoCapitalize="none"
+                autoCapitalize="characters"
                 spellCheck={false}
               />
             </label>
