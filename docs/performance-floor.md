@@ -126,6 +126,12 @@ removed, CLS reads 0.000.
 after the first paint. So the floor is met on the median while a single run can carry ~87% of the
 budget. Worth knowing before anything is added to that banner.
 
+**Fixed by #217 (2026-09-23), measured on `develop` at `3d18318` plus #217's change.** The banner
+is now a sheet fixed to the bottom of the screen, above the phone's docked navigation, so its
+arrival moves nothing. Under `devtools` throttling, where the shift reproduces every time, `develop`
+read 0.123 on `main > ol` in 3 of 3 runs and #217 read 0 in 3 of 3, with the banner on screen in
+both (Lighthouse's final screenshots). See *The install banner, 2026-09-23 — story #217* below.
+
 ## What this means for ADR 002
 
 **Where this stands now (2026-09-22).** ADR 002's lab condition fired on #185's deployed reading,
@@ -381,6 +387,74 @@ About links start 24 px (the frame's padding) under the content. But all three r
 640 px there, so a viewport-tall frame stretches nothing, and adding R2's rule left all three green.
 `test/footer-streaming.test.ts` makes the same reading on a page shorter than the screen, where R2's
 rule reddens it: the frame must equal its `<main>`, and the stamp must end on the first screen.
+
+## The install banner, 2026-09-23 — story #217
+
+**Verdict: with #217 no run attributes a shift to `main > ol` or to the banner, and CLS is 0 in
+all twelve runs. The same harness on `develop` reads 0.123 on `/board` in all three `devtools` runs,
+each one `main > ol`.**
+
+The banner is now a sheet fixed to the bottom of the screen, just above the docked navigation on a
+phone (the owner's call at pickup, over reserving its space or rendering it below the list). A fixed
+box displaces nothing, and with no advice nothing is rendered and nothing is reserved. While it
+shows, the page gains room at its foot and a scroll padding the height of the sheet, so the last
+race day scrolls clear of it and a control focused under it is scrolled above it.
+
+`npm run perf:floor -- --runs 3`, seeded, on #44's fixture, under **both** throttling methods.
+`simulate` alone could not have shown this fix. Its trace is unthrottled, so the banner lands before
+first paint, and `develop` reads 0 there too. `devtools` is where #216 saw the shift in every run.
+Both arms ran against `next build` + `next start` on localhost, on one stack and host, back to back.
+The control is a `git worktree` of `develop` at `3d18318` (#211 merged), and #217 is the same commit
+plus the change. Lighthouse 12.8.2, mobile preset, every run shown. Machine-readable in
+`docs/performance-floor/2026-09-23/local-fixture-217*.json`.
+
+| arm | throttling | route | performance | CLS | shifts attributed | benchmarkIndex |
+|---|---|---|---|---|---|---|
+| `develop` (control) | `devtools` | `/board` | **76** (76 / 80 / 75) | **0.123** (0.123 / 0.123 / 0.123) | `main > ol` in 3 of 3 | 1,723 |
+| #217 | `devtools` | `/board` | **74** (75 / 74 / 73) | **0.000** (0 / 0 / 0) | none | 1,540 |
+| `develop` (control) | `devtools` | `/post/[id]` | 87 (89 / 84 / 87) | 0.000 | none | 1,732 |
+| #217 | `devtools` | `/post/[id]` | 84 (77 / 86 / 84) | 0.000 | none | 1,781 |
+| `develop` (control) | `simulate` | `/board` | 76 (76 / 76 / 68) | 0.000 | none | 1,822 |
+| #217 | `simulate` | `/board` | 77 (67 / 77 / 77) | 0.000 | none | 1,375 |
+| `develop` (control) | `simulate` | `/post/[id]` | 85 (82 / 86 / 85) | 0.000 | none | 1,676 |
+| #217 | `simulate` | `/post/[id]` | 84 (84 / 82 / 86) | 0.000 | none | 1,469 |
+
+The #217 rows are the shipped build, which includes `DockHeight` (below). An earlier #217 build
+without it read the same CLS, 0 in all twelve runs, and `/board` under `devtools` at 81 (81 / 81 /
+73).
+
+- **The banner was on screen in both `devtools` arms.** Lighthouse's final screenshot shows
+  `browser-prompt` above the race days on `develop` and as the bottom sheet on #217. So the 0 is a
+  reading with the banner present, not a run where `beforeinstallprompt` never fired.
+- **Performance is not claimed.** `/board`'s `devtools` median read 81 on one #217 build and 74 on
+  the next, against the control's 76. That is the instrument's spread on this host, not a
+  difference between the arms, and the medians straddle the floor. The CLS column is the result.
+- **The docked navigation is not always 56 px, and the sheet sits on its measured height.** CI's
+  first run of #217's test failed at 320 px: on the runner's fonts the nav wrapped to two rows
+  (104 px), and a sheet offset by a fixed 3.5rem sat on it. *Measured* locally too: 104 px with the
+  Admin link at 360 px or narrower, and 69–129 px at 125% text. `src/shell/dock.ts` measures it
+  after hydration into `--dock`, which the sheet and the body's bottom padding both read. The
+  padding had been a fixed 3.5rem since #154, so on a wrapped nav every page's last lines ended
+  behind it. That is fixed by the same variable.
+- **So is the sheet's own height.** CI's second run failed on the room the page makes for the
+  sheet. That had been a fixed 12rem, and the runner's fonts set the iOS wording at 244 px at 125%
+  text on 360 px. `src/install/sheet.ts` now measures the sheet into `--install-sheet`, and 12rem
+  is only the pre-measurement fallback. The sheet is also capped at half the screen above the nav,
+  with its wording scrolling inside it (the owner's call). At 150% text on a 320 × 640 phone, the
+  iOS wording otherwise reached 436 px and left the race days 38 px.
+- **The Lighthouse rows predate the last two changes** (the measured sheet and the cap). At
+  Lighthouse's 412 × 823 the sheet is 128 px against a 383 px cap, so the cap does not bind. The
+  measurement only changes the page's foot padding, which moves nothing on screen.
+- **`simulate` read 0 on `develop` as well**, which is why it cannot be this story's evidence.
+  It is recorded because it is the ADR's instrument, and #217 did not move it.
+
+`test/install-sheet.test.ts` holds the mechanism in Chrome. It inserts the real banner markup,
+both wordings, after the board's heading at 320, 360 and 412 px. With the sheet there are no shift
+entries. With the placement rule stripped, the list shifts 0.13–0.19. The same file holds the sheet
+clear of the navigation, both actions on top and at least 44 px, the foot and a Tab-focused covered
+control clear of it, and, with no advice, a board with nothing reserved. It covers a one-row nav and
+the wrapped ones (the Admin link at 320 and 360 px, 125% text) by running the real `watchDock` in
+the page, and it checks the unmeasured fallback against a one-row nav.
 
 ## Running it
 

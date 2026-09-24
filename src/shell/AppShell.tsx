@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { BuildStamp } from "@/build/BuildStamp";
+import { DockHeight } from "./DockHeight";
 import type { ShellPerson } from "./session";
 
 /**
@@ -92,6 +93,8 @@ export function AppShell({
             </Link>
           )}
         </nav>
+        {/* #217: the docked nav's real height, for the page's foot and the install sheet. */}
+        {person ? <DockHeight /> : null}
       </header>
       <div id="main" tabIndex={-1} data-frame>
         {children}

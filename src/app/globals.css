@@ -96,6 +96,10 @@
   --measure-wide: 48rem;
   --radius: 0.5rem;
   --radius-pill: 999px;
+  /* Something that floats over the page, cast upward: the install sheet (#217). One value for
+     both schemes — only colour tokens take a dark value here (`test/tokens.test.ts`) — dark
+     enough to read on the dark page without being heavy on the light one. */
+  --lift: 0 -2px 14px rgb(0 0 0 / 0.35);
 
   /* ---- motion ---------------------------------------------------------------------------- */
   --dur: 150ms;
@@ -283,7 +287,9 @@ input[type="radio"] {
     box-shadow: 0 -1px 0 var(--brand-mark);
   }
   body:has([data-nav][data-signed-in]) {
-    padding-bottom: 3.5rem;
+    /* #217: the nav's real height (`src/shell/dock.ts`), which is 3.5rem only while its links
+       fit on one row — two rows with the Admin link at ≤360px, more at a larger text size. */
+    padding-bottom: var(--dock, 3.5rem);
   }
 }
 
@@ -592,6 +598,59 @@ button[data-already-member] {
 }
 [data-banner] [data-install-action="prompt"] {
   margin-top: var(--space-2);
+}
+/* #217: "Not now" sits beside the wording while both fit, and wraps below it when they cannot share
+   a row — large text on a narrow phone, sooner on wider fonts (CI's runner at 150%). Without this,
+   flex squeezed "Not now" narrower than its own label beside the long iOS wording, and the
+   scrolling sheet clipped it. The wording's 10rem basis is what keeps the two side by side at
+   ordinary sizes; without it the row wraps whenever it is allowed to. */
+[data-banner="install"] {
+  flex-wrap: wrap;
+}
+[data-banner="install"] > div {
+  flex: 1 1 10rem;
+}
+/* #217: the install offer is a sheet fixed to the bottom of the screen, above the phone's docked
+   navigation, rather than a block above the race days. It arrives after hydration, and only when
+   the browser says an install is possible, so in the flow it pushed the whole list down (CLS on
+   `main > ol`, #44 and #216). A fixed box displaces nothing, and when there is no advice nothing
+   is rendered and nothing is reserved. While it shows, the page gains room at its foot and a
+   scroll padding the height of the sheet, so the last race day scrolls clear of it and a control
+   focused under it is scrolled into view above it (WCAG 2.4.11). `--install-sheet` is the sheet's
+   height: 12rem here until the banner measures itself (`src/install/sheet.ts`), because its
+   wording wraps with the member's fonts and text size — 244px at 125% text on CI's runner, over
+   this fallback. `test/install-sheet.test.ts` holds the sheet clear of the navigation. `--dock` is the docked
+   navigation's height: 3.5rem here until hydration, then its measured height from
+   `src/shell/dock.ts`, because a wrapped nav is taller (104px with the Admin link at 360px). */
+@media (max-width: 39.99rem) {
+  html:has([data-nav][data-signed-in]) {
+    --dock: 3.5rem;
+  }
+}
+[data-banner="install"] {
+  position: fixed;
+  right: var(--space-2);
+  /* Flush on the navigation, lifted off the list by a shadow (owner's review of the preview). */
+  bottom: var(--dock, 0rem);
+  left: var(--space-2);
+  z-index: 4;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: var(--lift);
+  max-width: var(--measure);
+  /* At most half the screen above the nav, its wording scrolling inside: at 150% text on a
+     320×640 phone the iOS wording is 436px, which left the race days 38px (owner's call). */
+  max-height: calc((100svh - var(--dock, 0rem)) / 2);
+  box-sizing: border-box;
+  overflow-y: auto;
+  margin: 0 auto;
+}
+html:has([data-banner="install"]) {
+  --install-sheet: 12rem;
+  scroll-padding-bottom: calc(var(--dock, 0rem) + var(--install-sheet) + var(--space-4));
+}
+body:has([data-banner="install"][data-install-advice]) {
+  padding-bottom: calc(var(--dock, 0rem) + var(--install-sheet) + var(--space-4));
 }
 
 /* the board: each race day a card, its posts a ruled list under the day's heading */
