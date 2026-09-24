@@ -1,0 +1,157 @@
+{
+  "takenAt": "2026-09-24T00:19:15.281Z",
+  "target": {
+    "baseUrl": "http://localhost:3101",
+    "seeded": true,
+    "servedSupabaseUrl": "http://127.0.0.1:54321"
+  },
+  "volume": {
+    "people": 80,
+    "dates": 45,
+    "boats": 30,
+    "openPosts": 20,
+    "matchedPosts": 30,
+    "availabilityPerPerson": 15,
+    "answersPerOpenPost": 4
+  },
+  "floors": {
+    "performance": 80,
+    "accessibility": 90,
+    "cls": 0.1
+  },
+  "summaries": [
+    {
+      "route": "/board",
+      "runs": 3,
+      "throttlingMethod": "simulate",
+      "benchmarkIndex": {
+        "median": 1821.5,
+        "values": [
+          1821.5,
+          1849.5,
+          1387.5
+        ]
+      },
+      "performance": {
+        "median": 76,
+        "values": [
+          76,
+          76,
+          68
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0,
+        "values": [
+          0,
+          0,
+          0
+        ]
+      },
+      "lcp": {
+        "median": 5108.736704896743,
+        "values": [
+          5062.025067076381,
+          5108.736704896743,
+          5353.600684746063
+        ]
+      },
+      "tbt": {
+        "median": 248,
+        "values": [
+          248,
+          233,
+          472.6572406780092
+        ]
+      },
+      "ttfb": {
+        "median": 166.246,
+        "values": [
+          141.49699999999999,
+          166.246,
+          229.914
+        ]
+      },
+      "requests": 14,
+      "lighthouseVersion": "12.8.2"
+    },
+    {
+      "route": "/post/00003dbe-0000-4000-8000-000000000002",
+      "runs": 3,
+      "throttlingMethod": "simulate",
+      "benchmarkIndex": {
+        "median": 1676,
+        "values": [
+          1669.5,
+          1956.5,
+          1676
+        ]
+      },
+      "performance": {
+        "median": 85,
+        "values": [
+          82,
+          86,
+          85
+        ]
+      },
+      "accessibility": {
+        "median": 100,
+        "values": [
+          100,
+          100,
+          100
+        ]
+      },
+      "cls": {
+        "median": 0,
+        "values": [
+          0,
+          0,
+          0
+        ]
+      },
+      "lcp": {
+        "median": 4263.800819870402,
+        "values": [
+          4501.480217906913,
+          4172.552683784191,
+          4263.800819870402
+        ]
+      },
+      "tbt": {
+        "median": 76,
+        "values": [
+          153.685027238364,
+          76,
+          67
+        ]
+      },
+      "ttfb": {
+        "median": 145.222,
+        "values": [
+          181.52200000000002,
+          145.222,
+          118.152
+        ]
+      },
+      "requests": 17,
+      "lighthouseVersion": "12.8.2"
+    }
+  ],
+  "verdict": {
+    "pass": false,
+    "failures": [
+      "/board: performance 76 is below 80"
+    ],
+    "warnings": []
+  }
+}
