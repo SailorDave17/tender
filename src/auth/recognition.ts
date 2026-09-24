@@ -84,9 +84,19 @@ export function isRecognized(value: string | undefined | null): boolean {
  * Which tab `/join` opens on. The URL parameter wins **in both directions** — it is a deep link
  * somebody was sent, so it has to beat the device's memory either way — and the cookie decides
  * only when the URL says nothing.
+ *
+ * **A `code` in the URL is a deep link too** (#226): only an invite email puts one there, so the
+ * person holding it is on their first visit whatever this device remembers, and it opens Sign up
+ * as `?mode=signup` does. An explicit `mode` still outranks it, since that names the tab outright;
+ * the invite link carries both and agrees with itself. An empty `code=` says nothing.
  */
-export function initialMode(mode: string | undefined | null, recognized: boolean): Mode {
+export function initialMode(
+  mode: string | undefined | null,
+  recognized: boolean,
+  code?: string | null,
+): Mode {
   if (mode === "signup") return "signup";
   if (mode === "signin") return "signin";
+  if (code?.trim()) return "signup";
   return recognized ? "signin" : "signup";
 }

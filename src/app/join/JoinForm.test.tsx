@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { JoinForm } from "./JoinForm";
+import { WRONG_CODE } from "@/auth/join";
 import { PASSWORD_MIN, explainResetError } from "@/auth/password";
 
 /**
@@ -310,5 +311,69 @@ describe("#220 AC 1 — the sign-up tab is the invite code, then the account", (
     expect(form.textContent).not.toMatch(/nothing else to fill in/);
     // the panel says where the code comes from, in the region itself
     expect(form.querySelector('[data-invite] [data-hint]')?.textContent).toMatch(/invite email/);
+  });
+});
+
+/**
+ * #226 — the invite link's code, from the form's side. The page's half (the code in the first
+ * byte of HTML, the tab on a recognised device) is `src/app/sign-in-screens.test.tsx`; this is
+ * what happens once the member acts: the pre-filled code is what gets posted with nothing typed,
+ * a code typed over it wins, and a refusal is the route's own sentence. Whether the route refuses
+ * a rotated code, and creates nothing when it does, is `src/auth/join.test.ts`'s and the smoke's.
+ */
+describe("#226 — the code the invite link carried", () => {
+  /** Everything but the code: the member's email and matching passwords, nothing typed in the panel. */
+  function fillAccount(container: HTMLElement) {
+    const q = within(container);
+    fireEvent.change(q.getByLabelText("Email"), { target: { value: "ann@example.com" } });
+    fireEvent.change(q.getByLabelText("Password"), { target: { value: GOOD } });
+    fireEvent.change(q.getByLabelText("Confirm password"), { target: { value: GOOD } });
+  }
+
+  it("posts the link's code to /api/join with no code typed (AC 3)", async () => {
+    const bodies: unknown[] = [];
+    const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }), bodies);
+    const { container } = render(<JoinForm initialMode="signup" linkCode="SPINNAKER" />);
+    expect((within(container).getByLabelText("Invite code") as HTMLInputElement).value).toBe("SPINNAKER");
+    fillAccount(container);
+    submitSignUp(container);
+    await waitFor(() => expect(calls).toEqual(["/api/join"]));
+    expect(bodies).toEqual([{ code: "SPINNAKER", attested: true, email: "ann@example.com", password: GOOD }]);
+  });
+
+  it("the Google arm posts the link's code too, with nothing typed", async () => {
+    const bodies: unknown[] = [];
+    const calls = recordFetch(() => ({ ok: false, body: { message: "no" } }), bodies);
+    const { container } = render(<JoinForm initialMode="signup" linkCode="SPINNAKER" googleClientId={CLIENT_ID} />);
+    fireEvent.click(within(container).getByRole("button", { name: "Continue with Google" }));
+    await waitFor(() => expect(calls).toEqual(["/api/signup/google"]));
+    expect((bodies[0] as Record<string, unknown>).code).toBe("SPINNAKER");
+  });
+
+  it("stays editable: a code typed over the link's is the one posted (AC 2)", async () => {
+    const bodies: unknown[] = [];
+    recordFetch(() => ({ ok: false, body: { message: "no" } }), bodies);
+    const { container } = render(<JoinForm initialMode="signup" linkCode="LASTYEAR" />);
+    const input = within(container).getByLabelText("Invite code") as HTMLInputElement;
+    expect(input.readOnly).toBe(false);
+    expect(input.disabled).toBe(false);
+    fireEvent.change(input, { target: { value: "THISYEAR" } });
+    fillAccount(container);
+    submitSignUp(container);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect((bodies[0] as Record<string, unknown>).code).toBe("THISYEAR");
+  });
+
+  it("a rotated code in the link gets the route's 403 sentence, and the member stays on the form (AC 4)", async () => {
+    // The route's answer, verbatim: WRONG_CODE is what both gates return for a code that is not
+    // this season's, so the sentence here is the one a member with an old link reads.
+    recordFetch(() => ({ ok: false, body: WRONG_CODE.body }));
+    const { container } = render(<JoinForm initialMode="signup" linkCode="LASTYEAR" />);
+    fillAccount(container);
+    submitSignUp(container);
+    await waitFor(() => expect(within(container).getByRole("alert").textContent).toBe(WRONG_CODE.body.message));
+    // Still on the form, with the old code in the box to be replaced.
+    const input = container.querySelector<HTMLInputElement>('form[data-form="signup"] input[name="code"]');
+    expect(input?.value).toBe("LASTYEAR");
   });
 });

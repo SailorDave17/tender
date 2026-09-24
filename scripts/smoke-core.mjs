@@ -46,6 +46,28 @@ export const SMOKE_PASSWORD = "smoke-core-path-45";
 export const SMOKE_INVITE_CODE = FIXTURE_INVITE_CODE;
 
 /**
+ * Last season's code, for the link that arrives after a rotation (#226 AC 4). Anything that is not
+ * the club row's code will do; `test/smoke.test.ts` holds that it is not.
+ */
+export const SMOKE_STALE_INVITE_CODE = "STALE-2025";
+
+/**
+ * What a wrong code gets at both gates: `src/auth/join.ts`'s WRONG_CODE, which this plain-Node file
+ * cannot import. `test/smoke.test.ts` holds the two equal, so a reworded refusal reddens there
+ * rather than on a pull request's smoke.
+ */
+export const SMOKE_WRONG_CODE_SENTENCE = "That invite code is not this season's.";
+
+/**
+ * The path of the link an invite email carries (#226): `src/notify/invite.ts`'s `inviteLink`,
+ * spelled again because this file cannot import TypeScript. `test/smoke.test.ts` holds the two
+ * equal for an awkward code, so the smoke walks the link members are actually sent.
+ */
+export function inviteLinkPath(code) {
+  return `/join?mode=signup&code=${encodeURIComponent(code)}`;
+}
+
+/**
  * The crew's phone: what acceptance reveals, and the one string the whole run turns on. Distinctive
  * enough that it cannot occur on a page by accident (no date, id or price renders as this), which is
  * what makes its ABSENCE from the pre-acceptance page a statement about contact rather than about
@@ -111,10 +133,17 @@ export function smokePlan({ now = new Date() } = {}) {
     email: "smoke-newcomer@fixture.invalid",
     displayName: "Smoke Newcomer",
   };
+  // #226: a second person created through the form, arriving by the invite link rather than typing
+  // the code — first with last season's, then with this season's. Unseeded and id-less for the same
+  // reasons as the newcomer.
+  const linkedNewcomer = {
+    email: "smoke-linked@fixture.invalid",
+  };
   return {
     crew,
     skipper,
     newcomer,
+    linkedNewcomer,
     date,
     boat,
     // fixtureSql's shape. Posts, matches, availability and answers are empty on purpose — see above.
@@ -139,7 +168,8 @@ const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
  * The club stays: it may be perf:floor's, and both plans want it.
  *
  * The newcomer (#220) is deleted by ADDRESS, since the form gave them whatever id GoTrue chose;
- * without this line a local re-run's sign-up answers "you already have an account here".
+ * without this line a local re-run's sign-up answers "you already have an account here". The
+ * linked newcomer (#226) likewise.
  */
 export function smokeResetSql(plan) {
   const people = plan.people.map((p) => q(p.id)).join(", ");
@@ -150,8 +180,17 @@ export function smokeResetSql(plan) {
     `delete from public.race_date where id = ${q(plan.date.id)};`,
     `delete from auth.users where id in (${people});`,
     `delete from auth.users where email = ${q(plan.newcomer.email)};`,
+    `delete from auth.users where email = ${q(plan.linkedNewcomer.email)};`,
     "commit;",
   ].join("\n");
+}
+
+/**
+ * How many auth users hold this address (#226 AC 4): a refused sign-up must leave it at 0. Read as
+ * `postgres`, like the reset, so the answer is the table's and not what a role may see of it.
+ */
+export function accountCountSql(email) {
+  return `select count(*) from auth.users where email = ${q(email)};`;
 }
 
 /**
