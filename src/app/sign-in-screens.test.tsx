@@ -154,6 +154,63 @@ describe("/join opens on the tab the device has earned (#123 AC 1-3)", () => {
 });
 
 /**
+ * #226 AC 2. The invite link as the page serves it: the code in the panel, in the first byte of
+ * HTML, still an ordinary editable box — and the tab it opens on, on a device that has signed in.
+ * Read off the rendered input tag rather than the whole page: the claim is about the box, and a
+ * page-wide substring would pass on the code appearing anywhere else on the screen.
+ */
+describe("the invite link arrives with the code in the panel (#226 AC 2)", () => {
+  /** The rendered `<input name="code" …>` tag, whole, so its attributes can be read one by one. */
+  function codeInput(html: string): string {
+    const tags = html.match(/<input[^>]*\bname="code"[^>]*>/g) ?? [];
+    expect(tags, "exactly one invite code input").toHaveLength(1);
+    return tags[0]!;
+  }
+
+  it("/join?mode=signup&code=X renders the input holding X, and editable", async () => {
+    const tag = codeInput(await join({ mode: "signup", code: "SPINNAKER" }, false));
+    expect(tag).toMatch(/\bvalue="SPINNAKER"/);
+    // Editable: neither attribute that would stop a member replacing a rotated code.
+    expect(tag).not.toMatch(/\breadonly\b/i);
+    expect(tag).not.toMatch(/\bdisabled\b/i);
+    // ...and still the form's one required control, which the Google arm's reportValidity reads.
+    expect(tag).toMatch(/\brequired\b/);
+  });
+
+  it("the hint says the code came from the link, and says the ordinary thing without one", async () => {
+    const linked = await join({ mode: "signup", code: "SPINNAKER" }, false);
+    const plain = await join({ mode: "signup" }, false);
+    expect(linked).toMatch(/<p data-hint="link">Filled in from your invite link\./);
+    expect(linked).not.toContain("It is in the club&#x27;s invite email");
+    // the control: without a code, an empty box, and the hint that sends them to the email
+    expect(codeInput(plain)).toMatch(/\bvalue=""/);
+    expect(plain).toContain("It is in the club&#x27;s invite email");
+    expect(plain).not.toContain("Filled in from your invite link");
+  });
+
+  it("a device carrying the recognition cookie still opens on Sign up, with the code in place", async () => {
+    // The invite link as sent, on a phone somebody has signed in on before.
+    const sent = await join({ mode: "signup", code: "SPINNAKER" }, true);
+    expect(sent).toContain('data-form="signup"');
+    expect(sent).not.toContain('data-form="signin"');
+    expect(codeInput(sent)).toMatch(/\bvalue="SPINNAKER"/);
+    // The code alone decides it too (src/auth/recognition.ts), and the control beside it: the same
+    // device with no code opens on Sign in, so the tab above is the code's doing.
+    const codeOnly = await join({ code: "SPINNAKER" }, true);
+    expect(codeOnly).toContain('data-form="signup"');
+    expect(codeOnly).not.toContain('data-form="signin"');
+    expect(await join({}, true)).toContain('data-form="signin"');
+  });
+
+  it("the code is rendered as text, not markup, whatever the link carried", async () => {
+    // A link is a URL anybody can type; the value reaches the page as an attribute and nothing else.
+    const html = await join({ mode: "signup", code: '"><script>x</script>' }, false);
+    expect(html).not.toContain("<script>x</script>");
+    expect(codeInput(html)).toContain('value="&quot;&gt;&lt;script&gt;x&lt;/script&gt;"');
+  });
+});
+
+/**
  * #173. The Google option on both tabs is Google Identity Services' button, rendered into a slot
  * the page marks `data-google`, and the page passes the client id from its own environment — so
  * with the variable set both tabs carry the slot, and with it unset neither does and nothing on

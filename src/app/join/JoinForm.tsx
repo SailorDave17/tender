@@ -35,7 +35,9 @@ type Mode = "signin" | "signup";
  *
  * `initialMode` exists because the sign-up tab is otherwise unreachable without an event, and
  * #99 AC 7 asks for its button to be asserted from the rendered HTML. It earns its place beyond
- * that: /join?mode=signup deep-links an invited member straight to the form they need.
+ * that: /join?mode=signup deep-links an invited member straight to the form they need. Since #226
+ * the invite link also carries the season's code, which arrives here as `linkCode` and fills the
+ * panel, so the invited member's one job is choosing how to sign in.
  *
  * Since #123 the page always passes it, and the `= "signin"` default below is a fallback rather
  * than the app's answer: `src/auth/recognition.ts` decides, from the URL first and the device's
@@ -53,11 +55,14 @@ export function JoinForm({
   initialError,
   initialMode = "signin",
   googleClientId = "",
+  linkCode = "",
 }: {
   initialError?: string;
   initialMode?: Mode;
   /** The public web client id GIS renders with; empty hides *Continue with Google* (#173). */
   googleClientId?: string;
+  /** The invite code the invite link carried (#226); it fills the panel, which stays editable. */
+  linkCode?: string;
 }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [state, setState] = useState<State>(
@@ -261,13 +266,30 @@ export function JoinForm({
             The code input is the form's only `required` control, which is what lets the Google
             arm check it with `reportValidity` (see onGoogleSignUp).
           */}
+          {/*
+            #226: the invite link's code arrives as the input's DEFAULT value, not its value, so
+            it stays an ordinary editable box — a rotated code in an old link has to be
+            replaceable by typing — and the hint says where it came from. Nothing about the check
+            moves: the route compares whatever is in the box, as it did when it was typed.
+          */}
           <section role="group" aria-labelledby="invite-heading" data-invite>
             <h2 id="invite-heading">Your invite code</h2>
             <label>
               Invite code
-              <input name="code" required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+              <input
+                name="code"
+                required
+                defaultValue={linkCode}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+              />
             </label>
-            <p data-hint>It is in the club&apos;s invite email — or ask the organiser.</p>
+            {linkCode ? (
+              <p data-hint="link">Filled in from your invite link. If it&apos;s refused, ask the organiser for this season&apos;s code.</p>
+            ) : (
+              <p data-hint>It is in the club&apos;s invite email — or ask the organiser.</p>
+            )}
           </section>
           <fieldset>
             <legend>Create your account with</legend>

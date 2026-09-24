@@ -32,6 +32,11 @@
  * replace, then the board as themselves. It closes the gap the README's "what it cannot see" used
  * to name — no end-to-end test covered sign-up — and it runs after the core path so a red there
  * cannot be mistaken for one here.
+ *
+ * SINCE #226 A FOURTH CONTEXT ARRIVES BY THE INVITE LINK, which carries the code, and types none.
+ * First with last season's code: the route's refusal is shown and no account exists. Then with
+ * this season's: the account is made and they land on /welcome. The same address both times, so
+ * the second landing is itself proof the first made nothing.
  */
 
 import { spawnSync } from "node:child_process";
@@ -44,8 +49,12 @@ import { chromium } from "playwright-core";
 import {
   SMOKE_INVITE_CODE,
   SMOKE_PASSWORD,
+  SMOKE_STALE_INVITE_CODE,
+  SMOKE_WRONG_CODE_SENTENCE,
+  accountCountSql,
   contactVerdict,
   expectedSeedLines,
+  inviteLinkPath,
   openPageVerdict,
   refuseNonLocalStack,
   runSteps,
@@ -148,6 +157,35 @@ async function signIn(page, baseUrl, person) {
   if (!who.includes(`Signed in as ${person.displayName}`)) throw new Error(`the header does not say "Signed in as ${person.displayName}"`);
 }
 
+/**
+ * Arrive the way an invitee does (#226): open the invite link, which lands on the Sign up tab with
+ * the code in the panel, and fill in the account — everything but the code, which is never typed.
+ *
+ * The hydration gate is a round trip through the Sign in tab. The link's page is SERVER-rendered on
+ * Sign up, so waiting for the sign-up form proves nothing about whether its submit handler exists
+ * yet; the Sign in form appears only once the client is running. Coming back to Sign up re-mounts
+ * the form from the same prop, so the code is read twice — as served, and once the client has it.
+ */
+async function arriveByInviteLink(page, baseUrl, code, email) {
+  await page.goto(new URL(inviteLinkPath(code), baseUrl).href);
+  const box = 'form[data-form="signup"] input[name="code"]';
+  const served = await page.inputValue(box);
+  if (served !== code) throw new Error(`the served page's code box holds ${JSON.stringify(served)}, not the link's ${JSON.stringify(code)}`);
+  let signin = null;
+  for (let attempt = 0; attempt < 5 && !signin; attempt += 1) {
+    await page.click('button[data-mode="signin"]');
+    signin = await page.waitForSelector('form[data-form="signin"]', { timeout: 2000 }).catch(() => null);
+  }
+  if (!signin) throw new Error("the Sign in tab never showed its form (the page did not hydrate)");
+  await page.click('button[data-mode="signup"]');
+  await page.waitForSelector('form[data-form="signup"]');
+  const hydrated = await page.inputValue(box);
+  if (hydrated !== code) throw new Error(`after hydration the code box holds ${JSON.stringify(hydrated)}, not the link's ${JSON.stringify(code)}`);
+  await page.fill('form[data-form="signup"] input[name="email"]', email);
+  await page.fill('form[data-form="signup"] input[name="password"]', SMOKE_PASSWORD);
+  await page.fill('form[data-form="signup"] input[name="confirm"]', SMOKE_PASSWORD);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const stack = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -159,17 +197,17 @@ async function main() {
   if (refusal) throw new Error(refusal);
 
   const plan = smokePlan();
-  const { crew, skipper, newcomer, date, boat } = plan;
+  const { crew, skipper, newcomer, linkedNewcomer, date, boat } = plan;
   const t0 = Date.now();
   const log = (line) => process.stdout.write(`${line}\n`);
 
   await seed({ stack, serviceKey, dbContainer: args.dbContainer, plan });
-  log(`seeded: ${crew.email}, ${skipper.email}, race day ${date.startsAt}, boat ${boat.name}; ${newcomer.email} cleared for the sign-up`);
+  log(`seeded: ${crew.email}, ${skipper.email}, race day ${date.startsAt}, boat ${boat.name}; ${newcomer.email} and ${linkedNewcomer.email} cleared for the sign-up`);
   await waitForServer(args.baseUrl);
 
   const browser = await chromium.launch({ channel: "chrome", headless: !args.headed });
   const pages = {};
-  for (const who of ["crew", "skipper", "newcomer"]) {
+  for (const who of ["crew", "skipper", "newcomer", "linked"]) {
     // One context per person: separate cookie jars, so each session is its own.
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(15_000);
@@ -323,6 +361,43 @@ async function main() {
         if (!who.includes(`Signed in as ${newcomer.displayName}`)) {
           throw new Error(`the header does not say "Signed in as ${newcomer.displayName}" (read ${JSON.stringify(who)})`);
         }
+      },
+    },
+    {
+      // #226 AC 4: an invite link from before a rotation. The refusal is the route's own sentence,
+      // the member is still on /join, and the address holds no account — read from auth.users as
+      // postgres, because a sign-up that created the user and THEN refused would look the same on
+      // screen.
+      name: "a newcomer arriving by a link with last season's code is refused, and no account is made",
+      run: async () => {
+        const p = pages.linked;
+        await arriveByInviteLink(p, args.baseUrl, SMOKE_STALE_INVITE_CODE, linkedNewcomer.email);
+        await p.click('form[data-form="signup"] button:has-text("Create my account")');
+        // `main`, so Next's route announcer (also role="alert", in a shadow root Playwright pierces)
+        // is never the match; and wait for text, since the region can exist before it is filled.
+        const alert = 'main p[role="alert"]';
+        await p.waitForFunction((sel) => (document.querySelector(sel)?.textContent ?? "").length > 0, alert);
+        const said = await p.innerText(alert);
+        if (said !== SMOKE_WRONG_CODE_SENTENCE) throw new Error(`the refusal read ${JSON.stringify(said)}, not ${JSON.stringify(SMOKE_WRONG_CODE_SENTENCE)}`);
+        if (new URL(p.url()).pathname !== "/join") throw new Error(`a refused sign-up left /join for ${p.url()}`);
+        const count = psql(args.dbContainer, accountCountSql(linkedNewcomer.email)).trim();
+        if (count !== "0") throw new Error(`the refused sign-up made an account: ${count} auth user(s) hold ${linkedNewcomer.email}`);
+      },
+    },
+    {
+      // #226 AC 3: the invite link as sent, with this season's code. Nothing is typed in the panel
+      // — arriveByInviteLink reads the code out of it twice and never fills it — and the account
+      // lands on /welcome. Same address as the refusal above, so this landing is also the proof
+      // that the refusal created nothing: an existing account answers "you already have one".
+      name: "a newcomer arriving by the invite link signs up with no code typed and lands on /welcome",
+      run: async () => {
+        const p = pages.linked;
+        await arriveByInviteLink(p, args.baseUrl, SMOKE_INVITE_CODE, linkedNewcomer.email);
+        await Promise.all([
+          p.waitForURL((u) => u.pathname === "/welcome"),
+          p.click('form[data-form="signup"] button:has-text("Create my account")'),
+        ]);
+        await p.waitForSelector('main[data-page="welcome"]');
       },
     },
   ];

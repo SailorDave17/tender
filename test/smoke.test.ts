@@ -1,15 +1,21 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { WRONG_CODE } from "@/auth/join";
+import { inviteLink } from "@/notify/invite";
 import { UUID } from "@/post/post-form";
 import { fixtureId, fixtureSql } from "../scripts/lighthouse-floor-core.mjs";
 import {
   CREW_PHONE,
   SEED_CLUB_MARK,
   SMOKE_INVITE_CODE,
+  SMOKE_STALE_INVITE_CODE,
+  SMOKE_WRONG_CODE_SENTENCE,
   SUPPORT_EMAIL,
+  accountCountSql,
   contactVerdict,
   expectedSeedLines,
+  inviteLinkPath,
   openPageVerdict,
   refuseNonLocalStack,
   runSteps,
@@ -71,6 +77,16 @@ describe("smokePlan", () => {
     expect(plan.newcomer).not.toHaveProperty("id");
     // ...and the address is nobody's admin_email, so 0009's trigger does not make them the admin
     expect(plan.newcomer.email.toLowerCase()).not.toBe(SUPPORT_EMAIL.toLowerCase());
+  });
+
+  it("keeps the linked newcomer out of the seed too, and apart from everyone else (#226)", () => {
+    const linked = plan.linkedNewcomer.email;
+    expect(linked).toMatch(/@fixture\.invalid$/);
+    expect(plan.people.map((p) => p.email)).not.toContain(linked);
+    expect(plan.linkedNewcomer).not.toHaveProperty("id");
+    // Its own address: sharing the newcomer's would make one of the two sign-ups "already a member".
+    expect(linked.toLowerCase()).not.toBe(plan.newcomer.email.toLowerCase());
+    expect(linked.toLowerCase()).not.toBe(SUPPORT_EMAIL.toLowerCase());
   });
 
   it("types the invite code the seed put on the club row, so the two cannot disagree (#220 AC 5)", () => {
@@ -169,6 +185,46 @@ describe("smokeResetSql", () => {
   it("removes the newcomer by address, since the form gave them whatever id GoTrue chose (#220)", () => {
     // Without this a local re-run's sign-up is refused as "you already have an account here".
     expect(sql).toContain(`delete from auth.users where email = '${plan.newcomer.email}';`);
+  });
+
+  it("removes the linked newcomer by address too (#226)", () => {
+    // Without it a local re-run's refusal step reads "1 auth user holds …" and goes red for a
+    // reason that has nothing to do with the code.
+    expect(sql).toContain(`delete from auth.users where email = '${plan.linkedNewcomer.email}';`);
+  });
+});
+
+/**
+ * #226. The smoke walks the invite link by spelling it again, because smoke-core is plain Node and
+ * `src/notify/invite.ts` is TypeScript, and it reads the refusal against a sentence it cannot
+ * import either. Both copies are held to their originals here, so a changed link or a reworded
+ * refusal reddens this file rather than a pull request's smoke — and the smoke keeps walking the
+ * link members are actually sent.
+ */
+describe("the invite link the smoke walks is the one the email carries (#226)", () => {
+  const SITE = "http://localhost:3145";
+
+  it("spells the link as inviteLink does, for an ordinary code and an awkward one", () => {
+    for (const code of [SMOKE_INVITE_CODE, SMOKE_STALE_INVITE_CODE, "A B&c=d+e/f?g#h%"]) {
+      expect(`${SITE}${inviteLinkPath(code)}`).toBe(inviteLink(SITE, code));
+    }
+  });
+
+  it("the stale code is not the club row's, so the refusal step can be refused", () => {
+    expect(SMOKE_STALE_INVITE_CODE).not.toBe(SMOKE_INVITE_CODE);
+    expect(SMOKE_STALE_INVITE_CODE.trim()).not.toBe(SMOKE_INVITE_CODE.trim());
+    expect(fixtureSql(plan)).not.toContain(`'${SMOKE_STALE_INVITE_CODE}'`);
+  });
+
+  it("the refusal it expects is the route's own sentence", () => {
+    expect(SMOKE_WRONG_CODE_SENTENCE).toBe(WRONG_CODE.body.message);
+  });
+
+  it("counts auth users by the exact address, quoted", () => {
+    expect(accountCountSql(plan.linkedNewcomer.email)).toBe(
+      `select count(*) from auth.users where email = '${plan.linkedNewcomer.email}';`,
+    );
+    expect(accountCountSql("o'hara@fixture.invalid")).toContain("'o''hara@fixture.invalid'");
   });
 });
 

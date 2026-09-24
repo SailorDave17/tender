@@ -289,7 +289,10 @@ it fetches `/support` and `/privacy` with no session and redirects off (#147), a
 the page's own content (a streamed page answers 200 even when it fails), and on `/support` the
 address the seed put on the club row. Last, since #220, a third browser **signs up**: the Sign up
 tab, the seeded invite code, an email and a password, then `/welcome` ("Finish your profile", #219)
-pre-filled with the provisional name, then the board as the name they gave. The job starts a local
+pre-filled with the provisional name, then the board as the name they gave. Since #226 a fourth
+browser arrives by the **invite link**, which carries the code, and types none: first with last
+season's code, where it must read the route's refusal with no account made, then with this
+season's, where it must land on `/welcome`. The job starts a local
 Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
 pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
 `test/smoke.test.ts` holds both of those lines.

@@ -7,9 +7,14 @@ export const dynamic = "force-dynamic";
 export default async function JoinPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; mode?: string; deleted?: string }>;
+  searchParams: Promise<{ error?: string; mode?: string; deleted?: string; code?: string | string[] }>;
 }) {
-  const { error, mode, deleted } = await searchParams;
+  const { error, mode, deleted, code } = await searchParams;
+  // #226: the invite email's link carries the season's code, and the panel arrives with it filled
+  // in. Only a single value is a code: a repeated `code=` is not a link anything sends, so it
+  // pre-fills nothing rather than a comma-joined guess. Nothing is checked here — the code is
+  // checked where it always was, by the route the form posts to.
+  const linkCode = typeof code === "string" ? code.trim() : "";
   // #123: a browser that has never signed in here opens on **Sign up**. Read before the render,
   // not after hydration, so the right tab is in the first byte of HTML and nothing flips under
   // the person this is for. `dynamic = "force-dynamic"` above is what makes that legal.
@@ -41,7 +46,12 @@ export default async function JoinPage({
         Members sign in with their email and password{googleClientId ? ", or with Google" : ""}. New
         to Tender? Sign up with this season&apos;s invite code.
       </p>
-      <JoinForm initialError={error} initialMode={initialMode(mode, recognized)} googleClientId={googleClientId} />
+      <JoinForm
+        initialError={error}
+        initialMode={initialMode(mode, recognized, linkCode)}
+        googleClientId={googleClientId}
+        linkCode={linkCode}
+      />
     </main>
   );
 }
