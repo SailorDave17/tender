@@ -292,7 +292,9 @@ tab, the seeded invite code, an email and a password, then `/welcome` ("Finish y
 pre-filled with the provisional name, then the board as the name they gave. Since #226 a fourth
 browser arrives by the **invite link**, which carries the code, and types none: first with last
 season's code, where it must read the route's refusal with no account made, then with this
-season's, where it must land on `/welcome`. The job starts a local
+season's, where it must land on `/welcome`. Since #242 the crew's browser ends by walking the
+docked nav at 390px (Post, Boats, Profile, Board) without a reload, and the tab marked as the
+current screen must move with every tap. The job starts a local
 Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
 pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
 `test/smoke.test.ts` holds both of those lines.

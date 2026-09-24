@@ -37,6 +37,9 @@
  * First with last season's code: the route's refusal is shown and no account exists. Then with
  * this season's: the account is made and they land on /welcome. The same address both times, so
  * the second landing is itself proof the first made nothing.
+ *
+ * SINCE #242 THE CREW'S BROWSER ENDS BY WALKING THE DOCK at 390px — Post, Boats, Profile, Board,
+ * each a client-side navigation — and the tab marked `aria-current="page"` must follow every tap.
  */
 
 import { spawnSync } from "node:child_process";
@@ -398,6 +401,42 @@ async function main() {
           p.click('form[data-form="signup"] button:has-text("Create my account")'),
         ]);
         await p.waitForSelector('main[data-page="welcome"]');
+      },
+    },
+    {
+      // #242 AC 2: the mark follows a CLIENT-SIDE navigation. The shell is the root layout's, which
+      // does not re-render when the page changes, so a mark decided on the server would be right on
+      // the first load and stale from the first tap — and every unit test renders afresh, which is
+      // why only a real browser moving between pages can tell the two apart. The window flag is
+      // what proves no tap reloaded the page: a full load would pass for the wrong reason.
+      name: "the dock marks each screen's tab as the crew moves between them, with no reload",
+      run: async () => {
+        const p = pages.crew;
+        await p.setViewportSize({ width: 390, height: 800 });
+        const marked = () =>
+          p.$$eval('[data-nav] a[aria-current="page"]', (els) => els.map((el) => el.textContent.trim()).join(", "));
+        await p.goto(url("/board"));
+        await p.waitForSelector('[data-nav] a[aria-current="page"]');
+        if ((await marked()) !== "Board") throw new Error(`/board, loaded, marks [${await marked()}], not Board`);
+        await p.evaluate(() => {
+          window.__smokeNoReload = true;
+        });
+        for (const [label, path] of [["Post", "/post/new"], ["Boats", "/boats"], ["Profile", "/profile"], ["Board", "/board"]]) {
+          await Promise.all([p.waitForURL((u) => u.pathname === path), p.click(`[data-nav] a[href="${path}"]`)]);
+          // The mark re-renders after the URL commits; give it the page timeout, then read it
+          // either way so a stale mark fails with what it says rather than with a timeout.
+          await p
+            .waitForFunction(
+              (want) => [...document.querySelectorAll('[data-nav] a[aria-current="page"]')].map((a) => a.textContent.trim()).join(", ") === want,
+              label,
+            )
+            .catch(() => undefined);
+          const now = await marked();
+          if (now !== label) throw new Error(`after tapping ${label} the dock marks [${now}], not ${label}`);
+          if (!(await p.evaluate(() => window.__smokeNoReload === true))) {
+            throw new Error(`tapping ${label} reloaded the page, so the mark was a fresh server render, not a moved one`);
+          }
+        }
       },
     },
   ];
