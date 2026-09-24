@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { chromium, type Browser } from "playwright-core";
+import { fitGoogleButton } from "@/auth/GoogleButton";
 import { GLOBALS_CSS } from "./tokens";
 import { IDS, ME, NOW, fakeClient } from "./surfaces";
 
@@ -80,6 +81,13 @@ const SURFACES: Surface[] = [
   { name: "/privacy", as: "", render: async () => (await import("@/app/privacy/page")).default() },
 ];
 
+/**
+ * #227: /join with the Google option on, one render per tab. Kept out of SURFACES so the contrast
+ * sweep's case count does not move; the page reads the client id from its environment at render.
+ */
+const JOIN_TABS = ["signin", "signup"] as const;
+const joinWithGoogle = (tab: (typeof JOIN_TABS)[number]) => `/join with Google, ${tab} tab`;
+
 const pages = new Map<string, string>();
 let browser: Browser;
 
@@ -87,12 +95,23 @@ beforeAll(async () => {
   vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
   try {
     const { default: RootLayout } = await import("@/app/layout");
-    for (const s of SURFACES) {
+    const extra = JOIN_TABS.map((tab) => ({
+      name: joinWithGoogle(tab),
+      as: "",
+      render: async () => (await import("@/app/join/page")).default({ searchParams: Promise.resolve({ mode: tab }) }),
+      env: { NEXT_PUBLIC_GOOGLE_CLIENT_ID: "000000000000-surfaces.apps.googleusercontent.com" },
+    }));
+    for (const s of [...SURFACES, ...extra]) {
       holder.client = fakeClient(s.as);
-      const doc = renderToStaticMarkup(await RootLayout({ children: await s.render() }));
-      const html = `<!doctype html>${doc.replace("<body>", `<head><style>${css}</style></head><body>`)}`;
-      if (!html.includes("<style>")) throw new Error(`${s.name}: no <body> to attach the stylesheet to`);
-      pages.set(s.name, html);
+      for (const [k, v] of Object.entries("env" in s ? s.env : {})) vi.stubEnv(k, v);
+      try {
+        const doc = renderToStaticMarkup(await RootLayout({ children: await s.render() }));
+        const html = `<!doctype html>${doc.replace("<body>", `<head><style>${css}</style></head><body>`)}`;
+        if (!html.includes("<style>")) throw new Error(`${s.name}: no <body> to attach the stylesheet to`);
+        pages.set(s.name, html);
+      } finally {
+        vi.unstubAllEnvs();
+      }
     }
   } finally {
     vi.useRealTimers();
@@ -263,6 +282,115 @@ describe("the join tabs: the selected tab is visibly selected (#155 AC 6)", () =
       }
     });
   }
+});
+
+describe("Google's button is as wide as its slot, so /join does not scroll sideways (#227)", () => {
+  // The rendered HTML carries GoogleButton's empty wrapper and slot; GIS never loads here. The
+  // stand-in draws what GIS's real script was *measured* to draw (2026-09-24, fake client id): a
+  // block exactly the requested width, 400px at most. `fitGoogleButton` is the component's own
+  // function, handed to Chrome the way `watchDock` is in `test/install-sheet.test.ts`.
+  const GIS = `
+    window.__asked = [];
+    window.google = { accounts: { id: {
+      initialize: () => {},
+      renderButton: (parent, o) => {
+        window.__asked.push(o.width);
+        const b = document.createElement("div");
+        b.setAttribute("data-gis-stub", "");
+        b.style.width = Math.min(o.width, 400) + "px";
+        b.style.height = "40px";
+        parent.append(b);
+      },
+    } } };
+  `;
+  const FIT = `(${fitGoogleButton.toString()})`;
+  type Read = { viewport: number; scrollWidth: number; tab: string | null; wrapper: number; button: number; asked: number[] };
+  const READ = `(() => {
+    const w = document.querySelector("[data-google]");
+    const b = w && w.querySelector("[data-gis-stub]");
+    return {
+      viewport: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      tab: w && w.getAttribute("data-google"),
+      wrapper: w ? w.clientWidth : 0,
+      button: b ? b.getBoundingClientRect().width : 0,
+      asked: window.__asked,
+    };
+  })()`;
+
+  async function openJoin(tab: (typeof JOIN_TABS)[number], width: number) {
+    const opened = await open(joinWithGoogle(tab), { width, height: 800 }, "light");
+    await opened.page.evaluate(`(() => { ${GIS}
+      for (const w of document.querySelectorAll("[data-google]")) ${FIT}(w, w.firstElementChild, "signin_with");
+    })()`);
+    return opened;
+  }
+  const read = async (page: import("playwright-core").Page) => (await page.evaluate(READ)) as Read;
+  // A ResizeObserver reports in the frame after a resize; two frames and the redraw has landed.
+  const settle = (page: import("playwright-core").Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  for (const tab of JOIN_TABS) {
+    it(`${tab} tab at 320px: no horizontal scroll, and the button fills its slot (AC 1)`, async () => {
+      const { page, close } = await openJoin(tab, 320);
+      try {
+        const r = await read(page);
+        console.log(`#227 ${tab} 320px: slot ${r.wrapper}px, GIS asked for ${r.asked.join(",")}, scrollWidth ${r.scrollWidth}`);
+        expect(r.tab, "the page rendered Google's slot on this tab").toBe(tab);
+        expect(r.asked, "GIS was asked to draw once").toHaveLength(1);
+        expect(r.scrollWidth).toBe(r.viewport);
+        expect(r.button).toBe(r.wrapper);
+        // The instrument can see a scroll on this page: the same slot drawn 40px too wide scrolls it.
+        await page.evaluate(`document.querySelector("[data-gis-stub]").style.width = "${r.wrapper + 40}px"`);
+        expect((await read(page)).scrollWidth, "control: an overflowing button scrolls the page").toBeGreaterThan(r.viewport);
+      } finally {
+        await close();
+      }
+    });
+
+    it(`${tab} tab at 1280px: the button is at least 200px wide (AC 2)`, async () => {
+      const { page, close } = await openJoin(tab, 1280);
+      try {
+        const r = await read(page);
+        console.log(`#227 ${tab} 1280px: slot ${r.wrapper}px, GIS asked for ${r.asked.join(",")}, drawn ${r.button}px`);
+        expect(r.button).toBeGreaterThanOrEqual(200);
+        expect(r.button).toBe(Math.min(400, r.wrapper));
+        expect(r.scrollWidth).toBe(r.viewport);
+      } finally {
+        await close();
+      }
+    });
+
+    it(`${tab} tab turned from 1280px to 320px: redrawn to the narrower slot, no horizontal scroll`, async () => {
+      const { page, close } = await openJoin(tab, 1280);
+      try {
+        const wide = await read(page);
+        await page.setViewportSize({ width: 320, height: 800 });
+        await settle(page);
+        const narrow = await read(page);
+        console.log(`#227 ${tab} 1280→320px: slot ${wide.wrapper}→${narrow.wrapper}px, GIS asked for ${narrow.asked.join(",")}, scrollWidth ${narrow.scrollWidth}`);
+        expect(narrow.wrapper, "the slot narrowed with the screen").toBeLessThan(wide.wrapper);
+        expect(narrow.asked, "drawn wide, then redrawn narrow").toEqual([Math.min(400, wide.wrapper), narrow.wrapper]);
+        expect(narrow.scrollWidth).toBe(narrow.viewport);
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  it("asks GIS for a width inside its 200–400px range, whatever the slot", async () => {
+    const context = await browser.newContext({ viewport: { width: 800, height: 400 } });
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<div data-w="150" style="width:150px"><div></div></div><div data-w="600" style="width:600px"><div></div></div>`);
+      const asked = await page.evaluate(`(() => { ${GIS}
+        for (const w of document.querySelectorAll("[data-w]")) ${FIT}(w, w.firstElementChild, "signin_with");
+        return window.__asked;
+      })()`);
+      expect(asked).toEqual([200, 400]);
+    } finally {
+      await context.close();
+    }
+  });
 });
 
 describe("a short page keeps its footer under its content, not under a screen (#211 AC 2)", () => {

@@ -583,6 +583,13 @@ button[data-already-member] {
   font-size: var(--text-lg);
   padding: var(--space-2) var(--space-3);
 }
+/* Google's button (#227): sized to this wrapper by `fitGoogleButton`, so the wrapper must not be
+   sized by the button. Both /join tabs put it in a grid (`[data-stack]`, the fieldset), whose
+   column grows to its widest item's min-content. Without this, a button drawn wide stays wide
+   when the screen narrows, and holds the column, the fieldset and the page open behind it. */
+[data-google] {
+  contain: inline-size;
+}
 /* the 18+ line beside the create-account buttons: body ink, not a muted hint, so it is read */
 [data-attest] {
   margin: 0;
