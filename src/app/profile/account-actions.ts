@@ -1,9 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { confirmed, deleteAccount } from "@/profile/delete-account";
+import { after } from "next/server";
+import { confirmed, deleteAccount, partialDeletionReport } from "@/profile/delete-account";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
+import { reportErrorLive } from "@/notify/error-live";
 import { SIGN_IN_URL } from "@/auth/gate";
 
 /**
@@ -27,6 +29,12 @@ import { SIGN_IN_URL } from "@/auth/gate";
  * dead. On a failure at the AUTH step the rows are gone and the sign-in record is not — the
  * person is signed out all the same (there is no profile to return to) and /join says what
  * happened, so the club admin can remove the auth user from the dashboard.
+ *
+ * /join says the admin "has been told", and since #204 that is true: the failure is reported to
+ * the owner after the response, naming the auth user to remove. Before, only a console line said
+ * it, and Hobby keeps those for an hour. A service-role call that THROWS (a dropped connection)
+ * rather than answering an error is the same failure, so it is caught into one: uncaught, it
+ * failed the action after the rows were already gone, and the person saw the error screen.
  */
 export async function deleteMyAccount(formData: FormData): Promise<void> {
   const client = await supabaseServer();
@@ -43,8 +51,12 @@ export async function deleteMyAccount(formData: FormData): Promise<void> {
       return { kept: typeof data === "number" ? data : 0 };
     },
     deleteAuthUser: async () => {
-      const { error } = await supabaseAdmin().auth.admin.deleteUser(user.id);
-      return error ? { error: error.message } : {};
+      try {
+        const { error } = await supabaseAdmin().auth.admin.deleteUser(user.id);
+        return error ? { error: error.message } : {};
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
     },
   });
 
@@ -53,8 +65,11 @@ export async function deleteMyAccount(formData: FormData): Promise<void> {
     redirect("/profile?error=delete-person");
   }
   if (!result.ok) {
-    // The rows are gone; the sign-in record is not. Say so where the person lands.
+    // The rows are gone; the sign-in record is not. Say so where the person lands, and tell the
+    // one person who can remove it (#204).
     console.error(`delete account: auth user ${user.id} not deleted after the person rows were: ${result.reason}`);
+    const report = partialDeletionReport(user.id, result.reason);
+    after(() => reportErrorLive(report));
   }
   await client.auth.signOut({ scope: "local" });
   redirect(result.ok ? "/join?deleted=1" : "/join?deleted=partial");

@@ -450,6 +450,13 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    season's invite code, and the old generic sentence stopped being honest the moment no link was
    on its way to anybody.
 
+   Since #204 an attested user with **no** person row is not treated as a member. It is a sign-up
+   that stopped between creating the account and creating the row, for example on a refused
+   database read. Signing up again finishes it: the row is created from the account's own
+   attestation, and the typed password then signs the member in and lands them on `/welcome`.
+   Before, the member was told to sign in, then refused there, and only a password reset got
+   them through.
+
    To clear the historical ones anyway — they are inert, this is tidiness rather than repair:
 
    ```sql
@@ -731,7 +738,9 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    0027's rules do the rest. The send log's email addresses and device push addresses go by 0033's
    `person_blank_log` trigger, which fires however the person row goes (#201), so there is nothing
    to run first. If a member's own deletion lands on `/join?deleted=partial`, their rows are gone
-   and the auth user is not — delete it under Authentication → Users.
+   and the auth user is not — delete it under Authentication → Users. Since #204 you are emailed
+   when this happens: an error report named `AuthUserNotDeleted` carries the auth user's id. Until
+   it is deleted, a password reset from that address would create a new, empty profile.
 7. **Guessing is bounded, and you should know how** (#206, security-audit SA-5, `0032`). A wrong
    invite code at `/api/join` or `/api/signup/google` and a wrong email-and-password at
    `/api/signin` are **failures**, and they count against two keys in a **15-minute window**:

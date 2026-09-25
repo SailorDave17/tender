@@ -26,10 +26,13 @@ function filler(n = USERS_PER_PAGE): ListedUser[] {
 describe("findAuthUser — the address", () => {
   it("finds the user on the first page and reports an attestation", async () => {
     const { listPage, asked } = pager([[user("a", "someone@example.org"), user("b", "alice@example.org", ATTESTED)]]);
+    // the metadata rides along whole (#204): the gate hands it to ensurePerson to finish an
+    // interrupted sign-up, so it must be the user's own and not a rebuilt attestation
     expect(await findAuthUser("alice@example.org", listPage)).toEqual({
       found: true,
       id: "b",
       attested: true,
+      user_metadata: ATTESTED,
     });
     expect(asked).toEqual([{ page: 1, perPage: USERS_PER_PAGE }]);
   });
@@ -40,6 +43,7 @@ describe("findAuthUser — the address", () => {
       found: true,
       id: "b",
       attested: false,
+      user_metadata: null,
     });
   });
 
@@ -47,7 +51,7 @@ describe("findAuthUser — the address", () => {
     for (const meta of [null, {}, { adult_attested_at: "" }, { adult_attested_at: "yesterday" }, { adult_attested_at: 12 }]) {
       const { listPage } = pager([[user("b", "alice@example.org", meta)]]);
       const r = await findAuthUser("alice@example.org", listPage);
-      expect(r, JSON.stringify(meta)).toEqual({ found: true, id: "b", attested: false });
+      expect(r, JSON.stringify(meta)).toEqual({ found: true, id: "b", attested: false, user_metadata: meta });
     }
   });
 
@@ -69,6 +73,7 @@ describe("findAuthUser — the address", () => {
       found: true,
       id: "b",
       attested: true,
+      user_metadata: ATTESTED,
     });
     expect(asked.map((a) => a.page)).toEqual([1, 2]);
   });

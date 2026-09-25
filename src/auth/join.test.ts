@@ -14,6 +14,8 @@ import type { PersonStore } from "./person";
 const EXISTING_ID = "33333333-3333-4333-8333-333333333333";
 /** The id a fresh `createUser` reports. */
 const NEW_ID = "44444444-4444-4444-8444-444444444444";
+/** The attestation an earlier gate wrote onto an attested existing user — not this submission's clock. */
+const EARLIER_ATTESTATION = "2026-08-01T09:30:00.000Z";
 
 /**
  * A fake for every effect, recording each call so the negative cases can assert zero.
@@ -70,7 +72,12 @@ function fakes(overrides: Overrides = {}, { taken = false, attested = false } = 
   const base: JoinDeps = {
     inviteCode: async () => "HSC-2027",
     createUser: async () => (taken ? { created: false } : { created: true, id: NEW_ID }),
-    existingUser: async () => ({ found: true, id: EXISTING_ID, attested }),
+    existingUser: async () => ({
+      found: true,
+      id: EXISTING_ID,
+      attested,
+      user_metadata: attested ? { adult_attested_at: EARLIER_ATTESTATION } : {},
+    }),
     attestExisting: async (id, meta, password) => {
       written.push({ id, meta, password });
       return {};
@@ -317,7 +324,7 @@ describe("join — a stray auth user on the address (#85, AC 5)", () => {
       {
         existingUser: async (email) => {
           seen.push(email);
-          return { found: true, id: EXISTING_ID, attested: false };
+          return { found: true, id: EXISTING_ID, attested: false, user_metadata: {} };
         },
       },
       { taken: true },
@@ -380,8 +387,14 @@ describe("join — a stray auth user on the address (#85, AC 5)", () => {
  * registered — deliberately, and only to a caller who has already proved this season's code.
  */
 describe("join — an address that already carries an attested member (AC 4)", () => {
-  function attestedFakes(overrides: Partial<JoinDeps> = {}) {
-    return fakes(overrides, { taken: true, attested: true });
+  /**
+   * A MEMBER: attested, and holding a person row. The row is stated since #204, because an
+   * attested user WITHOUT one is a different case now (an interrupted sign-up, finished below) —
+   * and before #204 nothing on this path read `exists`, so the fakes' default of "no row" was
+   * never looked at.
+   */
+  function attestedFakes(overrides: Overrides = {}) {
+    return fakes({ ...overrides, person: { exists: async () => true, ...overrides.person } }, { taken: true, attested: true });
   }
 
   it("overwrites nothing and names the way in", async () => {
@@ -409,6 +422,130 @@ describe("join — an address that already carries an attested member (AC 4)", (
     const { GENERIC_OK } = await import("./signin");
     expect(r.body.message).not.toBe(GENERIC_OK);
     expect(r.body.message).not.toMatch(/on its way|inbox|link/i);
+  });
+});
+
+/**
+ * #204. An attested auth user with NO person row is a sign-up that stopped between its two writes
+ * — `createUser` wrote the attestation, and the service role's read of `person` (or the insert)
+ * was refused before the row existed. Before #204 the retry answered ALREADY_A_MEMBER and sign-in
+ * then answered NOT_A_MEMBER; the only way out was a password reset. The retry finishes it now.
+ */
+describe("join — an attested address with no person row is an interrupted sign-up, finished on retry (#204)", () => {
+  function interruptedFakes(overrides: Overrides = {}) {
+    return fakes(overrides, { taken: true, attested: true });
+  }
+
+  it("mints the row from the account's OWN attestation, signs in with the typed password, and lands on /welcome", async () => {
+    const { deps, calls, written, inserted, signedIn, deleted, reachedFor } = interruptedFakes();
+    const r = await join(good, deps);
+    expect(r).toEqual({ status: 200, body: { redirect: AFTER_SIGNUP } });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({ id: EXISTING_ID, email: "alice@example.org", profile_completed_at: null });
+    // the attestation the earlier gate wrote, not this submission's clock (2026-08-22T12:00Z)
+    expect(inserted[0].adult_attested_at).toBe(EARLIER_ATTESTATION);
+    expect(signedIn).toEqual([{ email: "alice@example.org", password: good.password }]);
+    // nothing overwritten: no attestation stamp, no password set, nobody deleted
+    expect(written).toEqual([]);
+    expect(deleted).toEqual([]);
+    expect(reachedFor).toEqual([]);
+    expect(calls).toEqual({ inviteCode: 1, createUser: 1, existingUser: 1, attestExisting: 0, ensurePerson: 1, signIn: 1 });
+  });
+
+  it("a wrong password signs nobody in and answers ALREADY_A_MEMBER — true now, since the row exists", async () => {
+    const { deps, inserted } = interruptedFakes({ signIn: async () => ({ error: "invalid_credentials" }) });
+    const r = await join(good, deps);
+    expect(r).toEqual({ status: 409, body: { message: ALREADY_A_MEMBER, then: "signin" } });
+    expect(inserted).toHaveLength(1);
+  });
+
+  it("the row comes before the password, so this branch tries a password at most ONCE per account", async () => {
+    // Signing in first would let a wrong password write nothing, leaving the branch open to the
+    // next guess — and the attempt limit counts only wrong codes here (#206). Minted first, the
+    // second request finds the row and never reaches a sign-in.
+    const rows = new Set<string>();
+    const tried: string[] = [];
+    const world: Overrides = {
+      signIn: async (_email, password) => {
+        tried.push(password);
+        return { error: "invalid_credentials" };
+      },
+      person: {
+        exists: async (id) => rows.has(id),
+        insert: async (row) => {
+          rows.add(row.id);
+          return {};
+        },
+      },
+    };
+    const first = await join({ ...good, password: "first-guess-2027" }, interruptedFakes(world).deps);
+    const second = await join({ ...good, password: "second-guess-2027" }, interruptedFakes(world).deps);
+    expect(first.status).toBe(409);
+    expect(second).toEqual({ status: 409, body: { message: ALREADY_A_MEMBER, then: "signin" } });
+    expect(tried).toEqual(["first-guess-2027"]);
+  });
+
+  it("a refused mint signs nobody in and answers 500", async () => {
+    const { deps, calls } = interruptedFakes({ person: { insert: async () => ({ error: "JWT issued at future" }) } });
+    const r = await join(good, deps);
+    expect(r.status).toBe(500);
+    expect(r.body.message).toMatch(/Could not finish signing up/);
+    expect(calls.signIn).toBe(0);
+  });
+
+  it("a refused READ throws out of the gate, before any sign-in — the route's error hook reports it", async () => {
+    const { deps, calls } = interruptedFakes({
+      person: {
+        exists: async () => {
+          throw new Error("JWT issued at future");
+        },
+      },
+    });
+    await expect(join(good, deps)).rejects.toThrow(/JWT issued at future/);
+    expect(calls.signIn).toBe(0);
+  });
+
+  it("the #204 case end to end: a read refused between the two writes, then the member's retry, finishes the sign-up", async () => {
+    // One world across both requests. The first creates the auth user and is refused at the
+    // person read; the second is the same form posted again.
+    const users = new Map<string, { id: string; password: string; user_metadata: Record<string, unknown> }>();
+    const rows = new Set<string>();
+    let refusals = 1;
+    const world: Overrides = {
+      createUser: async (u) => {
+        if (users.has(u.email)) return { created: false };
+        users.set(u.email, { id: NEW_ID, password: u.password, user_metadata: u.user_metadata });
+        return { created: true, id: NEW_ID };
+      },
+      existingUser: async (email) => {
+        const u = users.get(email);
+        if (!u) return { found: false };
+        return { found: true, id: u.id, attested: typeof u.user_metadata.adult_attested_at === "string", user_metadata: u.user_metadata };
+      },
+      signIn: async (email, password) => (users.get(email)?.password === password ? {} : { error: "invalid_credentials" }),
+      person: {
+        exists: async (id) => {
+          if (refusals > 0) {
+            refusals--;
+            throw new Error("person read: JWT issued at future");
+          }
+          return rows.has(id);
+        },
+        insert: async (row) => {
+          rows.add(row.id);
+          return {};
+        },
+      },
+    };
+
+    await expect(join(good, fakes(world).deps)).rejects.toThrow(/JWT issued at future/);
+    // the stranded state: an attested auth user, and no row
+    expect(users.size).toBe(1);
+    expect(rows.size).toBe(0);
+
+    const retry = await join(good, fakes(world).deps);
+    expect(retry).toEqual({ status: 200, body: { redirect: AFTER_SIGNUP } });
+    expect(rows.has(NEW_ID)).toBe(true);
   });
 });
 

@@ -111,11 +111,12 @@ export type JoinResult = {
  * only while a link really was on its way to *somebody*. With no link on any path, a generic
  * sentence would simply be a lie told to a member who is now stuck.
  *
- * `then: "signin"` puts them on the Sign in tab, which carries the Forgot link. That is the way
- * out for the one population this can strand: a member who signed up before #99 and never opened
- * their emailed link has an attested auth user, a password and NO person row — so signing in
- * answers NOT_A_MEMBER and signing up answers this. The reset link still goes through
- * /auth/callback, and `ensurePerson` mints their row when it lands.
+ * `then: "signin"` puts them on the Sign in tab, which carries the Forgot link. Until #204 that was
+ * the way out for the one population this could strand: an attested auth user with a password and
+ * NO person row — a member who signed up before #99 and never opened their emailed link, or a
+ * sign-up interrupted between its two writes — for whom signing in answered NOT_A_MEMBER and
+ * signing up answered this. Since #204 signing up finishes them instead (`finishInterrupted`), so
+ * this answer means what it says: the row exists.
  */
 export const ALREADY_A_MEMBER = "You already have an account here — sign in with your password.";
 
@@ -196,6 +197,14 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
       return CANNOT_START;
     }
     if (existing.attested) {
+      // An attested user is a member's account — unless the sign-up that attested it stopped
+      // between its two writes and left no person row (#204). `ensurePerson` tells the two apart
+      // and is the one that acts: it writes nothing where a row exists, and mints the row where
+      // none does. The user's own metadata carries the attestation, so its delete branch cannot
+      // be entered from here. See `finishInterrupted` below for the rest.
+      const finished = await ensurePerson({ id: existing.id, email, user_metadata: existing.user_metadata }, deps.person);
+      if ("refused" in finished) return CANNOT_START;
+      if (finished.created) return finishInterrupted(email, input.password, deps);
       // A member's account. Nothing here may overwrite what they already have — not the password,
       // not the metadata, and not `person.display_name`, which ensurePerson leaves alone on its
       // first line in any case. Say so plainly and point at the way in.
@@ -219,6 +228,38 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
     // back to a form that will now answer ALREADY_A_MEMBER — so name what happened instead.
     return { status: 500, body: { message: CREATED_NOT_SIGNED_IN, then: "signin" } };
   }
+  return { status: 200, body: { redirect: AFTER_SIGNUP } };
+}
+
+/**
+ * The end of a sign-up that stopped between creating the auth user and minting its person row
+ * (#204), called once `ensurePerson` has just minted that row.
+ *
+ * HOW ONE GETS HERE. `createUser` writes the attestation; `ensurePerson` then reads `person` and
+ * inserts it. Anything that fails between the two — the platform refusing the service role's read
+ * (1 in 477 on 2026-09-22, `JWT issued at future`), an insert error, a function cut off — leaves
+ * an attested auth user with no row. Until #204 the member's retry was answered ALREADY_A_MEMBER,
+ * the sign-in it pointed at answered NOT_A_MEMBER, and the way out was that sentence's third
+ * screen: Forgot my password, whose emailed link mints the row at /auth/callback. Owner decision
+ * at pickup, 2026-09-24: the retry itself finishes it. The same holds for the pre-#99 population
+ * ALREADY_A_MEMBER's comment describes — attested, a password, never opened their link.
+ *
+ * THE ROW BEFORE THE SIGN-IN, as on the ordinary path. The row is minted from the auth user's OWN
+ * metadata — the attestation a gate already wrote, not this submission's — which is what the
+ * callback would mint on a reset, and by this point the same submission has proved this season's
+ * code. Then the typed password signs in. A wrong password answers ALREADY_A_MEMBER, which is now
+ * simply true, and writes nothing else.
+ *
+ * WHY NOT SIGN IN FIRST. Signing in first would keep a wrong password from writing anything, and
+ * that is exactly what would make this branch a password oracle: a caller holding the code could
+ * guess against an unfinished account over and over, and the attempt limit counts only wrong CODES
+ * here (#206). Minted first, the branch is reachable once per account — the second request finds
+ * the row, `ensurePerson` answers `created: false`, and the gate answers ALREADY_A_MEMBER without
+ * trying a password at all.
+ */
+async function finishInterrupted(email: string, password: string, deps: JoinDeps): Promise<JoinResult> {
+  const signedIn = await deps.signIn(email, password);
+  if (signedIn.error) return { status: 409, body: { message: ALREADY_A_MEMBER, then: "signin" } };
   return { status: 200, body: { redirect: AFTER_SIGNUP } };
 }
 

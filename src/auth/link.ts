@@ -1,3 +1,5 @@
+import { UNCONFIRMED } from "./callback";
+
 /**
  * Linking a Google account to an existing member (#74).
  *
@@ -125,6 +127,11 @@ export function explainLinkReason(reason: string): string | null {
       return "Linking was cancelled. Nothing has changed — try again when you are ready.";
     case "link-invalid":
       return "That link attempt expired before it finished. Try again from your profile.";
+    // #204: the callback's check after the exchange was refused. GoTrue links the identity before
+    // the code reaches the callback, so the link has most likely worked, and this page reads the
+    // identities afresh — so it points at the page's own answer rather than guessing.
+    case UNCONFIRMED:
+      return "Tender could not finish checking that link just now. If Google sign-in on this page says your Google account is linked, it worked; if not, try again in a minute.";
     default:
       return null;
   }

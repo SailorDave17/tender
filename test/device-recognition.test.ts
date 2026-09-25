@@ -54,6 +54,9 @@ let supabase: Record<string, unknown> = {};
 vi.mock("next/headers", () => ({ cookies: async () => store }));
 vi.mock("@/lib/supabase/server", () => ({ supabaseServer: async () => supabase }));
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: () => supabase }));
+// The callback reports a refused person read since #204, and the reporter imports `server-only`
+// too — the same import death as the admin client's. No case here reaches the report.
+vi.mock("@/notify/error-live", () => ({ reportErrorLive: async () => null }));
 
 const { POST: signinPOST } = await import("@/app/api/signin/route");
 const { POST: joinPOST } = await import("@/app/api/join/route");

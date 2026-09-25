@@ -1,7 +1,9 @@
 import "server-only";
 import { cache } from "react";
-import { connection } from "next/server";
+import { after, connection } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { reportErrorLive } from "@/notify/error-live";
+import { contactFromRead, type SupportAddressRead, type SupportContact } from "./contact-read";
 
 /**
  * The address /support tells a member to write to: `club.admin_email`, read on every request
@@ -23,14 +25,26 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
  * static route, where `env()` would throw on CI. `cache()` dedupes within one request.
  *
  * NULL IS A STATE, NOT AN ERROR. 0009 made the column nullable ("a club row may exist before
- * anyone has decided who the admin is"), so the page says in words who to ask instead. A read
- * that FAILS throws, as the theme's does: the layout has already read the same row by then, so a
- * database the page cannot reach has already failed the whole render.
+ * anyone has decided who the admin is"), so the page says in words who to ask instead.
+ *
+ * A REFUSED READ DOES NOT THROW (#204). Until then it did, and this header justified it by the
+ * theme: the layout read the same row first, so a database the page could not reach had already
+ * failed the whole render. #198 took that away — the theme's refusal now paints the default and
+ * the layout renders — so this read was the one thing left failing /support, the page meant for
+ * people who are stuck. A refusal now renders the page with a sentence saying the address could
+ * not be loaded, and is reported to the owner after the response. `./contact-read.ts` holds the
+ * rule and says why; this file only does the I/O, and a query that throws rather than answering
+ * an error is treated as the same refusal. A missing service key still throws, in
+ * `supabaseAdmin()`, before any read: that is configuration, not a transient refusal (#65).
  */
-export const loadSupportAddress = cache(async (): Promise<string | null> => {
+export const loadSupportAddress = cache(async (): Promise<SupportContact> => {
   await connection();
-  const { data, error } = await supabaseAdmin().from("club").select("admin_email").limit(1).maybeSingle();
-  if (error) throw new Error(`support address could not be read: ${error.message}`);
-  const value = data?.admin_email;
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  const admin = supabaseAdmin();
+  let read: SupportAddressRead;
+  try {
+    read = await admin.from("club").select("admin_email").limit(1).maybeSingle();
+  } catch (e) {
+    read = { data: null, error: { message: e instanceof Error ? e.message : String(e) } };
+  }
+  return contactFromRead(read, (report) => after(() => reportErrorLive(report)));
 });
