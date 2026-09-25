@@ -590,6 +590,15 @@ button[data-already-member] {
 [data-google] {
   contain: inline-size;
 }
+/* Google's frame (#230). GIS draws the button in an iframe whose document is light, while the
+   frame element inherits `light dark` from :root. In dark mode the two schemes differ, and Chrome
+   then paints an opaque backdrop behind the frame's document (the `color-scheme` rule for embedded
+   documents). GIS sets `margin: -2px -10px` on its frame, so on the owner's phone that backdrop
+   was a white strip round the button on the dark page. Declaring the frame light makes the two
+   agree and the backdrop transparent. Measured on the phone before it was written here. */
+[data-google] iframe {
+  color-scheme: light;
+}
 /* the 18+ line beside the create-account buttons: body ink, not a muted hint, so it is read */
 [data-attest] {
   margin: 0;
