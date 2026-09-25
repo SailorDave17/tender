@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { confirmed, deleteAccount } from "./delete-account";
+import { signatureOf } from "@/notify/error";
+import { AUTH_USER_NOT_DELETED, confirmed, deleteAccount, partialDeletionReport } from "./delete-account";
 
 /**
  * Story #42 AC 2: delete_person first, the auth user second, in that order — asserted by an
@@ -45,6 +46,27 @@ describe("deleteAccount — the person's rows, then the auth user, in that order
     const result = await deleteAccount(r.deps);
     expect(r.calls).toEqual(["delete_person", "auth.admin.deleteUser"]);
     expect(result).toEqual({ ok: false, step: "auth", reason: "User not allowed" });
+  });
+});
+
+describe("partialDeletionReport — the telling behind /join's 'the club admin has been told' (#204)", () => {
+  const A = "11111111-1111-4111-8111-111111111111";
+  const B = "22222222-2222-4222-8222-222222222222";
+
+  it("names the auth user to remove and why the auth step failed", () => {
+    const r = partialDeletionReport(A, "JWT issued at future");
+    expect(r.name).toBe(AUTH_USER_NOT_DELETED);
+    expect(r.message).toContain(`Remove auth user ${A}`);
+    expect(r.message).toContain("JWT issued at future");
+    expect(r.path).toBe("/profile");
+  });
+
+  it("two members' partial deletions are two signatures, so the hour's dedupe cannot swallow the second", () => {
+    // The reporter sends one email per signature per hour (#43). Keyed on the action alone, the
+    // second member would be told the admin knows while nobody had been told about them.
+    expect(signatureOf(partialDeletionReport(A, "x"))).not.toBe(signatureOf(partialDeletionReport(B, "x")));
+    // ...while one member's repeated report is one signature, which is what the dedupe is for
+    expect(signatureOf(partialDeletionReport(A, "x"))).toBe(signatureOf(partialDeletionReport(A, "y")));
   });
 });
 

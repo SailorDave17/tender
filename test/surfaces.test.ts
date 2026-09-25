@@ -62,7 +62,7 @@ vi.mock("@/app/boats/actions", () => ({ createBoat: async () => undefined }));
 vi.mock("@/app/profile/actions", () => ({ saveProfile: async () => undefined }));
 vi.mock("@/app/profile/account-actions", () => ({ deleteMyAccount: async () => undefined }));
 // #147: /support reads the club row's address as the service role, behind `server-only`.
-vi.mock("@/support/contact", () => ({ loadSupportAddress: async () => "someone@club.example.test" }));
+vi.mock("@/support/contact", () => ({ loadSupportAddress: async () => ({ kind: "address", address: "someone@club.example.test" }) }));
 
 const css = readFileSync(GLOBALS_CSS, "utf8");
 const SRC = fileURLToPath(new URL("../src/", import.meta.url)).replace(/[\\/]$/, "");

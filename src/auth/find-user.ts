@@ -25,9 +25,14 @@ export type ListedUser = {
 
 export type UserPage = { users: ListedUser[] } | { error: string };
 
+/**
+ * `user_metadata` rides along since #204: an attested user with no person row is a sign-up that
+ * stopped between its two writes, and the gate finishes it by handing this user to
+ * `ensurePerson` — with the metadata it already carries, as /auth/callback would on a reset.
+ */
 export type FoundUser =
   | { found: false }
-  | { found: true; id: string; attested: boolean }
+  | { found: true; id: string; attested: boolean; user_metadata: Record<string, unknown> | null }
   | { error: string };
 
 /**
@@ -51,7 +56,9 @@ export async function findAuthUser(
     if ("error" in result) return { error: result.error };
 
     const hit = result.users.find((u) => (u.email ?? "").trim().toLowerCase() === wanted);
-    if (hit) return { found: true, id: hit.id, attested: attestationOf(hit.user_metadata) !== null };
+    if (hit) {
+      return { found: true, id: hit.id, attested: attestationOf(hit.user_metadata) !== null, user_metadata: hit.user_metadata ?? null };
+    }
 
     // A short page is the last page. Without this the loop would ask for MAX_PAGES empty pages
     // on every miss.

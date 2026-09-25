@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
-import { NextResponse, type NextRequest } from "next/server";
-import { decideCallback } from "@/auth/callback";
+import { NextResponse, after, type NextRequest } from "next/server";
+import { UNCONFIRMED, callbackUnconfirmedReport, decideCallback } from "@/auth/callback";
 import { LINK_DONE, backPathFor, isLinkFlow } from "@/auth/link";
 import { safeNext } from "@/auth/next";
 import { ensurePerson } from "@/auth/person";
@@ -8,6 +8,7 @@ import { rememberDevice } from "@/auth/recognition";
 import { adminPersonStore } from "@/lib/auth/person-store";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
+import { reportErrorLive } from "@/notify/error-live";
 
 /**
  * Where the emailed reset link lands, and where the return leg of an identity link (#74,
@@ -51,7 +52,22 @@ export async function GET(request: NextRequest) {
   const { data, error } = await client.auth.exchangeCodeForSession(decision.code);
   if (error || !data.user) return back("link-invalid");
 
-  const ensured = await ensurePerson(data.user, adminPersonStore(supabaseAdmin()));
+  // #204: `ensurePerson` begins with a service-role read of `person`, and a refused read throws
+  // rather than answering "no row" — the safe direction, since "no row" would send a real member
+  // down the delete branch. It used to throw out of this handler too, past the promise above that
+  // any failure goes back to a reason, so a reset link landed on a bare 500 with its code spent.
+  // Now it goes back with a reason and is reported after the response. `src/auth/callback.ts`
+  // (UNCONFIRMED) says why a reset is signed out and a link from /profile is not.
+  const store = adminPersonStore(supabaseAdmin());
+  let ensured: Awaited<ReturnType<typeof ensurePerson>>;
+  try {
+    ensured = await ensurePerson(data.user, store);
+  } catch (e) {
+    const report = callbackUnconfirmedReport(e instanceof Error ? e.message : String(e), isLinkFlow(flow));
+    after(() => reportErrorLive(report));
+    if (!isLinkFlow(flow)) await client.auth.signOut().catch(() => undefined);
+    return back(UNCONFIRMED);
+  }
   if ("refused" in ensured) {
     // The session cookies were just written for a user that no longer (or never should) exist.
     await client.auth.signOut().catch(() => undefined);
