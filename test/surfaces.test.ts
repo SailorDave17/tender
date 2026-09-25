@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { chromium, type Browser, type Page } from "playwright-core";
+import sharp from "sharp";
 import { fitGoogleButton } from "@/auth/GoogleButton";
 import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
@@ -497,6 +498,53 @@ describe("Google's button is as wide as its slot, so /join does not scroll sidew
       await context.close();
     }
   });
+});
+
+describe("Google's frame paints no white backdrop on the dark page (#230)", () => {
+  // Found on the owner's phone (Chrome 153, dark mode): a white strip round the Google button,
+  // ~10px either side. GIS's frame is light inside, the frame element inherits `light dark`, and
+  // Chrome paints an opaque backdrop behind a frame whose scheme differs from its document's.
+  // The frame here copies GIS's measured inline style and holds an empty light document, so every
+  // pixel in its box should be the page behind it. The backdrop exists only as paint, so the
+  // reading is pixels from a screenshot, not a computed style.
+  const FRAME = `(async () => {
+    const slot = document.querySelector("[data-google]").firstElementChild;
+    const inner = document.createElement("div");
+    const f = document.createElement("iframe");
+    f.style.cssText = "display: block; position: relative; top: 0px; left: 0px; height: 44px; width: " + (slot.clientWidth + 20) + "px; border: 0px; margin: -2px -10px;";
+    f.srcdoc = "<!doctype html><html><body style='margin:0'></body></html>";
+    const loaded = new Promise((r) => (f.onload = r));
+    inner.append(f);
+    slot.append(inner);
+    await loaded;
+    return getComputedStyle(f).colorScheme;
+  })()`;
+  const whiteShare = async (page: import("playwright-core").Page) => {
+    const png = await page.locator("[data-google] iframe").screenshot();
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    let white = 0;
+    for (let i = 0; i < data.length; i += info.channels) if (data[i] >= 250 && data[i + 1] >= 250 && data[i + 2] >= 250) white++;
+    return { share: white / (info.width * info.height), size: `${info.width}×${info.height}` };
+  };
+
+  for (const tab of JOIN_TABS) {
+    it(`${tab} tab, dark: the frame's box shows the page, not white`, async () => {
+      const { page, close } = await open(joinWithGoogle(tab), { width: 390, height: 800 }, "dark");
+      try {
+        const scheme = await page.evaluate(FRAME);
+        const fixed = await whiteShare(page);
+        // Control: the frame back on the page's `light dark`, the state before #230.
+        await page.evaluate(`document.querySelector("[data-google] iframe").style.colorScheme = "light dark"`);
+        const unfixed = await whiteShare(page);
+        console.log(`#230 ${tab} dark: frame ${fixed.size} as ${scheme}, white ${(fixed.share * 100).toFixed(1)}%; on light dark, white ${(unfixed.share * 100).toFixed(1)}%`);
+        expect(unfixed.share, "control: a frame on the page's scheme paints white here").toBeGreaterThan(0.9);
+        expect(fixed.share, "no white in the frame's box").toBe(0);
+        expect(scheme, "the stylesheet declares the frame light").toBe("light");
+      } finally {
+        await close();
+      }
+    });
+  }
 });
 
 describe("a short page keeps its footer under its content, not under a screen (#211 AC 2)", () => {
