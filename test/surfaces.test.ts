@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { fitGoogleButton } from "@/auth/GoogleButton";
+import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 import { IDS, ME, NOW, fakeClient } from "./surfaces";
 
@@ -132,7 +133,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await browser?.close();
-});
+}, CHROME_CLOSE_TIMEOUT_MS);
 
 const IN_PAGE = `
   const lum = (s) => {
