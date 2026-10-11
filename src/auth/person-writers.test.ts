@@ -21,6 +21,8 @@ import { NextRequest } from "next/server";
 type Row = Record<string, unknown>;
 const inserts: { table: string; row: Row }[] = [];
 const created: Row[] = [];
+/** Every admin update of an auth user, so a test can say which metadata object took the write (#267). */
+const updated: { id: string; attrs: Row }[] = [];
 let exchangedUser: Row = { id: "g-1", email: "ann@example.test", user_metadata: { full_name: "Ann Example" } };
 
 const jar = new Map<string, string>();
@@ -70,7 +72,10 @@ const supabase = {
         created.push(u);
         return { data: { user: { id: "u1" } }, error: null };
       },
-      updateUserById: async () => ({ error: null }),
+      updateUserById: async (id: string, attrs: Row) => {
+        updated.push({ id, attrs });
+        return { error: null };
+      },
       deleteUser: async () => ({ error: null }),
       listUsers: async () => ({ data: { users: [] }, error: null }),
     },
@@ -93,6 +98,7 @@ const personRows = () => inserts.filter((i) => i.table === "person").map((i) => 
 beforeEach(() => {
   inserts.length = 0;
   created.length = 0;
+  updated.length = 0;
   jar.clear();
   exchangedUser = { id: "g-1", email: "ann@example.test", user_metadata: { full_name: "Ann Example" } };
 });
@@ -117,9 +123,11 @@ describe("/api/join — the inline person writer (#220 AC 3)", () => {
     expect(rows[0].display_name).toBe("new.member");
     // and the contact row beside it, for the lowercased address
     expect(inserts.find((i) => i.table === "person_contact")?.row).toEqual({ person_id: "u1", email: "new.member@example.test" });
-    // The auth user carries the attestation and nothing else of ours: no name was typed.
+    // The auth user carries the attestation and nothing else of ours: no name was typed. In
+    // app_metadata (#267), and no user_metadata at all — a copy there would be one the user can edit.
     expect(created).toHaveLength(1);
-    expect(created[0].user_metadata).toEqual({ adult_attested_at: expect.any(String) });
+    expect(created[0].app_metadata).toEqual({ adult_attested_at: expect.any(String) });
+    expect(created[0]).not.toHaveProperty("user_metadata");
   });
 
   it("the right code in lower case with spaces round it: accepted, one auth user (#243 AC 2)", async () => {
@@ -167,7 +175,8 @@ describe("/api/join — the inline person writer (#220 AC 3)", () => {
     }));
     expect(res.status).toBe(200);
     expect(personRows()[0].display_name).toBe("new");
-    expect(created[0].user_metadata).not.toHaveProperty("display_name");
+    expect(created[0].app_metadata).not.toHaveProperty("display_name");
+    expect(created[0]).not.toHaveProperty("user_metadata");
   });
 });
 
@@ -188,6 +197,10 @@ describe("/api/signup/google — adminPersonStore, the shared writer (#220 AC 4)
     // the provisional name is the Google given name when present…
     expect(rows[0].display_name).toBe("Ann");
     expect(rows[0].id).toBe("g-1");
+    // The gate's attestation is written onto the Google user through the SHARED store
+    // (adminPersonStore.setMetadata), into app_metadata, the field only the service role writes
+    // (#267) — the same value the row was minted with, and nothing in user_metadata.
+    expect(updated).toEqual([{ id: "g-1", attrs: { app_metadata: { adult_attested_at: rows[0].adult_attested_at } } }]);
   });
 
   it("…and the whole name Google sent when there is no given name — GoTrue's fixtures here never had one", async () => {

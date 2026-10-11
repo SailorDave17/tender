@@ -463,9 +463,11 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    -- auth users with no person row, no attestation, and older than a day. The age is what keeps
    -- a sign-up or a Google flow that is in progress right now out of the way: both are exactly
    -- this shape for the minute or two between the auth user appearing and the link being opened.
+   -- The attestation is read from raw_APP_meta_data, the field only the service role writes
+   -- (#267). An attestation in raw_user_meta_data is one the user wrote, and does not spare them.
    delete from auth.users u
     where not exists (select 1 from public.person p where p.id = u.id)
-      and (u.raw_user_meta_data ->> 'adult_attested_at') is null
+      and (u.raw_app_meta_data ->> 'adult_attested_at') is null
       and u.created_at < now() - interval '1 day'
    returning u.email, u.created_at;
    ```

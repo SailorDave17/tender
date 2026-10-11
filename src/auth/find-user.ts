@@ -1,7 +1,8 @@
 import { attestationOf } from "./person";
 
 /**
- * Find the auth user at an address, and say whether it carries an attestation (#85).
+ * Find the auth user at an address, and say whether it carries an attestation the gate wrote
+ * (#85; read from `app_metadata` since #267).
  *
  * The invite gate needs this only on one branch: `createUser` came back `email_exists`, so an
  * auth user is already there and the gate has to know *which* human it belongs to before it
@@ -21,18 +22,27 @@ export type ListedUser = {
   id: string;
   email?: string | null;
   user_metadata?: Record<string, unknown> | null;
+  app_metadata?: Record<string, unknown> | null;
 };
 
 export type UserPage = { users: ListedUser[] } | { error: string };
 
 /**
- * `user_metadata` rides along since #204: an attested user with no person row is a sign-up that
- * stopped between its two writes, and the gate finishes it by handing this user to
- * `ensurePerson` — with the metadata it already carries, as /auth/callback would on a reset.
+ * Both metadata objects ride along (#204, `app_metadata` since #267): an attested user with no
+ * person row is a sign-up that stopped between its two writes, and the gate finishes it by
+ * handing this user to `ensurePerson` — with what it already carries, as /auth/callback would on
+ * a reset. `attested` is read from `app_metadata` alone, through the same `attestationOf`
+ * `ensurePerson` applies; `user_metadata` is carried only for the provisional name.
  */
 export type FoundUser =
   | { found: false }
-  | { found: true; id: string; attested: boolean; user_metadata: Record<string, unknown> | null }
+  | {
+      found: true;
+      id: string;
+      attested: boolean;
+      user_metadata: Record<string, unknown> | null;
+      app_metadata: Record<string, unknown> | null;
+    }
   | { error: string };
 
 /**
@@ -57,7 +67,13 @@ export async function findAuthUser(
 
     const hit = result.users.find((u) => (u.email ?? "").trim().toLowerCase() === wanted);
     if (hit) {
-      return { found: true, id: hit.id, attested: attestationOf(hit.user_metadata) !== null, user_metadata: hit.user_metadata ?? null };
+      return {
+        found: true,
+        id: hit.id,
+        attested: attestationOf(hit) !== null,
+        user_metadata: hit.user_metadata ?? null,
+        app_metadata: hit.app_metadata ?? null,
+      };
     }
 
     // A short page is the last page. Without this the loop would ask for MAX_PAGES empty pages

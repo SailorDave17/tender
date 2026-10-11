@@ -106,7 +106,7 @@ function healthyStack(overrides: { personExists?: boolean } = {}) {
         error: null,
       }),
       exchangeCodeForSession: async () => ({
-        data: { user: { id: "u1", email: "ann@example.test", user_metadata: { adult_attested_at: "2026-01-01T00:00:00.000Z" } } },
+        data: { user: { id: "u1", email: "ann@example.test", app_metadata: { adult_attested_at: "2026-01-01T00:00:00.000Z" } } },
         error: null,
       }),
       signOut: async () => ({ error: null }),
