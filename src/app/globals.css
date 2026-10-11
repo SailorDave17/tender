@@ -70,8 +70,9 @@
   /* Confirmation, as text. */
   --ok: #1e6b3a;
   /* The focus ring (#154). With `outline-offset: 2px` its adjacent colour is the surface around
-     the control, so it is held to 3:1 on paper, surface and accent-soft; on the brand bar the ring
-     is --brand-mark instead, whose 3:1 against the disc is 0028's promise. */
+     the control, so it is held to 3:1 on paper, surface and accent-soft; on the brand bar, and on
+     the skip link drawn over it (#257), the ring is --brand-mark instead, whose 3:1 against the
+     disc is 0028's promise. */
   --focus: #395fac;
 
   /* ---- type ------------------------------------------------------------------------------ */
@@ -201,8 +202,15 @@ input[type="radio"] {
   font-weight: 600;
   text-decoration: none;
 }
+/* Focused, it is drawn over the brand bar, its sibling, so the bar's `:focus-visible` rule below
+   never reaches it and `--focus` would be its ring: Hoover's disc exactly, 1.00:1 (#257). The ring
+   is the club's mark here too, whose 3:1 against the disc 0028 holds at save. The 1px offset keeps
+   the whole ring on the bar: at 2px its outermost row fell one pixel below the bar's 60px, onto the
+   page, where the mark is no one's promise (yellow on light paper, 1.30:1). */
 [data-skip]:focus-visible {
   top: var(--space-2);
+  outline-color: var(--brand-mark);
+  outline-offset: 1px;
 }
 
 /* The brand bar: the club's disc behind its knockout, the same pair the mark is drawn in. */
