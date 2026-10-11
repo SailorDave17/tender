@@ -532,9 +532,15 @@ button:disabled {
 [data-field] [data-row] {
   align-items: stretch;
 }
+/* The password box beside its Show button (#245). `width: 0` takes the box's own intrinsic width
+   (the `size` attribute's twenty characters, which grows with the text) out of everything it sits
+   in, and the 10rem basis is the width below which Show wraps under the box rather than squeezing
+   it. With `width: auto` that intrinsic width was 401px at 200% text, and the fieldset's
+   `min-inline-size: min-content` and the form's grid held the whole Sign up tab at 483px on a
+   360px screen. At ordinary sizes the two lay out exactly as before. */
 [data-field] input {
-  flex: 1;
-  width: auto;
+  flex: 1 1 10rem;
+  width: 0;
 }
 [data-toggle] {
   min-width: 4.5rem;
