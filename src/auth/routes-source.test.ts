@@ -165,14 +165,17 @@ describe("the invite gate's lookup really pages, and writes in exactly one place
     expect(start, "the route wires attestExisting").toBeGreaterThan(-1);
     const block = src.slice(start, src.indexOf("person: {", start));
     // the stamp writes the metadata AND the chosen password; that pairing is what makes it a
-    // stamp rather than a metadata edit, and it is what #85 and #82 together asked for
-    expect(block).toMatch(/updateUserById\([\s\S]*user_metadata: meta, password/);
+    // stamp rather than a metadata edit, and it is what #85 and #82 together asked for. The
+    // metadata is app_metadata since #267 — user_metadata is the user's to rewrite.
+    expect(block).toMatch(/updateUserById\([\s\S]*app_metadata: meta, password/);
     // #99 gave the route a second updateUserById — ensurePerson's setMetadata, which the callback
     // wires identically and which the gate never reaches (it always arrives with an attestation).
     // So the count is 2, and what matters is that the SECOND one writes no password.
     expect(src.match(/updateUserById/g)).toHaveLength(2);
     const store = src.slice(src.indexOf("person: {"));
-    expect(store).toMatch(/setMetadata:[\s\S]*updateUserById\(id, \{ user_metadata: meta \}\)/);
+    expect(store).toMatch(/setMetadata:[\s\S]*updateUserById\(id, \{ app_metadata: meta \}\)/);
+    // and nothing on the route writes the user-writable field at all (#267)
+    expect(src).not.toMatch(/user_metadata/);
   });
 
   it("the route decides nothing about whether to stamp — join() does (AC 4)", async () => {

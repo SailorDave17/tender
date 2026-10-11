@@ -35,7 +35,8 @@ export function adminPersonStore(admin: SupabaseClient): PersonStore {
       return c.error ? { error: c.error.message } : {};
     },
     setMetadata: async (id, meta) => {
-      const { error } = await admin.auth.admin.updateUserById(id, { user_metadata: meta });
+      // app_metadata, never user_metadata (#267): the user can rewrite the latter themselves.
+      const { error } = await admin.auth.admin.updateUserById(id, { app_metadata: meta });
       return error ? { error: error.message } : {};
     },
     deleteUser: async (id) => {

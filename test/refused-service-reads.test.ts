@@ -68,7 +68,8 @@ vi.mock("next/headers", () => ({ cookies: async () => cookieStore, headers: asyn
 // The world both clients read and write. Reset before every test.
 // --------------------------------------------------------------------------------------------
 
-type AuthUser = { id: string; email: string; password: string; user_metadata: Record<string, unknown> };
+/** The attestation lives in `app_metadata`, the field only the service role writes (#267), as GoTrue stores it. */
+type AuthUser = { id: string; email: string; password: string; app_metadata: Record<string, unknown> };
 
 const INVITE = "SPRING-2027";
 const PASSWORD = "a-long-enough-password";
@@ -87,6 +88,8 @@ const world = {
   sessionUser: null as AuthUser | null,
   signOuts: 0,
   signIns: 0,
+  /** Admin writes to an existing auth user: the gate's stamp, or ensurePerson's setMetadata. */
+  stamps: 0,
   nextId: 1,
 };
 
@@ -99,6 +102,7 @@ function resetWorld() {
   world.sessionUser = null;
   world.signOuts = 0;
   world.signIns = 0;
+  world.stamps = 0;
   world.nextId = 1;
 }
 
@@ -148,17 +152,23 @@ const admin = {
   rpc: async (fn: string) => ({ data: fn === "begin_auth_attempt" ? "attempt-1" : null, error: null }),
   auth: {
     admin: {
-      createUser: async (u: { email: string; password: string; user_metadata: Record<string, unknown> }) => {
+      createUser: async (u: { email: string; password: string; app_metadata: Record<string, unknown> }) => {
         if (world.users.has(u.email)) return { data: { user: null }, error: { code: "email_exists", message: "exists" } };
-        const user = { id: `user-${world.nextId++}`, email: u.email, password: u.password, user_metadata: u.user_metadata };
+        const user = { id: `user-${world.nextId++}`, email: u.email, password: u.password, app_metadata: u.app_metadata };
         world.users.set(u.email, user);
         return { data: { user: { id: user.id } }, error: null };
       },
       listUsers: async () => ({
-        data: { users: [...world.users.values()].map(({ id, email, user_metadata }) => ({ id, email, user_metadata })) },
+        data: { users: [...world.users.values()].map(({ id, email, app_metadata }) => ({ id, email, app_metadata })) },
         error: null,
       }),
-      updateUserById: async () => ({ error: null }),
+      // Counted, because #204's retry must FINISH the interrupted sign-up from the account's own
+      // attestation, not re-stamp it as a stray (#267): both end in a row and a session, and only
+      // this count tells the two mechanisms apart.
+      updateUserById: async () => {
+        world.stamps++;
+        return { error: null };
+      },
       deleteUser: async () => {
         if (world.deleteUser === "throws") throw new TypeError("fetch failed");
         if (world.deleteUser === "refused") return { error: { message: REFUSAL } };
@@ -209,7 +219,7 @@ async function drainAfter(): Promise<void> {
 
 /** An attested member's auth user, as a sign-up through the gate leaves it. */
 function member(email = "ann@example.test"): AuthUser {
-  const u = { id: `user-${world.nextId++}`, email, password: PASSWORD, user_metadata: { adult_attested_at: "2026-08-01T09:30:00.000Z" } };
+  const u = { id: `user-${world.nextId++}`, email, password: PASSWORD, app_metadata: { adult_attested_at: "2026-08-01T09:30:00.000Z" } };
   world.users.set(email, u);
   return u;
 }
@@ -366,6 +376,9 @@ describe("(b) a sign-up refused between its two writes is finished by the member
     expect(await retry.json()).toEqual({ redirect: AFTER_SIGNUP });
     expect(world.rows.has(ann.id)).toBe(true);
     expect(world.sessionUser?.id).toBe(ann.id);
+    // FINISHED from the attestation the first request wrote, not re-stamped as a stray: a stamp
+    // ends in the same row and session, so this is the only reading that says which path ran.
+    expect(world.stamps, "the retry re-stamped the account instead of finishing it").toBe(0);
   });
 
   it("once finished, the address is a member's: a third post is told to sign in, and tries no password", async () => {

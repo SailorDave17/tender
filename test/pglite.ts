@@ -197,14 +197,15 @@ export async function freshDb(options: FreshDbOptions = {}): Promise<PGlite> {
     // mis-attribute this one. This is also where the cost is: 5.2 s of a 5.3 s idle call.
     note("booting the WASM Postgres and creating the roles and the auth shim");
     const db = new PGlite();
-    // The roles and the auth shim Supabase provides and pglite does not. auth.users is the one
-    // column person.id references; the real table has many more and none is read here.
+    // The roles and the auth shim Supabase provides and pglite does not. auth.users carries the
+    // column person.id references and the two metadata objects 0036 reads and writes (#267); the
+    // real table has many more and none is read here. Both are nullable jsonb, as GoTrue's are.
     await db.exec(`
       create role anon nologin;
       create role authenticated nologin;
       create role service_role nologin bypassrls;
       create schema auth;
-      create table auth.users (id uuid primary key);
+      create table auth.users (id uuid primary key, raw_app_meta_data jsonb, raw_user_meta_data jsonb);
       create function auth.uid() returns uuid language sql stable as
         $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
       grant usage on schema auth to anon, authenticated;

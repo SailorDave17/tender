@@ -3,8 +3,15 @@
  * existed, remove it.
  *
  * 0002 grants no client role an insert on person or person_contact — the row is created here,
- * by the service role, from what the invite gate put in the auth user's metadata. Idempotent:
- * every sign-in runs it, and only the first one writes.
+ * by the service role, from what the invite gate put in the auth user's `app_metadata`.
+ * Idempotent: every sign-in runs it, and only the first one writes.
+ *
+ * `app_metadata`, never `user_metadata`, since #267. GoTrue lets a signed-in user rewrite their
+ * own `user_metadata` with nothing but the public anon key (`updateUser({ data })`, or
+ * `options.data` at sign-up), so an attestation read from there was a question the user answered
+ * about themselves — and with *Allow new users to sign up* ON, anyone could arrive at one of the
+ * no-gate callers below carrying an attestation they wrote. `app_metadata` is written only through
+ * the admin API with the service role, which is to say only by the invite gate.
  *
  * Since #70 there is a second way in: a Google-created auth user carries no attestation in its
  * metadata, so the invite gate hands over what it just proved instead — the 18+ confirmation on
@@ -32,7 +39,7 @@
 import { NAME_MAX } from "@/profile/welcome";
 
 /**
- * Does this auth user's metadata carry a usable attestation?
+ * Does this auth user carry a usable attestation the invite gate wrote?
  *
  * Two callers must answer this identically. `ensurePerson` below deletes an auth user that has
  * no attestation and no gate attestation; the invite gate (src/auth/join.ts) writes an
@@ -40,11 +47,14 @@ import { NAME_MAX } from "@/profile/welcome";
  * difference between the two predicates is either a member deleted after being told they were
  * in, or a write that never needed to happen — so there is one function and both sides call it.
  *
- * It returns the attestation rather than a boolean because `ensurePerson` needs the value while
- * the gate needs only its presence; a boolean here would put the parsing back in two places.
+ * It takes the whole user and reads `app_metadata` itself (#267), so that no caller can hand it
+ * the user-writable `user_metadata` by mistake: the field it reads is this function's decision,
+ * made once. It returns the attestation rather than a boolean because `ensurePerson` needs the
+ * value while the gate needs only its presence; a boolean here would put the parsing back in two
+ * places.
  */
-export function attestationOf(meta: Record<string, unknown> | null | undefined): string | null {
-  const raw = meta?.adult_attested_at;
+export function attestationOf(user: { app_metadata?: Record<string, unknown> | null }): string | null {
+  const raw = user.app_metadata?.adult_attested_at;
   if (typeof raw !== "string" || !raw || Number.isNaN(Date.parse(raw))) return null;
   return raw;
 }
@@ -52,7 +62,10 @@ export function attestationOf(meta: Record<string, unknown> | null | undefined):
 export type AuthUser = {
   id: string;
   email?: string | null;
+  /** Written by the user. Read for a provisional name and nothing that admits (#267). */
   user_metadata?: Record<string, unknown> | null;
+  /** Written only by the service role. Where the attestation lives (#267). */
+  app_metadata?: Record<string, unknown> | null;
 };
 
 /**
@@ -100,7 +113,10 @@ export type PersonStore = {
     profile_completed_at: null;
     email: string;
   }) => Promise<{ error?: string }>;
-  /** Write the gate's attestation onto the auth user, as the service role (#70). */
+  /**
+   * Write the gate's attestation onto the auth user's `app_metadata`, as the service role (#70;
+   * `app_metadata` since #267 — a write to `user_metadata` would be one the user could undo).
+   */
   setMetadata: (id: string, meta: GateAttestation) => Promise<{ error?: string }>;
   /** Delete an auth user that arrived with no attestation and no gate, as the service role (#70). */
   deleteUser: (id: string) => Promise<{ error?: string }>;
@@ -118,15 +134,15 @@ export async function ensurePerson(
 ): Promise<EnsureResult> {
   if (await store.exists(user.id)) return { created: false };
 
-  const meta = user.user_metadata ?? {};
-  let attested = attestationOf(meta) ?? "";
+  let attested = attestationOf(user) ?? "";
   const email = (user.email ?? "").trim().toLowerCase();
   let usedGate = false;
 
-  // A user with no attestation in its metadata did not come through the email gate. The Google
-  // gate hands over what it proved instead; with that, the attestation it carries becomes the
-  // user's. With neither, refuse to mint a person row AND delete the auth user — adults-only is
-  // structural (0002), this is the only writer, and with signups ON nothing upstream refused it.
+  // A user with no attestation in its app_metadata did not come through the email gate — whatever
+  // its user_metadata says, since the user wrote that (#267). The Google gate hands over what it
+  // proved instead; with that, the attestation it carries becomes the user's. With neither,
+  // refuse to mint a person row AND delete the auth user — adults-only is structural (0002), this
+  // is the only writer, and with signups ON nothing upstream refused it.
   if (!attested) {
     if (!gate) {
       const d = await store.deleteUser(user.id);
@@ -145,7 +161,7 @@ export async function ensurePerson(
 
   const r = await store.insert({
     id: user.id,
-    display_name: provisionalName(meta, email),
+    display_name: provisionalName(user.user_metadata, email),
     adult_attested_at: attested,
     // #220: a member minted here has not said who they are yet. 0031's `default now()` would
     // otherwise stamp the row finished, so the NULL is decided here and written by every store.

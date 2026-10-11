@@ -76,7 +76,8 @@ function fakes(overrides: Overrides = {}, { taken = false, attested = false } = 
       found: true,
       id: EXISTING_ID,
       attested,
-      user_metadata: attested ? { adult_attested_at: EARLIER_ATTESTATION } : {},
+      user_metadata: {},
+      app_metadata: attested ? { adult_attested_at: EARLIER_ATTESTATION } : {},
     }),
     attestExisting: async (id, meta, password) => {
       written.push({ id, meta, password });
@@ -152,11 +153,13 @@ describe("join — the happy path finishes in a session, with no email at all (#
       ensurePerson: 1,
       signIn: 1,
     });
-    // The attestation only (#220): the gate writes no name, because the form asks for none.
+    // The attestation only (#220): the gate writes no name, because the form asks for none. In
+    // app_metadata (#267), the field only the service role can write — and NOT in user_metadata,
+    // where the user could have written it themselves.
     expect(created).toEqual({
       email: "alice@example.org",
       password: "sail-away-2027",
-      user_metadata: { adult_attested_at: "2026-08-22T12:00:00.000Z" },
+      app_metadata: { adult_attested_at: "2026-08-22T12:00:00.000Z" },
     });
     // The row is minted for the user that was just created, off the metadata that was just
     // written: adult_attested_at set, a PROVISIONAL name (the address's local part), and
@@ -324,7 +327,7 @@ describe("join — a stray auth user on the address (#85, AC 5)", () => {
       {
         existingUser: async (email) => {
           seen.push(email);
-          return { found: true, id: EXISTING_ID, attested: false, user_metadata: {} };
+          return { found: true, id: EXISTING_ID, attested: false, user_metadata: {}, app_metadata: {} };
         },
       },
       { taken: true },
@@ -426,6 +429,45 @@ describe("join — an address that already carries an attested member (AC 4)", (
 });
 
 /**
+ * #267 (SA-R1's second regression check). A member is a PERSON ROW, whatever the auth user's
+ * metadata says. Until #267 the gate decided "member or stray?" from the attestation alone, and
+ * stamping a stray sets the password chosen on this submission — so a member whose auth user
+ * carried no attestation had their password replaced by anyone holding the season's code, and was
+ * signed in as them. Every member would have been in that position in the window between the
+ * attestation moving to app_metadata and 0036's backfill reaching their auth user.
+ */
+describe("join — an address with a person row is a member's, whatever the metadata says (#267)", () => {
+  it("answers 409 and never stamps an existing user that has a person row but no attestation", async () => {
+    const { deps, calls, written, inserted, signedIn } = fakes(
+      { person: { exists: async () => true } },
+      { taken: true, attested: false },
+    );
+    const r = await join(good, deps);
+    expect(r).toEqual({ status: 409, body: { message: ALREADY_A_MEMBER, then: "signin" } });
+    expect(calls.attestExisting, "the stamp sets this submission's password on the member").toBe(0);
+    expect(written).toEqual([]);
+    expect(inserted).toEqual([]);
+    expect(signedIn, "a session as the member, for whoever typed the code").toEqual([]);
+  });
+
+  it("the row is asked before the attestation, so a refused read stamps nothing", async () => {
+    // A refused read must not be taken for "no row": that would walk a member into the stamp.
+    const { deps, calls } = fakes(
+      {
+        person: {
+          exists: async () => {
+            throw new Error("JWT issued at future");
+          },
+        },
+      },
+      { taken: true, attested: false },
+    );
+    await expect(join(good, deps)).rejects.toThrow(/JWT issued at future/);
+    expect(calls.attestExisting + calls.signIn).toBe(0);
+  });
+});
+
+/**
  * #204. An attested auth user with NO person row is a sign-up that stopped between its two writes
  * — `createUser` wrote the attestation, and the service role's read of `person` (or the insert)
  * was refused before the row existed. Before #204 the retry answered ALREADY_A_MEMBER and sign-in
@@ -508,19 +550,25 @@ describe("join — an attested address with no person row is an interrupted sign
   it("the #204 case end to end: a read refused between the two writes, then the member's retry, finishes the sign-up", async () => {
     // One world across both requests. The first creates the auth user and is refused at the
     // person read; the second is the same form posted again.
-    const users = new Map<string, { id: string; password: string; user_metadata: Record<string, unknown> }>();
+    const users = new Map<string, { id: string; password: string; app_metadata: Record<string, unknown> }>();
     const rows = new Set<string>();
     let refusals = 1;
     const world: Overrides = {
       createUser: async (u) => {
         if (users.has(u.email)) return { created: false };
-        users.set(u.email, { id: NEW_ID, password: u.password, user_metadata: u.user_metadata });
+        users.set(u.email, { id: NEW_ID, password: u.password, app_metadata: u.app_metadata });
         return { created: true, id: NEW_ID };
       },
       existingUser: async (email) => {
         const u = users.get(email);
         if (!u) return { found: false };
-        return { found: true, id: u.id, attested: typeof u.user_metadata.adult_attested_at === "string", user_metadata: u.user_metadata };
+        return {
+          found: true,
+          id: u.id,
+          attested: typeof u.app_metadata.adult_attested_at === "string",
+          user_metadata: {},
+          app_metadata: u.app_metadata,
+        };
       },
       signIn: async (email, password) => (users.get(email)?.password === password ? {} : { error: "invalid_credentials" }),
       person: {
@@ -584,10 +632,12 @@ describe("the gate mints through ensurePerson rather than inserting (AC 2)", () 
     const { readFile } = await import("node:fs/promises");
     const src = await readFile(new URL("./join.ts", import.meta.url), "utf8");
     expect(src).toMatch(/import \{ ensurePerson, type PersonStore \} from "\.\/person"/);
-    expect(src).toMatch(/await ensurePerson\(\{ id, email, user_metadata: meta \}, deps\.person\)/);
-    // the store is handed on, never used — an insert, a delete or a metadata write here is a
-    // second writer whatever it looks like
-    expect(src).not.toMatch(/deps\.person\.(insert|deleteUser|setMetadata|exists)/);
+    expect(src).toMatch(/await ensurePerson\(\{ id, email, app_metadata: meta \}, deps\.person\)/);
+    // the store's writers are handed on, never used — an insert, a delete or a metadata write here
+    // is a second writer whatever it looks like. `exists` was on this list until #267, which made
+    // the gate READ it itself (a person row is a member, asked before the attestation); a read is
+    // not a second writer, and `ensurePerson` still makes its own.
+    expect(src).not.toMatch(/deps\.person\.(insert|deleteUser|setMetadata)/);
   });
 
   it("...and it passes the attestation it just wrote, which is why the delete branch is unreachable", async () => {
@@ -597,7 +647,7 @@ describe("the gate mints through ensurePerson rather than inserting (AC 2)", () 
     // ensurePerson's `if (!attested)` — the arm that deletes — cannot be entered from here.
     const meta = src.slice(src.indexOf("const meta = {"), src.indexOf("const created ="));
     expect(meta).toMatch(/adult_attested_at:/);
-    expect(src).toMatch(/user_metadata: meta\s*\}, deps\.person\)/);
+    expect(src).toMatch(/app_metadata: meta\s*\}, deps\.person\)/);
   });
 });
 
