@@ -8,6 +8,7 @@ import {
   type JoinDeps,
   type JoinInput,
 } from "./join";
+import { COMMON_PASSWORD } from "./password";
 import type { PersonStore } from "./person";
 
 /** The auth user a fake `existingUser` reports when a test makes the address taken. */
@@ -88,6 +89,9 @@ function fakes(overrides: Overrides = {}, { taken = false, attested = false } = 
       signedIn.push({ email, password });
       return {};
     },
+    // #268: nothing is listed unless a test says so. Explicit, because the Proxy below would hand a
+    // missing dep back as a function returning a Promise, which is truthy: every password refused.
+    isCommonPassword: () => false,
     now: () => new Date("2026-08-22T12:00:00Z"),
     // the store is merged field-by-field above, so a partial override keeps the recorders; it is
     // destructured out here so the spread cannot replace it wholesale
@@ -240,6 +244,33 @@ describe("join — the refusals reach neither the user store nor the person stor
     expect(r.status).toBe(400);
     expect(r.body.message).toMatch(/at least 8/);
     expect(calls).toEqual(untouched);
+  });
+
+  it("400 with the common-password sentence on a listed password, before the code is read (#268)", async () => {
+    const asked: string[] = [];
+    const { deps, calls } = fakes({
+      isCommonPassword: (pw) => {
+        asked.push(pw);
+        return pw === good.password;
+      },
+    });
+    const r = await join(good, deps);
+    expect(r).toEqual({ status: 400, body: { message: COMMON_PASSWORD } });
+    expect(asked, "the list is asked with the password as typed").toEqual([good.password]);
+    expect(calls).toEqual(untouched);
+  });
+
+  it("a too-short password is refused by its length, and never looked up (#268)", async () => {
+    const asked: string[] = [];
+    const { deps } = fakes({
+      isCommonPassword: (pw) => {
+        asked.push(pw);
+        return true;
+      },
+    });
+    const r = await join({ ...good, password: "short" }, deps);
+    expect(r.body.message).toMatch(/at least 8/);
+    expect(asked).toEqual([]);
   });
 
   it("500 without minting or signing in when the user store fails", async () => {

@@ -19,7 +19,9 @@ import type { ErrorReport } from "@/notify/error";
  * are gone, the person cannot use the app (no person row → `/join?error=not-invited`) but can
  * still sign in, and the club admin has an auth user to remove by hand. The result says which
  * step failed so the action can say so rather than reporting a clean deletion, and since #204 the
- * action reports it (`partialDeletionReport` below).
+ * action reports it (`partialDeletionReport` below). Since #263 the leftover cannot become a member
+ * again on its own: `delete_person()` clears the 18+ attestation from the auth user in the same
+ * transaction as the rows (0037), so `ensurePerson` treats it as the stray it now is.
  */
 
 export type DeleteAccountDeps = {
@@ -58,17 +60,20 @@ export const AUTH_USER_NOT_DELETED = "AuthUserNotDeleted";
  * told them something untrue. Each auth user is a different thing to remove, so each is its own
  * signature. The id is an opaque uuid, sent only to the owner.
  *
- * The message says what the stranded record still allows, because it is more than "can sign in":
- * the auth user keeps its attestation, so a password reset lands on /auth/callback and
- * `ensurePerson` mints a NEW, empty person row for it.
+ * The message says what the stranded record still allows. Until #263 that was a new, empty person
+ * row at the next password reset, because the auth user kept its attestation. Since 0037 the
+ * deletion clears it, so a reset or a Google sign-in is refused and deletes the record itself, and
+ * only a sign-up with this season's invite code makes a new member, as after a complete deletion.
  */
 export function partialDeletionReport(userId: string, reason: string): ErrorReport {
   return {
     name: AUTH_USER_NOT_DELETED,
     message:
       `a member deleted their account and their rows are gone, but the sign-in record was not removed: ${reason}. ` +
-      `Remove auth user ${userId} in the Supabase dashboard (Authentication, Users). Until then they can still sign in, ` +
-      `and a password reset would give them a new, empty profile. /join told them the club admin has been told.`,
+      `Remove auth user ${userId} in the Supabase dashboard (Authentication, Users). It cannot make itself a member again: ` +
+      `the deletion cleared its 18+ attestation, so a password reset or a Google sign-in from that address is refused and ` +
+      `removes the record, and only a sign-up with this season's invite code makes a new member. ` +
+      `/join told them the club admin has been told.`,
     stack: null,
     method: "POST",
     path: "/profile",

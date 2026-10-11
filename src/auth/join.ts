@@ -3,7 +3,7 @@ import type { FoundUser } from "./find-user";
 import type { ExchangeIdToken } from "./google-signin";
 import { NO_CREDENTIAL, NOT_VERIFIED, hasCredential } from "./google-signin";
 import { SIGNED_IN_HOME, WELCOME_PATH } from "./gate";
-import { validatePassword } from "./password";
+import { COMMON_PASSWORD, validatePassword } from "./password";
 import { ensurePerson, type PersonStore } from "./person";
 
 /**
@@ -102,6 +102,12 @@ export type JoinDeps = {
   person: PersonStore;
   /** Signs the member in with the password they just chose; the session lands on the response. */
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  /**
+   * Is this password on the common-password list (#268)? The route passes `isCommonPassword` from
+   * `./common-passwords`, which is server-only. Required rather than defaulted: a caller that
+   * forgot it would otherwise switch the list off with nothing going red.
+   */
+  isCommonPassword: (password: string) => boolean;
   now?: () => Date;
 };
 
@@ -181,6 +187,11 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
   if (!pw.ok) {
     return { status: 400, body: { message: pw.message } };
   }
+  // #268: the list after the length rule, and still before the code is read. The list is public,
+  // so answering it first tells a caller nothing they could not read for themselves.
+  if (deps.isCommonPassword(input.password)) {
+    return { status: 400, body: { message: COMMON_PASSWORD } };
+  }
   if (!codesMatch(input.code, await deps.inviteCode())) {
     return WRONG_CODE;
   }
@@ -214,7 +225,9 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
     }
     if (existing.attested) {
       // No row, but an attestation only the gate could have written: a sign-up that stopped
-      // between its two writes (#204). `ensurePerson` mints the row from the user's own
+      // between its two writes (#204). Never a deleted member's leftover: `delete_person()` clears
+      // the attestation with the rows (0037, #263), so that one is a stray, stamped below as a
+      // new sign-up. `ensurePerson` mints the row from the user's own
       // `app_metadata`, so its delete branch cannot be entered from here. See `finishInterrupted`
       // below for the rest. (`created: false` here would mean a row appeared since the read a few
       // lines up — a second submission racing this one — and is a member's account like any other.)

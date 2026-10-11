@@ -142,7 +142,9 @@ export async function ensurePerson(
   // its user_metadata says, since the user wrote that (#267). The Google gate hands over what it
   // proved instead; with that, the attestation it carries becomes the user's. With neither,
   // refuse to mint a person row AND delete the auth user — adults-only is structural (0002), this
-  // is the only writer, and with signups ON nothing upstream refused it.
+  // is the only writer, and with signups ON nothing upstream refused it. A member's leftover auth
+  // user lands here too, when their deletion's auth step was refused: `delete_person()` clears the
+  // attestation with the rows (0037, #263), so a reset or a Google sign-in finishes the deletion.
   if (!attested) {
     if (!gate) {
       const d = await store.deleteUser(user.id);
