@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { chromium, type Browser } from "playwright-core";
+import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 
 /**
@@ -104,7 +105,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await browser?.close();
-});
+}, CHROME_CLOSE_TIMEOUT_MS);
 
 /** Paint the loading state, then swap the page in the way React does, and read every shift. */
 async function stream(page: "tall" | "short", sheet: string, viewport: { width: number; height: number }): Promise<Reading> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideCallback, explainReason } from "./callback";
+import { CALLBACK_UNCONFIRMED_ERROR, UNCONFIRMED, callbackUnconfirmedReport, decideCallback, explainReason } from "./callback";
 
 describe("decideCallback — what the callback does with its query (#70 AC 7)", () => {
   it("exchanges when a code is present, whatever else rides along", () => {
@@ -64,7 +64,7 @@ describe("decideCallback — what the callback does with its query (#70 AC 7)", 
 
 describe("explainReason — plain words for every reason the callback can return", () => {
   it("has a distinct sentence for each known reason and a fallback for the rest", () => {
-    const known = ["link-invalid", "not-invited", "missing-code", "cancelled", "provider-error", "already-linked"];
+    const known = ["link-invalid", "not-invited", "missing-code", "cancelled", "provider-error", "already-linked", "unconfirmed"];
     const sentences = known.map(explainReason);
     expect(new Set(sentences).size).toBe(known.length);
     // Distinctness alone does not catch a reason falling through to the fallback — the fallback
@@ -94,6 +94,15 @@ describe("explainReason — plain words for every reason the callback can return
     expect(s.search(/already a member/i)).toBeLessThan(s.search(/invite code/i));
   });
 
+  it("says a link the callback could not finish is spent, and where the next one comes from (#204)", () => {
+    // The code was exchanged before the check was refused, so the link cannot work twice: a bare
+    // "try again" would send them back to a dead link.
+    const s = explainReason(UNCONFIRMED);
+    expect(s).toMatch(/only works once/i);
+    expect(s).toMatch(/Forgot your password/);
+    expect(s).not.toBe(explainReason("link-invalid"));
+  });
+
   /**
    * #82. "Sign in with the email you joined with" now means email + PASSWORD, and the population
    * that reaches these two sentences is the one least likely to have one: a Google-created
@@ -111,5 +120,26 @@ describe("explainReason — plain words for every reason the callback can return
         s.search(/invite code|different Google account/i),
       );
     }
+  });
+});
+
+describe("callbackUnconfirmedReport — what the owner is told when the callback cannot check the person (#204)", () => {
+  it("names the route without its query, since the query is a PKCE code", () => {
+    const r = callbackUnconfirmedReport("person read: JWT issued at future", false);
+    expect(r.name).toBe(CALLBACK_UNCONFIRMED_ERROR);
+    expect(r.path).toBe("/auth/callback");
+    expect(r.routePath).toBe("/auth/callback");
+    expect(r.message).toContain("JWT issued at future");
+    expect(r.digest).toBeNull();
+  });
+
+  it("says which leg it was, because the two end differently", () => {
+    const reset = callbackUnconfirmedReport("x", false).message;
+    const link = callbackUnconfirmedReport("x", true).message;
+    expect(reset).toMatch(/signed out/);
+    expect(reset).toMatch(/ask for a new link/);
+    expect(link).toMatch(/stayed signed in/);
+    expect(link).toMatch(/\/profile/);
+    expect(link).not.toMatch(/signed out/);
   });
 });

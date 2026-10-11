@@ -161,19 +161,15 @@ async function signIn(page, baseUrl, person) {
 }
 
 /**
- * Arrive the way an invitee does (#226): open the invite link, which lands on the Sign up tab with
- * the code in the panel, and fill in the account — everything but the code, which is never typed.
- *
- * The hydration gate is a round trip through the Sign in tab. The link's page is SERVER-rendered on
- * Sign up, so waiting for the sign-up form proves nothing about whether its submit handler exists
- * yet; the Sign in form appears only once the client is running. Coming back to Sign up re-mounts
- * the form from the same prop, so the code is read twice — as served, and once the client has it.
+ * The hydration gate for a page the server renders on Sign up, which since #123 is /join in any
+ * fresh context, with or without an invite link. Waiting for the sign-up form proves nothing there:
+ * it is in the first byte of HTML, before any client script has run, and a submit that lands before
+ * hydration is a native GET carrying the password in the query string (#99's trap). The Sign in form
+ * is rendered only by the client, so a round trip through the Sign in tab is a real gate, and coming
+ * back re-mounts the Sign up form from the same props. Bounded retry, because on a cold server the
+ * first click can land before the handler's chunk has arrived.
  */
-async function arriveByInviteLink(page, baseUrl, code, email) {
-  await page.goto(new URL(inviteLinkPath(code), baseUrl).href);
-  const box = 'form[data-form="signup"] input[name="code"]';
-  const served = await page.inputValue(box);
-  if (served !== code) throw new Error(`the served page's code box holds ${JSON.stringify(served)}, not the link's ${JSON.stringify(code)}`);
+async function signUpOnceHydrated(page) {
   let signin = null;
   for (let attempt = 0; attempt < 5 && !signin; attempt += 1) {
     await page.click('button[data-mode="signin"]');
@@ -182,6 +178,19 @@ async function arriveByInviteLink(page, baseUrl, code, email) {
   if (!signin) throw new Error("the Sign in tab never showed its form (the page did not hydrate)");
   await page.click('button[data-mode="signup"]');
   await page.waitForSelector('form[data-form="signup"]');
+}
+
+/**
+ * Arrive the way an invitee does (#226): open the invite link, which lands on the Sign up tab with
+ * the code in the panel, and fill in the account — everything but the code, which is never typed.
+ * The code is read twice — as served, and once the client has it after signUpOnceHydrated.
+ */
+async function arriveByInviteLink(page, baseUrl, code, email) {
+  await page.goto(new URL(inviteLinkPath(code), baseUrl).href);
+  const box = 'form[data-form="signup"] input[name="code"]';
+  const served = await page.inputValue(box);
+  if (served !== code) throw new Error(`the served page's code box holds ${JSON.stringify(served)}, not the link's ${JSON.stringify(code)}`);
+  await signUpOnceHydrated(page);
   const hydrated = await page.inputValue(box);
   if (hydrated !== code) throw new Error(`after hydration the code box holds ${JSON.stringify(hydrated)}, not the link's ${JSON.stringify(code)}`);
   await page.fill('form[data-form="signup"] input[name="email"]', email);
@@ -316,21 +325,18 @@ async function main() {
       },
     },
     {
-      // #220 AC 5: the invite entrance, end to end, in a context nobody has signed in on. The
-      // Sign up tab is clicked for the same reason the Sign in tab is above — the click is the
-      // hydration gate. What is asserted on the way: the invite code is the first input and the
-      // form asks for no name and ticks no box (AC 1 as served), and the account lands on
-      // /welcome rather than the board (AC 3).
+      // #220 AC 5: the invite entrance, end to end, in a context nobody has signed in on. This
+      // step used to click the Sign up tab and wait for its form, calling that the hydration gate.
+      // It was not one after #123: a fresh context gets the Sign up form in the server's HTML, so
+      // the wait resolved before any script ran (#246). The gate is signUpOnceHydrated's round trip
+      // through Sign in. What is asserted on the way: the invite code is the first input and the
+      // form asks for no name and ticks no box (AC 1), and the account lands on /welcome rather
+      // than the board (AC 3).
       name: "a newcomer signs up with the invite code and lands on /welcome",
       run: async () => {
         const p = pages.newcomer;
         await p.goto(url("/join"));
-        let form = null;
-        for (let attempt = 0; attempt < 5 && !form; attempt += 1) {
-          await p.click('button[data-mode="signup"]');
-          form = await p.waitForSelector('form[data-form="signup"]', { timeout: 2000 }).catch(() => null);
-        }
-        if (!form) throw new Error("the Sign up tab never showed its form");
+        await signUpOnceHydrated(p);
         const first = await p.$eval('form[data-form="signup"] input', (el) => el.name);
         if (first !== "code") throw new Error(`the sign-up form's first input is "${first}", not the invite code`);
         if (await p.$('form[data-form="signup"] input[name="displayName"], form[data-form="signup"] input[type="checkbox"]')) {

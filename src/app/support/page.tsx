@@ -10,7 +10,9 @@ export const metadata: Metadata = { title: "Support · Tender" };
  * because madcowsailing.com's product page links here for people who have never had an account.
  *
  * The address is the club row's `admin_email`, read per request (`src/support/contact.ts` says
- * why it is not a literal). The response time is the owner's promise, chosen at pickup
+ * why it is not a literal). A read the platform refuses renders the page anyway, with a sentence
+ * of its own rather than the no-address one, which would be untrue (#204, `./contact-read.ts`).
+ * The response time is the owner's promise, chosen at pickup
  * (2026-09-21). The known issues are the two standing limitations a member runs into that are
  * already recorded elsewhere, and each names its source here so the list can be re-checked
  * rather than trusted:
@@ -26,17 +28,22 @@ export const metadata: Metadata = { title: "Support · Tender" };
  * a hand-written list, accepted at pickup over leaving it empty and hiding both.
  */
 export default async function SupportPage() {
-  const address = await loadSupportAddress();
+  const contact = await loadSupportAddress();
   return (
     <main data-page="support">
       <h1>Support</h1>
-      {address ? (
+      {contact.kind === "address" ? (
         <>
           <p data-contact>
-            Stuck, or something looks wrong? Email <a href={`mailto:${address}`}>{address}</a>.
+            Stuck, or something looks wrong? Email <a href={`mailto:${contact.address}`}>{contact.address}</a>.
           </p>
           <p data-response-time>You should hear back within two days.</p>
         </>
+      ) : contact.kind === "unreadable" ? (
+        <p data-contact="unreadable">
+          The club&apos;s contact address could not be loaded just now. Reload this page in a moment,
+          or ask whoever gave you the club&apos;s invite code.
+        </p>
       ) : (
         <p data-contact="none">
           The club has not given Tender a contact address yet. Ask whoever gave you the club&apos;s

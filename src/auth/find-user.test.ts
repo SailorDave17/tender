@@ -2,10 +2,18 @@ import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import { MAX_PAGES, USERS_PER_PAGE, findAuthUser, type ListedUser, type UserPage } from "./find-user";
 
-const ATTESTED = { display_name: "Alice", adult_attested_at: "2026-08-22T12:00:00.000Z" };
+/** What the gate writes into app_metadata (#267), beside the keys GoTrue keeps there itself. */
+const ATTESTED = { provider: "email", adult_attested_at: "2026-08-22T12:00:00.000Z" };
+/** What a pre-#220 gate wrote into user_metadata, which the user can rewrite. */
+const NAMED = { display_name: "Alice" };
 
-function user(id: string, email: string, meta: Record<string, unknown> | null = null): ListedUser {
-  return { id, email, user_metadata: meta };
+function user(
+  id: string,
+  email: string,
+  app: Record<string, unknown> | null = null,
+  meta: Record<string, unknown> | null = null,
+): ListedUser {
+  return { id, email, user_metadata: meta, app_metadata: app };
 }
 
 /** A pager over fixed pages, recording what it was asked for. */
@@ -25,11 +33,15 @@ function filler(n = USERS_PER_PAGE): ListedUser[] {
 
 describe("findAuthUser — the address", () => {
   it("finds the user on the first page and reports an attestation", async () => {
-    const { listPage, asked } = pager([[user("a", "someone@example.org"), user("b", "alice@example.org", ATTESTED)]]);
+    const { listPage, asked } = pager([[user("a", "someone@example.org"), user("b", "alice@example.org", ATTESTED, NAMED)]]);
+    // both metadata objects ride along whole (#204, #267): the gate hands them to ensurePerson to
+    // finish an interrupted sign-up, so they must be the user's own and not a rebuilt attestation
     expect(await findAuthUser("alice@example.org", listPage)).toEqual({
       found: true,
       id: "b",
       attested: true,
+      user_metadata: NAMED,
+      app_metadata: ATTESTED,
     });
     expect(asked).toEqual([{ page: 1, perPage: USERS_PER_PAGE }]);
   });
@@ -40,15 +52,29 @@ describe("findAuthUser — the address", () => {
       found: true,
       id: "b",
       attested: false,
+      user_metadata: null,
+      app_metadata: null,
     });
   });
 
   it("reports no attestation for absent, empty and unparseable values", async () => {
-    for (const meta of [null, {}, { adult_attested_at: "" }, { adult_attested_at: "yesterday" }, { adult_attested_at: 12 }]) {
-      const { listPage } = pager([[user("b", "alice@example.org", meta)]]);
+    for (const app of [null, {}, { adult_attested_at: "" }, { adult_attested_at: "yesterday" }, { adult_attested_at: 12 }]) {
+      const { listPage } = pager([[user("b", "alice@example.org", app)]]);
       const r = await findAuthUser("alice@example.org", listPage);
-      expect(r, JSON.stringify(meta)).toEqual({ found: true, id: "b", attested: false });
+      expect(r, JSON.stringify(app)).toEqual({ found: true, id: "b", attested: false, user_metadata: null, app_metadata: app });
     }
+  });
+
+  it("reports no attestation for one found only in user_metadata, which the user wrote (#267)", async () => {
+    const selfWritten = { adult_attested_at: "2026-08-22T12:00:00.000Z" };
+    const { listPage } = pager([[user("b", "alice@example.org", { provider: "email" }, selfWritten)]]);
+    expect(await findAuthUser("alice@example.org", listPage)).toEqual({
+      found: true,
+      id: "b",
+      attested: false,
+      user_metadata: selfWritten,
+      app_metadata: { provider: "email" },
+    });
   });
 
   it("stops at a short page and answers not-found, without asking for another", async () => {
@@ -69,6 +95,8 @@ describe("findAuthUser — the address", () => {
       found: true,
       id: "b",
       attested: true,
+      user_metadata: null,
+      app_metadata: ATTESTED,
     });
     expect(asked.map((a) => a.page)).toEqual([1, 2]);
   });
@@ -146,13 +174,15 @@ describe("the real admin client sends what the pager promises", () => {
     expect(seen[0].url).toContain(`per_page=${USERS_PER_PAGE}`);
   });
 
-  it("updateUserById puts the metadata at that user's own admin URL", async () => {
+  it("updateUserById puts the attestation in app_metadata at that user's own admin URL (#267)", async () => {
     const { client, seen } = stubbed();
-    await client.auth.admin.updateUserById(EXISTING, { user_metadata: ATTESTED });
+    const meta = { adult_attested_at: ATTESTED.adult_attested_at };
+    await client.auth.admin.updateUserById(EXISTING, { app_metadata: meta });
     expect(seen).toHaveLength(1);
     expect(seen[0].method).toBe("PUT");
     expect(seen[0].url).toContain(`/auth/v1/admin/users/${EXISTING}`);
-    expect(JSON.parse(seen[0].body ?? "{}")).toEqual({ user_metadata: ATTESTED });
+    // auth-js forwards the key under GoTrue's own name, so the write lands in raw_app_meta_data
+    expect(JSON.parse(seen[0].body ?? "{}")).toEqual({ app_metadata: meta });
   });
 });
 

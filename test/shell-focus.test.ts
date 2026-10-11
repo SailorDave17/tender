@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { chromium, type Browser } from "playwright-core";
 import { createElement } from "react";
+import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 
 /**
@@ -12,8 +13,8 @@ import { GLOBALS_CSS } from "./tokens";
  * AC 4: Tab from the top lands on the skip link first, and every stop after it shows a ring whose
  * colour clears 3:1 against the surface around it — `getComputedStyle(el).outlineColor` after a
  * REAL Tab press (programmatic `focus()` does not reliably match `:focus-visible`), the adjacent
- * surface found by walking up to the first ancestor with an opaque background, the WCAG ratio
- * computed from the two `rgb()` strings. The ring colour and the ratio are PRINTED for every stop,
+ * surface read as what is PAINTED under the ring, the WCAG ratio computed from the two `rgb()`
+ * strings. The ring colour and the ratio are PRINTED for every stop,
  * pass or fail: a verdict-only instrument cannot show a regression inside the passing band
  * (cairn: `a-lint-preset-can-omit-the-rule-a-criterion-names`, the second instance).
  *
@@ -26,13 +27,25 @@ import { GLOBALS_CSS } from "./tokens";
  * mocks them; the row's pair is Hoover's, because the brand bar's ring is `--brand-mark` and the
  * claim there is 0028's (3:1 at save), read here on the real pair.
  *
+ * THE SURFACE IS WHAT IS DRAWN UNDER THE RING, NOT THE FIRST OPAQUE ANCESTOR (#257). The skip link
+ * is `position: absolute` over the header, its SIBLING, so an ancestor walk reached `body` and
+ * passed a ring at 5.36:1 that was really `--focus` on Hoover's disc: the same colour, 1.00:1.
+ * `surfacesUnderRing()` samples points across the ring's whole width — inner edge, midline, outer
+ * edge, each outside the border box by `outline-offset` plus that depth and clear of the rounded
+ * corners — and takes, at each,
+ * the topmost opaque background `elementsFromPoint` finds there. The stop's ratio is its worst
+ * surface's (cairn: `what-is-behind-a-positioned-element-is-not-its-ancestor`).
+ *
  * WHAT THIS CANNOT SEE: the surfaces' own controls on the real pages — inline links in prose, the
  * availability toggles, the Accept button. Those are #155's, on its restyled pages. This proves
  * the shell and the base element rules.
  */
 
+const HOOVER = { name: "Hoover Sailing Club", disc: "#395FAC", mark: "#FCCF0B" };
+// #257: the club row as the layout reads it. Hoover's unless a test sets another pair.
+let theme = HOOVER;
 vi.mock("@/brand/club-theme", () => ({
-  loadClubTheme: async () => ({ name: "Hoover Sailing Club", disc: "#395FAC", mark: "#FCCF0B" }),
+  loadClubTheme: async () => theme,
 }));
 vi.mock("@/shell/session", () => ({
   currentPerson: async () => ({ id: "p-1", email: "a@example.test", displayName: "Ada", isAdmin: true }),
@@ -80,6 +93,7 @@ type Stop = {
   width: string;
   surface: string;
   ratio: number;
+  samples: number;
   onBrandBar: boolean;
   rect: { width: number; height: number; top: number; bottom: number };
   inline: boolean;
@@ -106,7 +120,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await browser?.close();
-});
+}, CHROME_CLOSE_TIMEOUT_MS);
 
 /** The WCAG ratio between two `rgb(r, g, b)` strings, computed in the page. */
 const IN_PAGE = `
@@ -117,12 +131,37 @@ const IN_PAGE = `
   };
   const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
   const opaque = (s) => s && s !== "transparent" && !/rgba\\([^)]*,\\s*0\\)$/.test(s);
-  const surfaceOf = (el) => {
-    for (let n = el.parentElement; n; n = n.parentElement) {
+  // The colour painted at one point: the topmost opaque background in the hit-test stack there,
+  // whatever its relation to the stop in the DOM. The points lie outside the stop's border box,
+  // where hit-testing never returns the stop, so nothing needs hiding for the read.
+  const paintedAt = (x, y) => {
+    for (const n of document.elementsFromPoint(x, y)) {
       const bg = getComputedStyle(n).backgroundColor;
       if (opaque(bg)) return bg;
     }
     return getComputedStyle(document.documentElement).backgroundColor;
+  };
+  // Every distinct surface under the ring, sampled five times a side at its inner edge, its
+  // midline and its outer edge: a ring can straddle a boundary, and the skip link's outermost row
+  // did (#257 — the header ends at 60px and the ring at 61).
+  const surfacesUnderRing = (el) => {
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const offset = parseFloat(cs.outlineOffset), width = parseFloat(cs.outlineWidth);
+    const points = [offset + 0.5, offset + width / 2, offset + width - 0.5].flatMap((d) => {
+      const corner = (parseFloat(cs.borderTopLeftRadius) || 0) + d;
+      const along = (a, b) => {
+        const lo = a + corner, hi = b - corner;
+        if (hi <= lo) return [(a + b) / 2];
+        return [0, 1, 2, 3, 4].map((i) => lo + ((hi - lo) * i) / 4);
+      };
+      const left = r.left - d, right = r.right + d, top = r.top - d, bottom = r.bottom + d;
+      return [
+        ...along(left, right).flatMap((x) => [[x, top], [x, bottom]]),
+        ...along(top, bottom).flatMap((y) => [[left, y], [right, y]]),
+      ];
+    }).filter(([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight);
+    return { surfaces: [...new Set(points.map(([x, y]) => paintedAt(x, y)))], samples: points.length };
   };
 `;
 
@@ -140,13 +179,15 @@ async function tabThrough(viewport: { width: number; height: number }, scheme: "
         if (!el || el === document.body) return null;
         const cs = getComputedStyle(el);
         const label = (el.getAttribute("data-skip") !== null ? "skip link" : el.tagName.toLowerCase() + (el.textContent.trim() ? " " + JSON.stringify(el.textContent.trim().slice(0, 24)) : " " + (el.getAttribute("name") || el.getAttribute("type") || "")));
-        const surface = surfaceOf(el);
+        // the worst of the surfaces under the ring is the one the stop is held to
+        const { surfaces, samples } = surfacesUnderRing(el);
+        const surface = surfaces.reduce((worst, s) => (ratio(cs.outlineColor, s) < ratio(cs.outlineColor, worst) ? s : worst), surfaces[0] ?? "none");
         const target = el.matches("input[type=checkbox],input[type=radio]") ? el.closest("label") ?? el : el;
         const r = target.getBoundingClientRect();
         return {
           label,
           ring: cs.outlineColor, style: cs.outlineStyle, width: cs.outlineWidth,
-          surface, ratio: ratio(cs.outlineColor, surface),
+          surface, ratio: surfaces.length ? ratio(cs.outlineColor, surface) : 0, samples,
           onBrandBar: !!el.closest("[data-brand-bar]"),
           rect: { width: r.width, height: r.height, top: r.top, bottom: r.bottom },
           // WCAG 2.5.5's inline exception, decided by what the browser computed and not by a
@@ -176,6 +217,7 @@ describe("Tab from the top: the skip link first, then a 3:1 ring on every stop (
         console.log(
           `${scheme.padEnd(5)} ${s.label.padEnd(26)} ring ${s.ring.padEnd(18)} on ${s.surface.padEnd(18)} ${s.ratio.toFixed(2)}:1${s.onBrandBar ? "  (brand bar: --brand-mark)" : ""}`,
         );
+        expect(s.samples, `${s.label}: points read under its ring`).toBeGreaterThan(0);
         expect(s.style, `${s.label} has a ring`).not.toBe("none");
         expect(parseFloat(s.width), `${s.label} ring width`).toBeGreaterThanOrEqual(2);
         expect(s.ratio, `${scheme}: ${s.label} ring ${s.ring} on ${s.surface}`).toBeGreaterThanOrEqual(3);
@@ -187,6 +229,49 @@ describe("Tab from the top: the skip link first, then a 3:1 ring on every stop (
       // and at least one stop sits on each of the three surfaces the pairings promise
       expect(stops.some((s) => s.label.includes("card"))).toBe(true);
       expect(stops.some((s) => s.label.includes("highlighted"))).toBe(true);
+    });
+  }
+});
+
+/**
+ * #257 AC 1 — the skip link's ring follows the club's pair rather than a constant. On another
+ * club's disc the ring must be that club's mark, and clear 3:1 against what it is drawn over;
+ * a ring at any constant would match one club's mark at most.
+ */
+describe("the skip link's ring is the club's mark, on another club's pair too (#257)", () => {
+  // A pair 0028 would accept (white on a dark green is far past 3:1), sharing nothing with Hoover's.
+  const OTHER = { name: "Other Club", disc: "#1E5631", mark: "#FFFFFF" };
+  let other: string;
+  beforeAll(async () => {
+    theme = OTHER;
+    try {
+      other = await pageAt(null);
+    } finally {
+      theme = HOOVER;
+    }
+  });
+
+  for (const scheme of ["light", "dark"] as const) {
+    it(`${scheme}: the first stop's ring is the mark, on the disc, at 3:1 or better`, async () => {
+      const context = await browser.newContext({ viewport: { width: 1024, height: 800 }, colorScheme: scheme });
+      try {
+        const page = await context.newPage();
+        await page.setContent(other);
+        await page.keyboard.press("Tab");
+        const read = (await page.evaluate(`(() => { ${IN_PAGE}
+          const el = document.activeElement;
+          const ring = getComputedStyle(el).outlineColor;
+          const { surfaces } = surfacesUnderRing(el);
+          return { skip: el.getAttribute("data-skip") !== null, ring, surfaces, ratios: surfaces.map((s) => ratio(ring, s)) };
+        })()`)) as { skip: boolean; ring: string; surfaces: string[]; ratios: number[] };
+        console.log(`${scheme.padEnd(5)} other club: skip link ring ${read.ring} on ${read.surfaces.join(", ")} ${read.ratios.map((r) => r.toFixed(2) + ":1").join(", ")}`);
+        expect(read.skip).toBe(true);
+        expect(read.ring).toBe("rgb(255, 255, 255)");
+        expect(read.surfaces).toEqual(["rgb(30, 86, 49)"]);
+        for (const r of read.ratios) expect(r).toBeGreaterThanOrEqual(3);
+      } finally {
+        await context.close();
+      }
     });
   }
 });

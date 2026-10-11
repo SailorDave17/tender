@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
           return { users: data.users };
         }),
       attestExisting: async (id, meta, password) => {
-        const { error } = await admin.auth.admin.updateUserById(id, { user_metadata: meta, password });
+        const { error } = await admin.auth.admin.updateUserById(id, { app_metadata: meta, password });
         return error ? { error: error.message } : {};
       },
       person: {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
           return c.error ? { error: c.error.message } : {};
         },
         setMetadata: async (id, meta) => {
-          const { error } = await admin.auth.admin.updateUserById(id, { user_metadata: meta });
+          const { error } = await admin.auth.admin.updateUserById(id, { app_metadata: meta });
           return error ? { error: error.message } : {};
         },
         deleteUser: async (id) => {

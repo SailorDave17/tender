@@ -132,7 +132,7 @@ describe("backPathFor — a signed-in member is never dropped on the sign-in pag
 });
 
 describe("explainLinkReason — plain words, and silence on reasons it does not own", () => {
-  const MINE = ["linking-disabled", "not-signed-in", "already-linked", "provider-error", "cancelled", "link-invalid"];
+  const MINE = ["linking-disabled", "not-signed-in", "already-linked", "provider-error", "cancelled", "link-invalid", "unconfirmed"];
 
   it("has a distinct sentence for each of its own reasons", () => {
     const sentences = MINE.map(explainLinkReason);

@@ -70,8 +70,9 @@
   /* Confirmation, as text. */
   --ok: #1e6b3a;
   /* The focus ring (#154). With `outline-offset: 2px` its adjacent colour is the surface around
-     the control, so it is held to 3:1 on paper, surface and accent-soft; on the brand bar the ring
-     is --brand-mark instead, whose 3:1 against the disc is 0028's promise. */
+     the control, so it is held to 3:1 on paper, surface and accent-soft; on the brand bar, and on
+     the skip link drawn over it (#257), the ring is --brand-mark instead, whose 3:1 against the
+     disc is 0028's promise. */
   --focus: #395fac;
 
   /* ---- type ------------------------------------------------------------------------------ */
@@ -201,8 +202,15 @@ input[type="radio"] {
   font-weight: 600;
   text-decoration: none;
 }
+/* Focused, it is drawn over the brand bar, its sibling, so the bar's `:focus-visible` rule below
+   never reaches it and `--focus` would be its ring: Hoover's disc exactly, 1.00:1 (#257). The ring
+   is the club's mark here too, whose 3:1 against the disc 0028 holds at save. The 1px offset keeps
+   the whole ring on the bar: at 2px its outermost row fell one pixel below the bar's 60px, onto the
+   page, where the mark is no one's promise (yellow on light paper, 1.30:1). */
 [data-skip]:focus-visible {
   top: var(--space-2);
+  outline-color: var(--brand-mark);
+  outline-offset: 1px;
 }
 
 /* The brand bar: the club's disc behind its knockout, the same pair the mark is drawn in. */
@@ -524,9 +532,15 @@ button:disabled {
 [data-field] [data-row] {
   align-items: stretch;
 }
+/* The password box beside its Show button (#245). `width: 0` takes the box's own intrinsic width
+   (the `size` attribute's twenty characters, which grows with the text) out of everything it sits
+   in, and the 10rem basis is the width below which Show wraps under the box rather than squeezing
+   it. With `width: auto` that intrinsic width was 401px at 200% text, and the fieldset's
+   `min-inline-size: min-content` and the form's grid held the whole Sign up tab at 483px on a
+   360px screen. At ordinary sizes the two lay out exactly as before. */
 [data-field] input {
-  flex: 1;
-  width: auto;
+  flex: 1 1 10rem;
+  width: 0;
 }
 [data-toggle] {
   min-width: 4.5rem;
@@ -589,6 +603,15 @@ button[data-already-member] {
    when the screen narrows, and holds the column, the fieldset and the page open behind it. */
 [data-google] {
   contain: inline-size;
+}
+/* Google's frame (#230). GIS draws the button in an iframe whose document is light, while the
+   frame element inherits `light dark` from :root. In dark mode the two schemes differ, and Chrome
+   then paints an opaque backdrop behind the frame's document (the `color-scheme` rule for embedded
+   documents). GIS sets `margin: -2px -10px` on its frame, so on the owner's phone that backdrop
+   was a white strip round the button on the dark page. Declaring the frame light makes the two
+   agree and the backdrop transparent. Measured on the phone before it was written here. */
+[data-google] iframe {
+  color-scheme: light;
 }
 /* the 18+ line beside the create-account buttons: body ink, not a muted hint, so it is read */
 [data-attest] {

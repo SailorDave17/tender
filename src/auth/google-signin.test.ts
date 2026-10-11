@@ -107,15 +107,31 @@ describe("googleSignIn — a returning member (#173 AC 2)", () => {
     expect(calls).toEqual(["exchange", "exists", "deleteUser", "signOut"]);
   });
 
-  it("a user the email gate created — attestation on the metadata — is minted, not deleted", async () => {
+  it("a user the email gate created — attestation in its app_metadata — is minted, not deleted", async () => {
     const { deps, calls, deleted, inserted } = fakes({ exists: false });
     deps.exchange = async () => ({
-      user: { ...USER, user_metadata: { display_name: "Bob", adult_attested_at: "2026-08-22T12:00:00.000Z" } },
+      user: {
+        ...USER,
+        user_metadata: { display_name: "Bob" },
+        app_metadata: { provider: "email", adult_attested_at: "2026-08-22T12:00:00.000Z" },
+      },
     });
     expect((await googleSignIn(GOOD, deps)).status).toBe(200);
     expect(deleted).toEqual([]);
     expect(inserted).toEqual([USER.id]);
     expect(calls).not.toContain("signOut");
+  });
+
+  it("a user whose only attestation is in user_metadata — one they wrote — is a stray: deleted, not minted (#267)", async () => {
+    const { deps, calls, deleted, inserted } = fakes({ exists: false });
+    deps.exchange = async () => ({
+      user: { ...USER, user_metadata: { ...USER.user_metadata, adult_attested_at: "2026-08-22T12:00:00.000Z" } },
+    });
+    expect((await googleSignIn(GOOD, deps)).status).toBe(403);
+    expect(inserted, "a member minted without the invite code").toEqual([]);
+    expect(deleted).toEqual([USER.id]);
+    // (no "exchange": the override above replaces the fake that records it)
+    expect(calls).toEqual(["exists", "deleteUser", "signOut"]);
   });
 
   it("a refused exchange is one plain sentence, and the person store is never reached", async () => {

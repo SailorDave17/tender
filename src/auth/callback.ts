@@ -1,3 +1,5 @@
+import type { ErrorReport } from "@/notify/error";
+
 /**
  * What /auth/callback does with the query string before it touches a session (#70 AC 7).
  *
@@ -85,7 +87,59 @@ export function explainReason(reason: string): string {
       return "That Google account is already attached to an account here. Sign in with the email you joined with — use Forgot my password if you have never set one — or use a different Google account.";
     case "provider-error":
       return "Google or the sign-in service returned an error. Try again in a minute, or sign in with your email and password.";
+    // #204: the code was exchanged, so the link is spent, and "try again" alone would send them
+    // back to a link that no longer works.
+    case UNCONFIRMED:
+      return "Tender could not finish opening that link just now, and a link only works once. Ask for a new one from Forgot your password.";
     default:
       return "Sign-in did not complete. Try again.";
   }
+}
+
+/**
+ * The reason a callback goes back with when it exchanged its code and then could not confirm the
+ * person behind the session (story #204).
+ *
+ * Every other failure here is decided before the exchange, or by `ensurePerson`'s own refusal.
+ * This one is the service role's READ being refused — `person` checked by id, 1 in 477 on
+ * 2026-09-22 (`JWT issued at future`, #198) — and until #204 it threw past this handler's promise
+ * that any failure goes back to a reason the page can show, so an emailed reset link landed on a
+ * bare 500 with its one-time code already spent.
+ *
+ * What the handler then does depends on the leg, and the reason is the same key on both, because
+ * /join and /profile each hold their own sentence for it (this file's `explainReason` and
+ * `explainLinkReason` in `./link.ts`):
+ *   - a reset link: signed OUT, because nothing has yet confirmed this user is a member, and a
+ *     session with no person row is what `ensurePerson`'s refusal signs out too. The member asks
+ *     for a new link.
+ *   - a Google link from /profile: the session is KEPT. The member was signed in through the gate
+ *     before they pressed the link, GoTrue has already linked the identity by the time a code
+ *     arrives here, and signing them out would drop the sentence, since the proxy sends a
+ *     signed-out /profile to /join.
+ */
+export const UNCONFIRMED = "unconfirmed";
+
+/** The error name the refusal is reported under, and so half of its dedupe signature. */
+export const CALLBACK_UNCONFIRMED_ERROR = "CallbackPersonUnconfirmed";
+
+/**
+ * The report for that refusal, in the shape the error hook's reporter takes. `path` carries no
+ * query: this route's query is a PKCE code, and a report is copied into an inbox and into
+ * `notification_log` (`ErrorReport`'s own rule).
+ */
+export function callbackUnconfirmedReport(message: string, linkFlow: boolean): ErrorReport {
+  return {
+    name: CALLBACK_UNCONFIRMED_ERROR,
+    message:
+      `the person behind a callback session could not be checked: ${message}. ` +
+      (linkFlow
+        ? "It was a Google link from /profile, so the member stayed signed in and was sent back there with a sentence."
+        : "The session was signed out and the member was sent to /join to ask for a new link, instead of a bare error."),
+    stack: null,
+    method: "GET",
+    path: "/auth/callback",
+    routePath: "/auth/callback",
+    routeType: "degraded",
+    digest: null,
+  };
 }

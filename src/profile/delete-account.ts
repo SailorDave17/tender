@@ -1,3 +1,5 @@
+import type { ErrorReport } from "@/notify/error";
+
 /**
  * Deleting your own account (story #42 AC 2): the person's rows first, the auth user second,
  * and never the second without the first.
@@ -16,7 +18,8 @@
  * WHY THE SECOND STEP CAN FAIL AND WHAT THAT MEANS. If GoTrue refuses the delete after the rows
  * are gone, the person cannot use the app (no person row → `/join?error=not-invited`) but can
  * still sign in, and the club admin has an auth user to remove by hand. The result says which
- * step failed so the action can say so rather than reporting a clean deletion.
+ * step failed so the action can say so rather than reporting a clean deletion, and since #204 the
+ * action reports it (`partialDeletionReport` below).
  */
 
 export type DeleteAccountDeps = {
@@ -36,6 +39,43 @@ export async function deleteAccount(deps: DeleteAccountDeps): Promise<DeleteAcco
   const auth = await deps.deleteAuthUser();
   if (auth.error) return { ok: false, step: "auth", reason: auth.error };
   return { ok: true, kept: person.kept };
+}
+
+/** The error name a partial deletion is reported under. */
+export const AUTH_USER_NOT_DELETED = "AuthUserNotDeleted";
+
+/**
+ * The report for the auth step failing after the rows are gone (story #204).
+ *
+ * /join tells the person "The club admin has been told". Until #204 nothing told anyone: the
+ * action wrote one console line, which Vercel's Hobby plan keeps for an hour, so the one person
+ * who can remove the sign-in record (the project owner, in the Supabase dashboard) never heard.
+ * This is that telling, through the error reporter, after the response.
+ *
+ * THE ID IS IN `routePath`, ON PURPOSE. The reporter sends one email per signature per hour, and
+ * the signature is `name` + `routePath` (`signatureOf`, #43). Keyed on the action alone, a second
+ * member's partial deletion inside the hour would be swallowed as a repeat, and /join would have
+ * told them something untrue. Each auth user is a different thing to remove, so each is its own
+ * signature. The id is an opaque uuid, sent only to the owner.
+ *
+ * The message says what the stranded record still allows, because it is more than "can sign in":
+ * the auth user keeps its attestation, so a password reset lands on /auth/callback and
+ * `ensurePerson` mints a NEW, empty person row for it.
+ */
+export function partialDeletionReport(userId: string, reason: string): ErrorReport {
+  return {
+    name: AUTH_USER_NOT_DELETED,
+    message:
+      `a member deleted their account and their rows are gone, but the sign-in record was not removed: ${reason}. ` +
+      `Remove auth user ${userId} in the Supabase dashboard (Authentication, Users). Until then they can still sign in, ` +
+      `and a password reset would give them a new, empty profile. /join told them the club admin has been told.`,
+    stack: null,
+    method: "POST",
+    path: "/profile",
+    routePath: `deleteMyAccount ${userId}`,
+    routeType: "action",
+    digest: null,
+  };
 }
 
 /** The confirm checkbox's value, the one thing the form must say. The browser's `required` is not a boundary. */
