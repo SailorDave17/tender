@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { isCommonPassword } from "@/auth/common-passwords";
 import { checkNewPassword } from "@/auth/password";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -26,6 +27,9 @@ export async function setNewPassword(formData: FormData): Promise<void> {
 
   const check = checkNewPassword(password, confirm);
   if (!check.ok) redirect(`/reset-password?error=${check.reason}`);
+  // #268: the list is server-only, so it is asked here rather than inside `checkNewPassword`, which
+  // the Sign up tab also runs in the browser. Same sentence as /api/join's (`COMMON_PASSWORD`).
+  if (isCommonPassword(password)) redirect("/reset-password?error=common");
 
   const { error } = await client.auth.updateUser({ password });
   if (error) redirect("/reset-password?error=failed");
