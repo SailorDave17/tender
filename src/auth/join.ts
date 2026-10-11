@@ -3,7 +3,7 @@ import type { FoundUser } from "./find-user";
 import type { ExchangeIdToken } from "./google-signin";
 import { NO_CREDENTIAL, NOT_VERIFIED, hasCredential } from "./google-signin";
 import { SIGNED_IN_HOME, WELCOME_PATH } from "./gate";
-import { validatePassword } from "./password";
+import { COMMON_PASSWORD, validatePassword } from "./password";
 import { ensurePerson, type PersonStore } from "./person";
 
 /**
@@ -102,6 +102,12 @@ export type JoinDeps = {
   person: PersonStore;
   /** Signs the member in with the password they just chose; the session lands on the response. */
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  /**
+   * Is this password on the common-password list (#268)? The route passes `isCommonPassword` from
+   * `./common-passwords`, which is server-only. Required rather than defaulted: a caller that
+   * forgot it would otherwise switch the list off with nothing going red.
+   */
+  isCommonPassword: (password: string) => boolean;
   now?: () => Date;
 };
 
@@ -180,6 +186,11 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
   const pw = validatePassword(input.password);
   if (!pw.ok) {
     return { status: 400, body: { message: pw.message } };
+  }
+  // #268: the list after the length rule, and still before the code is read. The list is public,
+  // so answering it first tells a caller nothing they could not read for themselves.
+  if (deps.isCommonPassword(input.password)) {
+    return { status: 400, body: { message: COMMON_PASSWORD } };
   }
   if (!codesMatch(input.code, await deps.inviteCode())) {
     return WRONG_CODE;

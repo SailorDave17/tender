@@ -85,6 +85,9 @@ const supabase = {
 vi.mock("next/headers", () => ({ cookies: async () => cookieStore }));
 vi.mock("@/lib/supabase/server", () => ({ supabaseServer: async () => supabase }));
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: () => supabase }));
+// Since #268 /api/join imports the common-password list, which is `server-only`; the marker is
+// mocked rather than the list, so the real list stays in the path.
+vi.mock("server-only", () => ({}));
 
 const { POST: joinPOST } = await import("@/app/api/join/route");
 const { POST: googleSignupPOST } = await import("@/app/api/signup/google/route");

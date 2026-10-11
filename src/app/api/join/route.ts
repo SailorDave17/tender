@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { clientAddress, withAttemptLimit } from "@/auth/attempt-limit";
+import { isCommonPassword } from "@/auth/common-passwords";
 import { findAuthUser } from "@/auth/find-user";
 import { WRONG_CODE, join, type JoinResult } from "@/auth/join";
 import { rememberDevice } from "@/auth/recognition";
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
         const { error } = await client.auth.signInWithPassword({ email, password });
         return error ? { error: error.message } : {};
       },
+      isCommonPassword,
     },
   );
 

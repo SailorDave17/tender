@@ -57,6 +57,10 @@ vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: () => supabase }));
 // The callback reports a refused person read since #204, and the reporter imports `server-only`
 // too — the same import death as the admin client's. No case here reaches the report.
 vi.mock("@/notify/error-live", () => ({ reportErrorLive: async () => null }));
+// Since #268 /api/join imports the common-password list, which is `server-only` itself. Mocking the
+// marker rather than the list keeps the real list in the path: a sign-up below with a listed
+// password would be refused here exactly as in production.
+vi.mock("server-only", () => ({}));
 
 const { POST: signinPOST } = await import("@/app/api/signin/route");
 const { POST: joinPOST } = await import("@/app/api/join/route");

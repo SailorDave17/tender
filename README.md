@@ -771,6 +771,30 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    shared by every member signing in through the same Vercel address, and it bounds no individual
    guesser. It is on, and it is left alone. *(The per-IP keying is from the docs, not measured
    here.)*
+8. **A new password is at least 8 characters and not a common one** (#268, security-audit SA-R2).
+   Sign-up and the reset landing refuse a password that is on the common-password list, with
+   *"That password is on the lists guessers try first. Choose a different one."* Sign-in never
+   checks either rule, so no existing member is locked out when the policy moves.
+   - **The list** is the UK National Cyber Security Centre's **100,000 most-used passwords** from
+     Have I Been Pwned's breach corpus (published 2019). It is taken from SecLists (MIT) at commit
+     `1a7bb91`, `Passwords/Common-Credentials/100k-most-used-passwords-NCSC.txt`, and was retrieved
+     **2026-10-11**. `src/auth/common-passwords.json` keeps every entry of 8 or more characters,
+     after NFC and lower-casing: **46,483 entries**, about 590 KB, on the server only (it is never
+     sent to a browser). The comparison folds the typed password the same way, and compares the
+     whole password. Owner decision 2026-10-11: a bundled list rather than Have I Been Pwned's live
+     range check, so that sign-up makes no outside call and `/privacy` gains no service. Supabase's
+     own leaked-password check needs the Pro plan.
+   - **The minimum stays at 8** (owner decision 2026-10-11). NIST SP 800-63B-4 asks for 15 where a
+     password is the only factor. The list removes the passwords guessers try first, step 7's limit
+     slows the rest, and Google sign-in is the easy route for anyone who would rather not choose
+     one. The number is `PASSWORD_MIN` in `src/auth/password.ts`.
+   - **Supabase's own minimum matches it:** raised from 6 to **8** on 2026-10-11 through the
+     Management API and read back. Without it, a direct call to GoTrue with the public key could
+     set a shorter password than the app allows. GoTrue cannot check the list.
+   - **To refresh the list**, regenerate the JSON from a newer copy with the same rule. If
+     `PASSWORD_MIN` ever changes, regenerate at the new minimum:
+     `test/common-password.test.ts` holds the entry count and the shortest entry, so either change
+     goes red until the file matches.
 
 ## Brand
 

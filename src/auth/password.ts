@@ -43,7 +43,16 @@ export function validatePassword(password: string): PasswordCheck {
   return { ok: true };
 }
 
-export type ResetReason = "mismatch" | "weak" | "failed" | "expired";
+/**
+ * A new password that is on the common-password list (#268). One sentence for both places a new
+ * password is chosen: `/api/join` answers it as its message, and the reset landing shows it for the
+ * `common` reason. The list itself is server-only (`./common-passwords`); this file is imported by
+ * the Sign up tab in the browser, so only the sentence lives here.
+ */
+export const COMMON_PASSWORD =
+  "That password is on the lists guessers try first. Choose a different one.";
+
+export type ResetReason = "mismatch" | "weak" | "common" | "failed" | "expired";
 
 /**
  * The set-new-password form's check (#82 AC 5): the two boxes must match and the result must meet
@@ -68,6 +77,8 @@ export function explainResetError(reason: string): string {
       return "Those two passwords do not match.";
     case "weak":
       return `Choose a password of at least ${PASSWORD_MIN} characters.`;
+    case "common":
+      return COMMON_PASSWORD;
     case "failed":
       return "That could not be saved. The link may have expired — start again from Forgot your password.";
     default:
