@@ -741,8 +741,11 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
    `person_blank_log` trigger, which fires however the person row goes (#201), so there is nothing
    to run first. If a member's own deletion lands on `/join?deleted=partial`, their rows are gone
    and the auth user is not — delete it under Authentication → Users. Since #204 you are emailed
-   when this happens: an error report named `AuthUserNotDeleted` carries the auth user's id. Until
-   it is deleted, a password reset from that address would create a new, empty profile.
+   when this happens: an error report named `AuthUserNotDeleted` carries the auth user's id. The
+   leftover cannot make itself a member again: since #263 (`0037`) `delete_person()` clears the 18+
+   attestation with the rows, so a password reset or a Google sign-in from that address is refused
+   and removes the auth user itself, and only a sign-up with this season's invite code makes a new
+   member, as it would after a complete deletion.
 7. **Guessing is bounded, and you should know how** (#206, security-audit SA-5, `0032`). A wrong
    invite code at `/api/join` or `/api/signup/google` and a wrong email-and-password at
    `/api/signin` are **failures**, and they count against two keys in a **15-minute window**:

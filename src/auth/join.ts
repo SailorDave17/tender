@@ -214,7 +214,9 @@ export async function join(input: JoinInput, deps: JoinDeps): Promise<JoinResult
     }
     if (existing.attested) {
       // No row, but an attestation only the gate could have written: a sign-up that stopped
-      // between its two writes (#204). `ensurePerson` mints the row from the user's own
+      // between its two writes (#204). Never a deleted member's leftover: `delete_person()` clears
+      // the attestation with the rows (0037, #263), so that one is a stray, stamped below as a
+      // new sign-up. `ensurePerson` mints the row from the user's own
       // `app_metadata`, so its delete branch cannot be entered from here. See `finishInterrupted`
       // below for the rest. (`created: false` here would mean a row appeared since the read a few
       // lines up — a second submission racing this one — and is a member's account like any other.)
