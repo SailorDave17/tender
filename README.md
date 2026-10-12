@@ -88,6 +88,31 @@ files declares the environment exactly ONCE — vitest reads that directive anyw
 comments included, so a docblock quoting it in full silently declares it a second time and the
 real line can then be deleted with nothing going red (measured on #100).
 
+**A Chrome profile the suite cannot delete** (#280). The Chrome-backed test files close their
+browser through `closeChrome` (`test/chrome.ts`). That matters because `browser.close()` returns
+only once Playwright has deleted the browser's temporary profile under `%TEMP%`, and on the owner's
+machine that deletion sometimes never finishes. You see it as a line in an otherwise passing run:
+
+```
+#280: Chrome (pid 12345) exited, but Playwright was still deleting its temporary profile 10000 ms later, …
+```
+
+Before #280 the same thing ended the run `success: false` with every test passed, one Chrome file's
+`afterAll` reading `Hook timed out in 180000ms`. That was 7 runs of 7 on 2026-10-12, in the checkout
+and in a `develop` worktree alike. Each one leaves a `playwright_chromiumdev_profile-*` folder
+behind whose `Default\` files refuse to open, or be deleted, from node or PowerShell ("Access
+denied"), although the folder's ACL grants you full control. `DEBUG=pw:browser` shows that Chrome's
+`starting temporary directories cleanup` with no `finished` after it. The folder is locked while
+Chrome is still running, and fifty Chromes launched the same way outside the suite never were.
+
+The likely cause is the machine's antivirus, ESET Internet Security. A secured browser's profile gets
+*Enhanced data protection*, which ESET documents as preventing unauthorized applications from
+reading and writing the browser's user profile folders. Every `chrome.exe` on that machine also
+hides its command line from other processes, which ESET's *Enhanced memory protection* would do.
+Both are *reasoned, not measured*. Do not raise `CHROME_CLOSE_TIMEOUT_MS` for this: the time goes
+on the deletion, not on Chrome's exit, which `closeChrome` still waits for in full. Removing the
+leftover folders has not been tried.
+
 **The RLS harness** (`test/pglite.ts`) applies `supabase/migrations/*.sql` to an in-memory
 Postgres and runs SQL as `anon`, `authenticated` or `service_role`. Since #48 it reproduces
 Supabase's default privileges for the first two before applying anything, so a "this role is shut

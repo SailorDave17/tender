@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { fitGoogleButton } from "@/auth/GoogleButton";
-import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
+import { CHROME_CLOSE_TIMEOUT_MS, closeChrome } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 
 /**
@@ -72,7 +72,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await browser?.close();
+  await closeChrome(browser);
 }, CHROME_CLOSE_TIMEOUT_MS);
 
 function withSheet(doc: string, sheet: string): string {

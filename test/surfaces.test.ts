@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { chromium, type Browser, type Page } from "playwright-core";
 import sharp from "sharp";
 import { fitGoogleButton } from "@/auth/GoogleButton";
-import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
+import { CHROME_CLOSE_TIMEOUT_MS, closeChrome } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 import { IDS, ME, NOW, fakeClient } from "./surfaces";
 
@@ -133,7 +133,7 @@ beforeAll(async () => {
 }, 90_000);
 
 afterAll(async () => {
-  await browser?.close();
+  await closeChrome(browser);
 }, CHROME_CLOSE_TIMEOUT_MS);
 
 const IN_PAGE = `

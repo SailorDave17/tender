@@ -10,7 +10,7 @@ import { installAdvice } from "@/install/prompt";
 import { watchSheet } from "@/install/sheet";
 import { watchDock } from "@/shell/dock";
 import type { ShellPerson } from "@/shell/session";
-import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
+import { CHROME_CLOSE_TIMEOUT_MS, closeChrome } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 import { AVAILABILITY, IDS, MATCHES, ME, NOW, PEOPLE, POSTS, RACE_DATES, TABLES, fakeClient, uuid, type Tables } from "./surfaces";
 
@@ -312,7 +312,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await browser?.close();
+  await closeChrome(browser);
 }, CHROME_CLOSE_TIMEOUT_MS);
 
 const FRAMES = `const frames = (n) => new Promise((done) => { const step = () => (n-- ? requestAnimationFrame(step) : done()); step(); });`;
