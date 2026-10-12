@@ -20,6 +20,8 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url)).replace(/[\\/]$/, ""
 const LAUNCH = new RegExp(["chromium", "\\.(launch|launchPersistentContext)\\("].join(""));
 const HOOK = ["after", "All("].join("");
 const COVERED = ["}, ", "CHROME_CLOSE_TIMEOUT_MS", ");"].join("");
+const CLOSE_CHROME = ["await close", "Chrome("].join("");
+const BARE_CLOSE = new RegExp(["await\\s+browser", "\\??\\.close\\("].join(""));
 
 function testFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -58,6 +60,16 @@ describe("Chrome-backed test files close their browser inside a timeout that cov
       return hooks === 0 || count(text, COVERED) !== hooks;
     });
     expect(uncovered, "Chrome-backed files whose afterAll runs under the default hookTimeout").toEqual([]);
+  });
+
+  it("every one closes through closeChrome, and none waits on a bare browser.close() (#280)", () => {
+    // A bare close waits on Playwright's profile deletion with no bound, and on the owner's machine
+    // that deletion can never finish: the hook then runs out the timeout above with every test passed.
+    const bare = chromeFiles.filter((f) => {
+      const text = readFileSync(`${ROOT}/${f}`, "utf8");
+      return !text.includes(CLOSE_CHROME) || BARE_CLOSE.test(text);
+    });
+    expect(bare, "Chrome-backed files that close their browser without closeChrome").toEqual([]);
   });
 
   it("the timeout outlasts the slowest close measured and the config's hookTimeout", () => {

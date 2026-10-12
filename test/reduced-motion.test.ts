@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
-import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
+import { CHROME_CLOSE_TIMEOUT_MS, closeChrome } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 
 /**
@@ -39,7 +39,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await browser?.close();
+  await closeChrome(browser);
 }, CHROME_CLOSE_TIMEOUT_MS);
 
 async function transitionDurationOf(reducedMotion: "reduce" | "no-preference"): Promise<{ property: string; token: string }> {

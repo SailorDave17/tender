@@ -7,7 +7,7 @@ import { InstallBannerView } from "@/install/InstallBanner";
 import { installAdvice } from "@/install/prompt";
 import { watchSheet } from "@/install/sheet";
 import { watchDock } from "@/shell/dock";
-import { CHROME_CLOSE_TIMEOUT_MS } from "./chrome";
+import { CHROME_CLOSE_TIMEOUT_MS, closeChrome } from "./chrome";
 import { GLOBALS_CSS } from "./tokens";
 
 /**
@@ -125,7 +125,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await browser?.close();
+  await closeChrome(browser);
 }, CHROME_CLOSE_TIMEOUT_MS);
 
 const FRAMES = `const frames = (n) => new Promise((done) => { const step = () => (n-- ? requestAnimationFrame(step) : done()); step(); });`;
