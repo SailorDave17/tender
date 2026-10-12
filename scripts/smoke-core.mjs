@@ -244,6 +244,46 @@ export function openPageVerdict({ path, status, location, body, supportEmail = S
 }
 
 /**
+ * #207: the security headers every response must carry, and the value of each. Spelled out here
+ * rather than imported from `src/security/headers.ts`, so the smoke states the policy
+ * independently of the config it checks. `test/security-headers.test.ts` holds the two equal, so a
+ * policy change is two deliberate edits and a slip in one of them is red in `npm test`.
+ */
+export const EXPECTED_SECURITY_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "permissions-policy":
+    "accelerometer=(), bluetooth=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), " +
+    "hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=()",
+  "content-security-policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+};
+
+/**
+ * One response of each kind the server makes, read signed out (#207). The config's rule matching a
+ * page says nothing about the others: the proxy's redirect for a gated path (/board), a file under
+ * /public (/sw.js), a route handler (the manifest, and the tick refusing a call with no secret
+ * before it does anything), a 404, and the root. The smoke adds a built `/_next/static` chunk named
+ * in /join's HTML, since its file name changes with every build.
+ */
+export const SECURITY_HEADER_PATHS = ["/", "/join", "/board", "/sw.js", "/manifest.webmanifest", "/api/ladder/tick", "/no-such-page-207"];
+
+/**
+ * The verdict on #207's first criterion for one response: every header in
+ * `EXPECTED_SECURITY_HEADERS` present with exactly its value. Returns the failures, empty when it
+ * holds. Exact, not a substring match: a header set twice reaches `fetch` as both values joined
+ * by ", ", and a policy with one directive missing still contains the others.
+ */
+export function securityHeadersVerdict({ path, status, headers }) {
+  const failures = [];
+  for (const [name, want] of Object.entries(EXPECTED_SECURITY_HEADERS)) {
+    const got = headers.get(name);
+    if (got === null) failures.push(`${path} (${status}) sends no ${name}`);
+    else if (got !== want) failures.push(`${path} (${status}) sends ${name}: ${got}, not ${want}`);
+  }
+  return failures;
+}
+
+/**
  * The verdict on AC 1's last clause: *the crew's phone is visible to the skipper only after
  * acceptance*. Returns the failures, empty when it holds.
  *

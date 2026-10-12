@@ -7,6 +7,8 @@ import { UUID } from "@/post/post-form";
 import { fixtureId, fixtureSql } from "../scripts/lighthouse-floor-core.mjs";
 import {
   CREW_PHONE,
+  EXPECTED_SECURITY_HEADERS,
+  SECURITY_HEADER_PATHS,
   SEED_CLUB_MARK,
   SMOKE_INVITE_CODE,
   SMOKE_STALE_INVITE_CODE,
@@ -19,6 +21,7 @@ import {
   openPageVerdict,
   refuseNonLocalStack,
   runSteps,
+  securityHeadersVerdict,
   smokePlan,
   smokeResetSql,
   smokeSeedSql,
@@ -164,6 +167,47 @@ describe("openPageVerdict (#147)", () => {
     ]);
     const other = support.replaceAll(SUPPORT_EMAIL, "someone-else@fixture.invalid");
     expect(openPageVerdict({ path: "/support", status: 200, location: null, body: other })).toHaveLength(1);
+  });
+});
+
+describe("securityHeadersVerdict (#207)", () => {
+  const healthy = () => new Headers(EXPECTED_SECURITY_HEADERS);
+
+  it("passes a response carrying every header with exactly its value", () => {
+    expect(securityHeadersVerdict({ path: "/join", status: 200, headers: healthy() })).toEqual([]);
+  });
+
+  it("refuses a missing header, naming it, the path and the status", () => {
+    const headers = healthy();
+    headers.delete("permissions-policy");
+    expect(securityHeadersVerdict({ path: "/board", status: 307, headers })).toEqual(["/board (307) sends no permissions-policy"]);
+  });
+
+  it("refuses a policy with a directive missing, though what is left is a substring of the right one", () => {
+    const headers = healthy();
+    headers.set("content-security-policy", "object-src 'none'; base-uri 'none'");
+    expect(securityHeadersVerdict({ path: "/join", status: 200, headers })).toEqual([
+      `/join (200) sends content-security-policy: object-src 'none'; base-uri 'none', not ${EXPECTED_SECURITY_HEADERS["content-security-policy"]}`,
+    ]);
+  });
+
+  it("refuses a header set twice, which reaches fetch as both values joined", () => {
+    const headers = healthy();
+    headers.append("x-content-type-options", "nosniff");
+    expect(securityHeadersVerdict({ path: "/sw.js", status: 200, headers })).toEqual([
+      "/sw.js (200) sends x-content-type-options: nosniff, nosniff, not nosniff",
+    ]);
+  });
+
+  it("refuses a response carrying none of them, once per header", () => {
+    expect(securityHeadersVerdict({ path: "/", status: 200, headers: new Headers() })).toHaveLength(4);
+  });
+
+  it("reads one response of each kind the server makes, not only pages", () => {
+    // A page, the root, the proxy's redirect for a gated path, a /public file, two route handlers
+    // (the manifest, and the tick refusing a call with no secret), and a 404. The smoke adds a built
+    // chunk from /join's HTML. Dropping a kind narrows the claim to "some responses" unseen.
+    expect(SECURITY_HEADER_PATHS).toEqual(["/", "/join", "/board", "/sw.js", "/manifest.webmanifest", "/api/ladder/tick", "/no-such-page-207"]);
   });
 });
 

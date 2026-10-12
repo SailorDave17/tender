@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { NextConfig } from "next";
+import { SECURITY_HEADERS } from "./src/security/headers";
 
 /**
  * The build stamp (#169). Four facts about THIS build, computed here — once, while `next build`
@@ -36,6 +37,14 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BUILD_SHA: sha,
     NEXT_PUBLIC_BUILD_REF: ref,
     NEXT_PUBLIC_BUILD_AT: new Date().toISOString(),
+  },
+  /**
+   * The baseline security headers on every response (#207): pages, route handlers, the proxy's
+   * redirects, `/public` files, built chunks and 404s alike. `src/security/headers.ts` says what
+   * each one is for, and the smoke reads them off one response of each kind.
+   */
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
 };
 

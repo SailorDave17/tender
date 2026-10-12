@@ -319,7 +319,10 @@ browser arrives by the **invite link**, which carries the code, and types none: 
 season's code, where it must read the route's refusal with no account made, then with this
 season's, where it must land on `/welcome`. Since #242 the crew's browser ends by walking the
 docked nav at 390px (Post, Boats, Profile, Board) without a reload, and the tab marked as the
-current screen must move with every tap. The job starts a local
+current screen must move with every tap. Since #207 the run ends by reading the security headers
+off one response of each kind: the root, `/join`, the proxy's redirect for `/board`, `/sw.js`, the
+manifest, the tick refusing a call with no secret, a 404 and a built chunk. Each must carry every
+header with exactly its value. The job starts a local
 Supabase stack from `supabase/migrations`, builds against it, and runs `npm run smoke`. It runs on
 pull requests only, and `timeout-minutes: 8` cancels it red past AC 3's budget.
 `test/smoke.test.ts` holds both of those lines.
@@ -820,6 +823,22 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
      `PASSWORD_MIN` ever changes, regenerate at the new minimum:
      `test/common-password.test.ts` holds the entry count and the shortest entry, so either change
      goes red until the file matches.
+9. **Every response carries the browser hardening headers** (#207, security-audit SA-6):
+   `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a
+   `Permissions-Policy` switching off the device features the app never uses (camera, microphone,
+   location, payment and the rest), and a `Content-Security-Policy` of `frame-ancestors 'none';
+   object-src 'none'; base-uri 'none'`, so no other site can frame a page. Vercel sends HSTS
+   itself. The values live in `src/security/headers.ts`, which says what each is for, and
+   `next.config.ts` applies them to every path. There is no script policy yet; a nonce-based one
+   would be its own story.
+   - **To change one**, edit `src/security/headers.ts` **and** `EXPECTED_SECURITY_HEADERS` in
+     `scripts/smoke-core.mjs`. `test/security-headers.test.ts` is red until the two agree, and the
+     smoke reads the served values on every pull request.
+   - **If the app starts using a feature on that list**, a photo upload needing the camera, say,
+     take it off the `Permissions-Policy` in the same change. The browser refuses a blocked
+     feature and says so only in its console.
+   - **Google sign-in needs FedCM**, so `identity-credentials-get` is deliberately not on the list,
+     and a test holds that.
 
 ## Brand
 
