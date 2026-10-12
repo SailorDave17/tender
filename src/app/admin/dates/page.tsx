@@ -82,12 +82,13 @@ export default async function AdminDatesPage({
           {dates.map((d) => {
             const f = formatStartsAt(d.starts_at);
             return (
+              // #251: the button wraps under the date at large text rather than off the screen.
               <li
                 key={d.id}
                 data-published={d.published}
-                style={{ display: "flex", gap: "0.75rem", alignItems: "baseline" }}
+                style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "baseline" }}
               >
-                <span style={{ flex: 1 }}>
+                <span style={{ flex: "1 1 10rem" }}>
                   <strong>{f.date}</strong> {f.time} — {d.title}
                   {!d.published && <em> (not yet on the board)</em>}
                 </span>

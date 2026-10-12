@@ -140,6 +140,12 @@ body {
   color: var(--ink);
   font-family: var(--font-body);
   line-height: var(--leading);
+  /* #251: a word longer than its line breaks rather than running off the screen. A pasted link in
+     a thread, an address in the invite report, `America/New_York` at 200% text. `break-word` and not
+     `anywhere`, because only `anywhere` lowers a box's min-content width. That would let every grid
+     track and table column squeeze its words letter by letter before a row wraps or a table
+     scrolls. The one line that needs `anywhere`, the header's address, opts in below. */
+  overflow-wrap: break-word;
 }
 a {
   color: var(--accent);
@@ -245,11 +251,21 @@ input[type="radio"] {
 }
 [data-identity] {
   display: inline-flex;
+  /* #251: a new member has no name yet, so the line is "Signed in as <their address>", and at 200%
+     text on a phone Sign out went off the screen beside it. It wraps under the line instead. */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   margin-inline-start: auto;
   font-weight: 400;
   font-size: var(--text-sm);
+}
+/* `anywhere` and not `min-width: 0` (measured): the identity block is itself an item of the header's
+   flex row, and it sizes itself to the min-content its line reports. `min-width: 0` lets the line
+   shrink inside the block but leaves that report at the address's width (311px in 256 at 200% on a
+   320px phone). `anywhere` is what lowers it. */
+[data-who] {
+  overflow-wrap: anywhere;
 }
 [data-identity] form {
   display: contents;
@@ -311,10 +327,13 @@ input[type="radio"] {
 }
 
 /* The frame every page's <main> sits in — the twenty inline copies this replaced were 2rem all
-   round at 32rem; on a phone the sides come in so a 390px screen keeps its measure. */
+   round at 32rem; on a phone the sides come in so a 390px screen keeps its measure.
+   #251: the sides are at most 5% of the screen each. They are in rem, so at 200% text they doubled
+   to 32px and took 64 of a 320px phone's width. 5vw is 16px at 320, so at ordinary text no phone
+   changes; only large text on a narrow screen gets the room back. */
 [data-frame] > main {
   max-width: var(--measure);
-  padding: var(--space-6) var(--space-4);
+  padding: var(--space-6) min(var(--space-4), 5vw);
 }
 [data-frame] > main[data-measure="wide"] {
   max-width: var(--measure-wide);
@@ -469,12 +488,39 @@ form[data-inline] {
 }
 [data-pairs] dd {
   margin: 0;
+  /* #251: a value can be an address, one word wider than the screen. Without this its track is held
+     open to the address's width; with it, body's `break-word` breaks the address in the column. */
+  min-width: 0;
+}
+/* #251: under 20 characters of the browser's text size, each label sits above its value. At 200%
+   text "Competence" alone is 165px, and on a 320px phone that left its value 59px. At ordinary
+   text no phone is that narrow (20rem is 320px), so nothing there changes. A rem in a media query
+   follows the browser's text size, not the page's root font size (test/reflow.test.ts). */
+@media (max-width: 19.99rem) {
+  [data-pairs] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  [data-pairs] dd + dt {
+    margin-top: var(--space-2);
+  }
+}
+/* #251: a data table wider than the screen scrolls sideways inside its own region, not the page.
+   WCAG 1.4.10 exempts a table, whose two dimensions are the content. `ScrollX`
+   (`src/shell/ScrollX.tsx`) makes the region a named Tab stop, so a keyboard can scroll it too. */
+[data-scroll-x] {
+  overflow-x: auto;
 }
 
 /* forms: the label above its control, the control full width, a fieldset as a bordered group */
 label > :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
   display: block;
-  width: 100%;
+  /* The label's full width, spelled so the box's own natural width counts for nothing toward the
+     label's minimum (#251). A text box at `width: 100%` already counts for nothing; Chrome does not
+     do that for a date or time box, which at 200% text is 298px and held /admin/dates' form 10px
+     past a 320px phone. Squeezed, Chrome narrows the gap before the calendar button and clips no
+     part of the date (measured down to 256px). */
+  width: 0;
+  min-width: 100%;
   margin-top: var(--space-1);
 }
 input:not([type="checkbox"]):not([type="radio"]),
@@ -495,7 +541,10 @@ fieldset {
   display: grid;
   gap: var(--space-1);
   margin: 0;
-  padding: var(--space-2) var(--space-3) var(--space-3);
+  /* #251: the sides at most 4% of the screen, as <main>'s are capped at 5%. /welcome nests one
+     fieldset in another, and at 200% text their rem sides took 100px of a 320px phone around
+     "Can fly a spinnaker". 4vw is 12.8px at 320, over the 12px these are at ordinary text. */
+  padding: var(--space-2) min(var(--space-3), 4vw) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -664,6 +713,13 @@ button[data-already-member] {
 @media (max-width: 39.99rem) {
   html:has([data-nav][data-signed-in]) {
     --dock: 3.5rem;
+    /* #251 (WCAG 2.4.11): a control Tab moves onto is scrolled clear of the docked nav, not left
+       under it. Chrome scrolls a focused element only when it is outside the scroll port, and
+       without this the nav's strip at the foot of the screen counts as inside, so the next control
+       down was focused behind the nav on every signed-in page: 19 of test/reflow.test.ts's 29
+       renders at 400% zoom, where the nav is 100px of a 256px screen. The install sheet's height is added here too,
+       because this selector outranks the sheet's own rule below whenever both match. */
+    scroll-padding-bottom: calc(var(--dock) + var(--install-sheet, 0rem) + var(--space-4));
   }
 }
 [data-banner="install"] {
@@ -702,7 +758,11 @@ body:has([data-banner="install"][data-install-advice]) {
 [data-day] > strong {
   font-size: var(--text-lg);
 }
-[data-posts] {
+/* `ul` and `li` by name (#251): the hooks are also on /admin's `<td data-posts>`, /admin/dates/[id]'s
+   `<tr data-post>` and /post/[id]'s `<p data-post>`. Unscoped, these two rules made that row a flex
+   box (its cells stacked, one per line), that cell a grid with a rule across its top, and that
+   sentence a flex row with a gap before its full stop. */
+ul[data-posts] {
   flex-basis: 100%;
   margin: var(--space-2) 0 0;
   padding: var(--space-2) 0 0;
@@ -711,7 +771,7 @@ body:has([data-banner="install"][data-install-advice]) {
   display: grid;
   gap: var(--space-2);
 }
-[data-post] {
+ul[data-posts] > li[data-post] {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-2);
@@ -728,7 +788,10 @@ body:has([data-banner="install"][data-install-advice]) {
   font-size: var(--text-sm);
   font-weight: 600;
   line-height: 1.6;
-  white-space: nowrap;
+  /* No `nowrap` (#251). An inline-block already moves to the next line whole when it does not fit
+     beside the boat's name; `nowrap` only added that it could not wrap inside itself when it is
+     wider than the race day's card. At 200% text on a 320px phone it was, on wide fonts
+     (Verdana, as CI's are), by 10px. */
 }
 @media (prefers-color-scheme: dark) {
   [data-badge="rung"] {

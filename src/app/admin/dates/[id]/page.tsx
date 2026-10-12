@@ -7,6 +7,7 @@ import { RUNG_COLOUR } from "@/board/post-view";
 import { statusLabel } from "@/post/match-view";
 import { UUID } from "@/post/post-form";
 import { supabaseServer } from "@/lib/supabase/server";
+import { ScrollX } from "@/shell/ScrollX";
 import { SIGN_IN_URL } from "@/auth/gate";
 
 export const dynamic = "force-dynamic";
@@ -90,48 +91,51 @@ export default async function AdminRaceDayPage({
             still without crew.
           </p>
 
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                {["Boat", "Class", "Skipper", "Minimum", "Final rung", "Crew", "Status"].map((h) => (
-                  <th key={h} style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.25rem 0.5rem 0.25rem 0" }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const colour = RUNG_COLOUR[r.finalRung];
-                return (
-                  <tr key={r.postId} data-post={r.postId} data-open={r.open}>
-                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>
-                      <a href={`/post/${r.postId}`}>{r.boatName}</a>
-                    </td>
-                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>{r.boatClass}</td>
-                    {/* A skipper whose person row is gone is still a boat that was posted. */}
-                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>{r.skipper ?? "(removed)"}</td>
-                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>{r.minimum}</td>
-                    {/* The stored rung (0010), never one derived from the clock — src/admin/season.ts. */}
-                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-rung={r.finalRung}>
-                      <span style={{ color: colour.hex }}>
-                        {r.finalRung} · {colour.name}
-                      </span>
-                    </td>
-                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-crew={r.open ? "open" : "matched"}>
-                      {/* Three states, not two: open, matched to someone named, matched to
-                          someone no longer readable. Collapsing the third into "open" would
-                          erase a boat that did sail. */}
-                      {r.open ? <em>open</em> : (r.crew ?? "(removed)")}
-                    </td>
-                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-match-status={r.status ?? "none"}>
-                      {r.status === null ? "—" : (statusLabel(r.status) || "Matched")}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {/* #251: seven columns are wider than a phone, so they scroll inside their own region. */}
+          <ScrollX label={`Boats posted for ${date.title}`}>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr>
+                  {["Boat", "Class", "Skipper", "Minimum", "Final rung", "Crew", "Status"].map((h) => (
+                    <th key={h} style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.25rem 0.5rem 0.25rem 0" }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const colour = RUNG_COLOUR[r.finalRung];
+                  return (
+                    <tr key={r.postId} data-post={r.postId} data-open={r.open}>
+                      <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>
+                        <a href={`/post/${r.postId}`}>{r.boatName}</a>
+                      </td>
+                      <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>{r.boatClass}</td>
+                      {/* A skipper whose person row is gone is still a boat that was posted. */}
+                      <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>{r.skipper ?? "(removed)"}</td>
+                      <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>{r.minimum}</td>
+                      {/* The stored rung (0010), never one derived from the clock — src/admin/season.ts. */}
+                      <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-rung={r.finalRung}>
+                        <span style={{ color: colour.hex }}>
+                          {r.finalRung} · {colour.name}
+                        </span>
+                      </td>
+                      <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-crew={r.open ? "open" : "matched"}>
+                        {/* Three states, not two: open, matched to someone named, matched to
+                            someone no longer readable. Collapsing the third into "open" would
+                            erase a boat that did sail. */}
+                        {r.open ? <em>open</em> : (r.crew ?? "(removed)")}
+                      </td>
+                      <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-match-status={r.status ?? "none"}>
+                        {r.status === null ? "—" : (statusLabel(r.status) || "Matched")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </ScrollX>
 
           <p style={{ fontSize: "0.875rem", marginTop: "1.5rem" }}>
             <strong>Final rung</strong> is the widest rung the ladder actually opened and emailed

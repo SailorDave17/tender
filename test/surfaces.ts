@@ -17,7 +17,7 @@ const at = (days: number, hourUtc = 17) => new Date(NOW.getTime() + days * DAY -
 
 export const ME = "p-ada";
 /** The post and boat pages refuse a non-UUID id before reading anything (`UUID.test`). */
-const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+export const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 export const IDS = { boatMoon: uuid(1), boatAnn: uuid(2), postOpen: uuid(11), postCrewed: uuid(12), postLater: uuid(13) };
 export const PEOPLE = [
   { id: ME, display_name: "Ada Lovelace", rating: 4, skills: ["helm"], any_hull: true, hulls: [] as string[] },
@@ -91,14 +91,19 @@ function answers(rows: unknown[]) {
 /**
  * A client signed in as `userId`. `person_contact` is narrowed to the counterparty's row the way
  * 0008 would narrow it, so the matched panel shows a phone and the profile shows the owner's.
+ *
+ * `rpcs` answers any other function by name with the value given (#251's admin screens read
+ * `current_invite_code`, `email_usage` and `push_install_status`); a function named in neither
+ * still throws, so a page that starts calling something new fails loudly here.
  */
-export function fakeClient(userId: string, tables: Tables = TABLES) {
+export function fakeClient(userId: string, tables: Tables = TABLES, rpcs: Record<string, unknown> = {}) {
   return {
     auth: {
       getUser: async () => ({ data: { user: { id: userId, email: `${userId}@example.test`, identities: [] } }, error: null }),
     },
     // `answer_counts` (0007): un-withdrawn answers per post, for the posts asked about.
-    rpc: async (fn: string, args: { post_ids?: string[] }) => {
+    rpc: async (fn: string, args: { post_ids?: string[] } = {}) => {
+      if (fn in rpcs) return { data: rpcs[fn], error: null };
       if (fn !== "answer_counts") throw new Error(`fake client: no rpc ${fn}`);
       const answers = (tables.answer ?? []) as { post_id: string }[];
       const data = (args.post_ids ?? []).map((post_id) => ({ post_id, answered: answers.filter((a) => a.post_id === post_id).length }));
