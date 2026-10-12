@@ -410,9 +410,11 @@ describe("with no advice the board is as it was (#217 AC 3)", () => {
       expect(shifts).toEqual([]);
       expect(read.sheet).toBe(0);
       expect(read.next).toBe("ol");
-      // The docked navigation's own height, and nothing for a sheet that is not there.
+      // The docked navigation's own height, and nothing for a sheet that is not there. Since #251
+      // the nav reserves scroll padding of its own (its height and --space-4), so a control Tab
+      // lands on is scrolled clear of it; this read held that padding at `auto` until then.
       expect(read.bodyPadding).toBe(`${read.navHeight}px`);
-      expect(read.scrollPadding).toBe("auto");
+      expect(read.scrollPadding).toBe(`${read.navHeight + 16}px`);
     } finally {
       await close();
     }

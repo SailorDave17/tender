@@ -51,7 +51,9 @@ export function ThemeForm({
         autoComplete="off"
         spellCheck={false}
         data-theme-disc
-        style={{ fontFamily: "monospace", fontSize: "1rem", padding: "0.5rem" }}
+        // #251: `width: 100%` makes the box count as nothing toward the grid's width; at `auto` its
+        // twenty-character default held the form at 412px under 200% text.
+        style={{ fontFamily: "monospace", fontSize: "1rem", padding: "0.5rem", width: "100%" }}
       />
       <label htmlFor="mark">Mark — the colour drawn on it</label>
       <input
@@ -65,13 +67,15 @@ export function ThemeForm({
         autoComplete="off"
         spellCheck={false}
         data-theme-mark
-        style={{ fontFamily: "monospace", fontSize: "1rem", padding: "0.5rem" }}
+        style={{ fontFamily: "monospace", fontSize: "1rem", padding: "0.5rem", width: "100%" }}
       />
 
       <div
         data-theme-preview
         style={{
           display: "flex",
+          // #251: "Tender" goes under the 96px mark at large text rather than off the screen.
+          flexWrap: "wrap",
           alignItems: "center",
           gap: "1rem",
           padding: "1rem",

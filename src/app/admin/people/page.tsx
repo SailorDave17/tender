@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { suspendedSince } from "@/moderation/suspension";
 import { installSummary, type InstallRow } from "@/push/install";
 import { supabaseServer } from "@/lib/supabase/server";
+import { ScrollX } from "@/shell/ScrollX";
 import { liftSuspension, suspendPerson } from "./actions";
 import { SIGN_IN_URL } from "@/auth/gate";
 
@@ -81,27 +82,30 @@ export default async function AdminPeoplePage({
             number that reads it, and story #32 is where it gets called.
           </p>
 
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>Person</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>Notifications</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} data-person={r.id}>
-                  <td style={{ padding: "0.25rem 0" }}>
-                    <a href={`/profile/${r.id}`}>{r.name}</a>
-                  </td>
-                  {/* The device count, not the endpoints — a crew with a phone and a tablet reads 2. */}
-                  <td style={{ padding: "0.25rem 0" }} data-devices={r.devices}>
-                    {r.devices > 0 ? `On (${r.devices} ${r.devices === 1 ? "device" : "devices"})` : "Off"}
-                  </td>
+          {/* #251: at 200% text even two columns are wider than a 320px phone. */}
+          <ScrollX label="Notifications per person">
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>Person</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>Notifications</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} data-person={r.id}>
+                    <td style={{ padding: "0.25rem 0" }}>
+                      <a href={`/profile/${r.id}`}>{r.name}</a>
+                    </td>
+                    {/* The device count, not the endpoints — a crew with a phone and a tablet reads 2. */}
+                    <td style={{ padding: "0.25rem 0" }} data-devices={r.devices}>
+                      {r.devices > 0 ? `On (${r.devices} ${r.devices === 1 ? "device" : "devices"})` : "Off"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollX>
         </>
       )}
 
@@ -123,8 +127,9 @@ export default async function AdminPeoplePage({
           {((people ?? []) as { id: string; display_name: string }[]).map((p) => {
             const since = suspended.get(p.id);
             return (
-              <li key={p.id} data-suspension={p.id} data-suspended={Boolean(since)} style={{ display: "flex", gap: "0.75rem", alignItems: "baseline" }}>
-                <span style={{ flex: 1 }}>
+              // #251: the button wraps under the name at large text rather than off the screen.
+              <li key={p.id} data-suspension={p.id} data-suspended={Boolean(since)} style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "baseline" }}>
+                <span style={{ flex: "1 1 10rem" }}>
                   {p.display_name}
                   {since && (
                     <small>

@@ -1,6 +1,7 @@
 import type { RaceDayCounts, SeasonDate } from "@/admin/season";
 import { formatRatio, type SeasonMetric } from "@/lib/metric";
 import { formatStartsAt } from "@/dates/race-date";
+import { ScrollX } from "@/shell/ScrollX";
 
 /**
  * The season's crewing, as /admin prints it (story #38 AC 2): the charter's two headline numbers,
@@ -81,60 +82,63 @@ export function SeasonSummary({
       {dates.length === 0 ? (
         <p data-no-dates>No race dates published yet.</p>
       ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              {["Race day", "Posts", "Matched", "Sailed", "No-show", ""].map((h, i) => (
-                <th
-                  key={h || `c${i}`}
-                  style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.25rem 0.5rem 0.25rem 0" }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {dates.map((d) => {
-              const c = byDate.get(d.id);
-              const when = formatStartsAt(d.starts_at);
-              return (
-                <tr key={d.id} data-date={d.id} data-elapsed={c?.elapsed ?? false}>
-                  <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>
-                    <a href={`/admin/dates/${d.id}`}>
-                      {when.date} — {d.title}
-                    </a>
-                  </td>
-                  <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-posts={c?.posts ?? 0}>
-                    {c?.posts ?? 0}
-                  </td>
-                  <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-matched={c?.matched ?? 0}>
-                    {c?.matched ?? 0}
-                  </td>
-                  <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-sailed={c?.sailed ?? 0}>
-                    {c?.sailed ?? 0}
-                  </td>
-                  <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-no-show={c?.noShow ?? 0}>
-                    {c?.noShow ?? 0}
-                  </td>
-                  {/* The same number, two sentences. See the header: past tense only for a day
-                      that has been sailed. */}
-                  <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-unmatched={c?.unmatched ?? 0}>
-                    {!c || c.unmatched === 0 ? (
-                      ""
-                    ) : c.elapsed ? (
-                      <span data-unmatched-past>
-                        {c.unmatched} did not sail for want of crew
-                      </span>
-                    ) : (
-                      <em data-unmatched-future>{c.unmatched} still looking</em>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        // #251: wider than a phone from 320px, so it scrolls inside its own region, not the page.
+        <ScrollX label="Race days this season">
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr>
+                {["Race day", "Posts", "Matched", "Sailed", "No-show", ""].map((h, i) => (
+                  <th
+                    key={h || `c${i}`}
+                    style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.25rem 0.5rem 0.25rem 0" }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dates.map((d) => {
+                const c = byDate.get(d.id);
+                const when = formatStartsAt(d.starts_at);
+                return (
+                  <tr key={d.id} data-date={d.id} data-elapsed={c?.elapsed ?? false}>
+                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }}>
+                      <a href={`/admin/dates/${d.id}`}>
+                        {when.date} — {d.title}
+                      </a>
+                    </td>
+                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-posts={c?.posts ?? 0}>
+                      {c?.posts ?? 0}
+                    </td>
+                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-matched={c?.matched ?? 0}>
+                      {c?.matched ?? 0}
+                    </td>
+                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-sailed={c?.sailed ?? 0}>
+                      {c?.sailed ?? 0}
+                    </td>
+                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-no-show={c?.noShow ?? 0}>
+                      {c?.noShow ?? 0}
+                    </td>
+                    {/* The same number, two sentences. See the header: past tense only for a day
+                        that has been sailed. */}
+                    <td style={{ padding: "0.25rem 0.5rem 0.25rem 0" }} data-unmatched={c?.unmatched ?? 0}>
+                      {!c || c.unmatched === 0 ? (
+                        ""
+                      ) : c.elapsed ? (
+                        <span data-unmatched-past>
+                          {c.unmatched} did not sail for want of crew
+                        </span>
+                      ) : (
+                        <em data-unmatched-future>{c.unmatched} still looking</em>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </ScrollX>
       )}
     </>
   );
