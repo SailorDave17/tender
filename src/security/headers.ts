@@ -12,13 +12,13 @@
  *   never a path or a query string. It is also the browser's default, so stating it pins it rather
  *   than changing it.
  * - `Permissions-Policy`: switches off the powerful features the app never asks for. Every name is
- *   one Chrome knows, because Chrome ignores an unknown name without a word: no console line and no
- *   DevTools issue (measured on Chrome 154), so a misspelt entry disables nothing and says nothing.
- *   On Chrome 154 `document.featurePolicy.features()` lists all fourteen, and `allowsFeature` reads
- *   false for each under this header. `identity-credentials-get` (FedCM) is deliberately absent:
- *   Google's sign-in button uses it on this origin (#173), and its default, `self` and delegable to
- *   Google's frame, is what that needs. Notifications and push are not policy-controlled features,
- *   so nothing here touches them.
+ *   one Chrome knows. An unknown name disables nothing, and Chrome reports it only as a console
+ *   warning, "Error with Permissions-Policy header: Unrecognized feature", which is easy to miss
+ *   (measured on Chrome 154). There `document.featurePolicy.features()` lists all fourteen, and
+ *   `allowsFeature` reads false for each under this header. `identity-credentials-get` (FedCM) is
+ *   deliberately absent: Google's sign-in button uses it on this origin (#173), and its default,
+ *   `self` and delegable to Google's frame, is what that needs. Notifications and push are not
+ *   policy-controlled features, so nothing here touches them.
  * - `Content-Security-Policy`: the narrow policy the story asks for, not a script policy.
  *   `frame-ancestors 'none'` lets no site frame any page, `object-src 'none'` allows no plugin
  *   content, and `base-uri 'none'` stops an injected `<base>` re-pointing every relative URL. There
