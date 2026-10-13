@@ -40,6 +40,9 @@
  *
  * SINCE #242 THE CREW'S BROWSER ENDS BY WALKING THE DOCK at 390px — Post, Boats, Profile, Board,
  * each a client-side navigation — and the tab marked `aria-current="page"` must follow every tap.
+ *
+ * SINCE #207 THE RUN ENDS BY READING THE SECURITY HEADERS off one response of each kind the server
+ * makes. It comes last so that a red there cannot hide the core path's result.
  */
 
 import { spawnSync } from "node:child_process";
@@ -50,6 +53,7 @@ import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 
 import {
+  SECURITY_HEADER_PATHS,
   SMOKE_INVITE_CODE,
   SMOKE_PASSWORD,
   SMOKE_STALE_INVITE_CODE,
@@ -61,6 +65,7 @@ import {
   openPageVerdict,
   refuseNonLocalStack,
   runSteps,
+  securityHeadersVerdict,
   smokePlan,
   smokeResetSql,
   smokeSeedSql,
@@ -443,6 +448,28 @@ async function main() {
             throw new Error(`tapping ${label} reloaded the page, so the mark was a fresh server render, not a moved one`);
           }
         }
+      },
+    },
+    {
+      // #207 AC 1: every response carries the baseline security headers, read off one response of
+      // each kind. Node's fetch sends no session, and `redirect: "manual"` makes the proxy's own
+      // redirect for /board the response read, rather than the /join page it points at. A built
+      // chunk's name changes with every build, so it is taken from /join's HTML.
+      name: "every kind of response carries the baseline security headers",
+      run: async () => {
+        const join = await (await fetch(url("/join"))).text();
+        const chunk = join.match(/\/_next\/static\/[^"'\s]+\.js/)?.[0];
+        if (!chunk) throw new Error("/join's HTML names no /_next/static script to read the headers off");
+        const failures = [];
+        const read = [];
+        for (const path of [...SECURITY_HEADER_PATHS, chunk]) {
+          const res = await fetch(url(path), { redirect: "manual" });
+          await res.arrayBuffer();
+          read.push(`${path} ${res.status}`);
+          failures.push(...securityHeadersVerdict({ path, status: res.status, headers: res.headers }));
+        }
+        if (failures.length) throw new Error(failures.join("; "));
+        log(`  read: ${read.join(", ")}`);
       },
     },
   ];
