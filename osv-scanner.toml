@@ -1,0 +1,131 @@
+# osv-scanner's ignore list, read by CI's `supply-chain` job (#208, security-audit 2026-09-22).
+#
+# The job fails on every known advisory in package-lock.json that is NOT listed here. An entry is
+# an advisory we know about and have not fixed yet, and every entry must carry:
+#
+#   id           the advisory, as osv.dev names it
+#   ignoreUntil  the day the ignore lapses. After it, osv-scanner counts the advisory again and the
+#                job goes red, so nothing stays ignored by being forgotten
+#   reason       what fixes it and where that fix is
+#
+# test/supply-chain.test.ts refuses an entry missing any of the three. To clear one, land the fix
+# and delete the entry. To extend one, change the date and say why in the reason.
+#
+# Recorded 2026-11-11, when the job was added: these 21 were already in the lockfile on develop,
+# and the owner chose two-week dated ignores over holding the job for the fixes. Four of the six
+# packages have a Dependabot PR open.
+
+# --- next 16.4.0 (runtime: this is what production runs). Fixed in 16.4.1, Dependabot PR #303.
+
+[[IgnoredVulns]]
+id = "GHSA-2464-fhr4-w9xw"
+ignoreUntil = 2026-11-25
+reason = "next 16.4.0, critical (Image Optimization API with SVG). Fixed in 16.4.1: Dependabot PR #303."
+
+[[IgnoredVulns]]
+id = "GHSA-673q-mjm6-r5xr"
+ignoreUntil = 2026-11-25
+reason = "next 16.4.0, critical (use cache functions returning typed arrays). Fixed in 16.4.1: Dependabot PR #303."
+
+[[IgnoredVulns]]
+id = "GHSA-p3m5-59mp-jv5r"
+ignoreUntil = 2026-11-25
+reason = "next 16.4.0, high (Server Actions denial of service). Fixed in 16.4.1: Dependabot PR #303."
+
+# --- undici 8.10.2 (dev only). Fixed in 8.12.2, Dependabot PR #302 (8.12.3).
+
+[[IgnoredVulns]]
+id = "GHSA-2m5v-pch6-74hx"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+[[IgnoredVulns]]
+id = "GHSA-4qv8-2p9j-2685"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+[[IgnoredVulns]]
+id = "GHSA-4w7w-5xrc-9h26"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+[[IgnoredVulns]]
+id = "GHSA-55wc-3pg8-jfw6"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+[[IgnoredVulns]]
+id = "GHSA-9fm3-97px-rjf6"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+[[IgnoredVulns]]
+id = "GHSA-f72v-6w45-q472"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+[[IgnoredVulns]]
+id = "GHSA-qrxm-fqhp-jwvm"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+[[IgnoredVulns]]
+id = "GHSA-xjj6-f33q-929c"
+ignoreUntil = 2026-11-25
+reason = "undici 8.10.2, dev only. Fixed in 8.12.2: Dependabot PR #302."
+
+# --- vite 8.3.1 (dev only, through vitest). Fixed in 8.3.3, Dependabot PR #301 (8.3.5).
+
+[[IgnoredVulns]]
+id = "GHSA-587h-7wmj-h5pm"
+ignoreUntil = 2026-11-25
+reason = "vite 8.3.1, dev only. Fixed in 8.3.3: Dependabot PR #301."
+
+[[IgnoredVulns]]
+id = "GHSA-698v-4r3x-3vcv"
+ignoreUntil = 2026-11-25
+reason = "vite 8.3.1, dev only. Fixed in 8.3.3: Dependabot PR #301."
+
+[[IgnoredVulns]]
+id = "GHSA-9jrq-w75r-8gcw"
+ignoreUntil = 2026-11-25
+reason = "vite 8.3.1, dev only. Fixed in 8.3.3: Dependabot PR #301."
+
+[[IgnoredVulns]]
+id = "GHSA-r825-w8mm-5pxw"
+ignoreUntil = 2026-11-25
+reason = "vite 8.3.1, dev only. Fixed in 8.3.3: Dependabot PR #301."
+
+[[IgnoredVulns]]
+id = "GHSA-rq7h-c2jc-7f22"
+ignoreUntil = 2026-11-25
+reason = "vite 8.3.1, dev only. Fixed in 8.3.3: Dependabot PR #301."
+
+[[IgnoredVulns]]
+id = "GHSA-vfpm-58rq-9qcg"
+ignoreUntil = 2026-11-25
+reason = "vite 8.3.1, dev only. Fixed in 8.3.3: Dependabot PR #301."
+
+# --- @vitest/mocker 5.0.2 (dev only). Fixed in 5.0.3, with vitest 5.0.3: Dependabot PR #298.
+
+[[IgnoredVulns]]
+id = "GHSA-qxg6-89mg-rqv8"
+ignoreUntil = 2026-11-25
+reason = "@vitest/mocker 5.0.2, dev only. Fixed in 5.0.3, which vitest 5.0.3 brings: Dependabot PR #298."
+
+[[IgnoredVulns]]
+id = "GHSA-xp26-3454-mjgp"
+ignoreUntil = 2026-11-25
+reason = "@vitest/mocker 5.0.2, dev only. Fixed in 5.0.3, which vitest 5.0.3 brings: Dependabot PR #298."
+
+# --- Two with no Dependabot PR, both reached only through the lint toolchain.
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-11-25
+reason = "minimatch 10.2.6, dev only, through typescript-eslint's typescript-estree. Fixed only in 11.0.1, a major that range does not admit, so it moves when typescript-eslint does."
+
+[[IgnoredVulns]]
+id = "GHSA-mrhx-c7xc-m3w5"
+ignoreUntil = 2026-11-25
+reason = "zod 4.4.3, dev only, through eslint-plugin-react-hooks. Fixed in 4.6.6, inside that plugin's range: an npm update of zod would take it."

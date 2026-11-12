@@ -839,6 +839,28 @@ calling `accept_answer()`, and the contact policy narrowed back to self-only.
      feature and says so only in its console.
    - **Google sign-in needs FedCM**, so `identity-credentials-get` is deliberately not on the list,
      and a test holds that.
+10. **Every pull request, and every push to `develop` or `release`, is checked for known advisories
+    and unpinned actions** (#208, security-audit 2026-09-22). A push to a feature branch with no PR
+    runs no CI at all. CI's `supply-chain` job has two steps, and each runs whatever the other did:
+    - **every action pinned to a commit** fails when a `uses:` in `.github/workflows/`, or in a
+      local action one of them calls, names a tag or a branch rather than a 40-hex commit SHA. A
+      `uses:` it cannot read, and a local action whose `action.yml` is missing, fail it too. A tag
+      can be moved to other code by whoever owns the action; a commit cannot. Write a new step as `uses: owner/repo@<sha> # vN`, taking the
+      SHA the tag points at. Dependabot moves the SHA and the comment after that. Locally:
+      `node scripts/check-action-pins.mjs`.
+    - **no known advisory in the lockfile** runs osv-scanner over `package-lock.json` and fails on
+      any advisory that `osv-scanner.toml` does not list. **It can go red on a pull request that
+      changed nothing**: osv.dev gained an advisory against something already installed. That red
+      is real, and there are two ways to clear it. Take the fix, usually the Dependabot PR for that
+      package. Or add an entry to `osv-scanner.toml` with the advisory's `id`, an `ignoreUntil`
+      date and a `reason` naming the fix. The ignore lapses on that date, and the job goes red
+      again if the fix has not landed. `test/supply-chain.test.ts` refuses an entry without all
+      three. When the job was added, 21 advisories were already in the lockfile, so all 21 are
+      listed until **2026-11-25**. Four of the six packages had a Dependabot PR open: #303 (next,
+      the only one in production code), #302, #301 and #298.
+    - **osv-scanner's version is pinned by hand** in `ci.yml`: the release tag in the download URL
+      and the binary's SHA-256. Dependabot cannot see it. To move it, take the new release's hash
+      from its `osv-scanner_SHA256SUMS` asset and change both.
 
 ## Brand
 
