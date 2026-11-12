@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [develop, release]
-# The floor: GITHUB_TOKEN can read the checkout and nothing else. Neither job writes to the repo -
+# The floor: GITHUB_TOKEN can read the checkout and nothing else. No job writes to the repo -
 # upload-artifact needs only this - so nothing is added per job (security-audit 2026-09-22, SA-3).
 permissions:
   contents: read
@@ -107,3 +107,44 @@ jobs:
           name: smoke-output
           path: ${{ runner.temp }}/smoke-output
           if-no-files-found: ignore
+
+  # Story #208, from security-audit 2026-09-22: the two checks that found that audit's mechanical
+  # findings, on every pull request and every push to develop or release, so each fix stays fixed.
+  # Dependabot's alerts arrive asynchronously, so this puts the advisory check on the PR path, and
+  # adds the pinning check Dependabot does not make. It reads the checkout and the network and writes nothing, so the
+  # workflow's `contents: read` floor is all it gets. README, Owner runbook step 10, says what a red
+  # here means and what to do about it.
+  #
+  # Each check runs whatever the other did (`!cancelled()`), so a PR that breaks both sees both.
+  supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # This job runs a binary fetched from outside the repo, so the job token is not left in
+      # .git/config for it to find.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - name: every action pinned to a commit
+        run: node scripts/check-action-pins.mjs
+      # Pinned twice: the release by its tag in the URL, and the binary by its SHA-256, because a
+      # release asset can be replaced under its tag. Dependabot cannot see this URL. To move it,
+      # take the new tag's hash from that release's osv-scanner_SHA256SUMS, change both here, and
+      # run the scan locally with the same release first.
+      - name: install osv-scanner v2.7.0
+        id: osv
+        if: ${{ !cancelled() }}
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/osv-scanner" \
+            https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64
+          echo "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b  $RUNNER_TEMP/osv-scanner" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+      # Fails on any advisory in a lockfile here that osv-scanner.toml does not list with a date.
+      # It asks osv.dev, so it can go red on a PR that changed nothing, when an advisory is
+      # published against something already installed. That red is real (README step 10).
+      - name: no known advisory in the lockfile
+        if: ${{ !cancelled() && steps.osv.outcome == 'success' }}
+        run: '"$RUNNER_TEMP/osv-scanner" scan source -r --config osv-scanner.toml .'
