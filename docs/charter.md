@@ -103,8 +103,12 @@ season. Known blind spot: matches it caused that closed by text.
 6. The crew confirms on the morning of the race; a no-show is recorded against the match.
 7. Skipper and matched crew message in **a thread per match** (in scope, owner decision; with
    message notifications and a moderation story).
-8. The board is always current: every race date of the season, every open need with its rung,
-   every match; nothing to curate.
+8. The board is always current: every upcoming race date of the season, every open need with its
+   rung, every match; nothing to curate. Race dates already sailed are one link away, in the
+   full-season view. (*Amended 2026-11-11, #214: this read "every race date of the season" until
+   the default board began at the next race. The narrowing is an owner decision at the filing
+   gate, 2026-09-22, and is recorded here so it does not later read as an erosion somebody
+   restores.*)
 9. The admin reads matches per race day.
 
 ### Non-goals

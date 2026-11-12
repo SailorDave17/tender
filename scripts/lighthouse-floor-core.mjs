@@ -201,7 +201,8 @@ export function fixturePlan({ volume = VOLUME, now = new Date() } = {}) {
 
   const dates = Array.from({ length: volume.dates }, (_, i) => ({
     id: fixtureId("race_date", i),
-    // Weekly, five of them behind the anchor so the board carries its "Already sailed" arm too.
+    // Weekly, five of them behind the anchor. Since #214 the default board hides those five and
+    // counts them in its full-season link, so that arm is on the measured page.
     startsAt: new Date(seasonAnchor + (i - 5) * WEEK).toISOString(),
     title: `Sunday Series ${i + 1}`,
   }));

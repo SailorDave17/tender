@@ -262,6 +262,16 @@ async function main() {
         // The toggle posts back to /board from /board, so waitForURL would resolve at once; wait on
         // the re-render instead.
         await p.waitForSelector(`${day}[data-available="true"]`);
+        // Since #214 the action sends the member back to the day's own row (`/board#<id>`). Only a
+        // real browser on a real server shows the fragment surviving a Server Action's redirect and
+        // a row answering to it: the unit tests hold the redirect string and the row's id apart.
+        const landed = await p
+          .waitForFunction((hash) => location.hash === hash, `#${date.id}`, { timeout: 5000 })
+          .then(() => null)
+          .catch(() => p.evaluate(() => location.pathname + location.search + location.hash));
+        if (landed !== null) throw new Error(`after the toggle the crew is at ${landed}, not at /board#${date.id}`);
+        const row = await p.evaluate((id) => document.getElementById(id)?.getAttribute("data-race-date") ?? null, date.id);
+        if (row !== date.id) throw new Error(`nothing on the board answers to #${date.id} (found ${row}), so the anchor lands nowhere`);
       },
     },
     {

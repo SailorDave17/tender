@@ -462,6 +462,24 @@ control clear of it, and, with no advice, a board with nothing reserved. It cove
 the wrapped ones (the Admin link at 320 and 360 px, 125% text) by running the real `watchDock` in
 the page, and it checks the unmeasured fallback against a one-row nav.
 
+## The board's window, 2026-11-11 — story #214
+
+**No reading was taken for this story.** It changes what the measured `/board` is, so every
+reading above this heading is of a different page from every reading after it.
+
+- The default board lists only the dates still to sail. The fixture puts five of its 45 dates
+  behind the anchor, so the measured page now renders **40 day rows**, plus one line above the
+  list, "Show the whole season (5 already sailed)".
+- `summary.json` still records `volume.dates: 45`. That is the fixture's size, not the number of
+  rows on the page.
+- The five rows that left are the lightest on the page: every fixture post sits on an upcoming
+  date, so each lost a heading, a count and a disabled button. *Reasoned, not measured*: the lever
+  table above prices a much larger cut (45 dates to 10) at no change under `simulate` and at seven
+  points under `devtools`, so this one should move the score by nothing or by about a point.
+- The disabled "Already sailed" button is no longer on the measured page. Lighthouse's
+  accessibility reading of `/board` therefore no longer covers it. `test/surfaces.test.ts` reads
+  that button in the full-season view, for contrast and under axe.
+
 ## Running it
 
 ```

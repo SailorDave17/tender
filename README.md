@@ -306,7 +306,8 @@ Everything that decides an outcome is in `scripts/lighthouse-floor-core.mjs`, ex
 
 **CI's `smoke` job drives the core path through a real browser on every pull request** (#45, ADR
 006's "Playwright smoke later"): two people seeded pre-confirmed with `auth.admin.createUser`, each
-signing in through `/join`; the crew marks a race day on `/board`; the skipper posts a need; the crew
+signing in through `/join`; the crew marks a race day on `/board` and, since #214, must come back
+to that day's own row (`/board#<id>`, with a row answering to the id); the skipper posts a need; the crew
 answers "I can"; the skipper accepts. It then checks that the crew's phone reached the skipper
 **only after** the acceptance: it is absent from the skipper's page before, raw HTML and flight
 data included, and present after in the same read and in the contact panel. Before any of that,

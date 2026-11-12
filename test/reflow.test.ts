@@ -18,7 +18,7 @@ import { AVAILABILITY, IDS, MATCHES, ME, NOW, PEOPLE, POSTS, RACE_DATES, TABLES,
  * Story #251 — every screen fits any width, text size and zoom without sideways scrolling (WCAG
  * 1.4.4 resize text, 1.4.10 reflow, 2.4.11 focus not obscured).
  *
- * EVERY PAGE ROUTE ON DISK, rendered as `test/surfaces.test.ts` renders its nine: the real Server
+ * EVERY PAGE ROUTE ON DISK, rendered as `test/surfaces.test.ts` renders its own: the real Server
  * Component through the real root layout, the real stylesheet inlined, read in the machine's Chrome
  * (`playwright-core`, `channel: "chrome"`). What is faked is the database (`test/surfaces.ts`'s
  * world, grown here to reach the admin screens), the session, the club row and the Server Actions,
@@ -183,6 +183,7 @@ type Render = {
 };
 
 const sp = <T,>(v: T) => Promise.resolve(v);
+const FULL_SEASON_REFUSED = "the full season, a refusal in its row";
 
 const RENDERS: Render[] = [
   { route: "/", person: null, render: async () => (await import("@/app/page")).default({ searchParams: sp({}) }) },
@@ -213,6 +214,13 @@ const RENDERS: Render[] = [
     render: async () => (await import("@/app/admin/threads/[id]/page")).default({ params: sp({ id: MATCH.id }), searchParams: sp({}) }),
   },
   { route: "/board", person: ADA, render: async () => (await import("@/app/board/page")).default({ searchParams: sp({}) }) },
+  {
+    // #214: the sailed day's row, the way-back link and a refusal inside a row render only here.
+    route: "/board",
+    variant: FULL_SEASON_REFUSED,
+    person: ADA,
+    render: async () => (await import("@/app/board/page")).default({ searchParams: sp({ view: "season", error: "past", on: DATES[0].id }) }),
+  },
   {
     route: "/board",
     variant: "the install sheet up",
@@ -492,6 +500,20 @@ describe("the sweep covers every page route on disk (#251 AC 1)", () => {
   it("every render rendered", () => {
     expect([...renderErrors.entries()].map(([name, e]) => `${name}: ${e.split("\n")[0]}`)).toEqual([]);
     expect(docs.size).toBe(RENDERS.length);
+  });
+
+  it("the board's full-season render is the full season, with its refusal in a row (#214)", () => {
+    // Without this, a drifted view value, clock or date id in THIS file would have the sweep read
+    // the default board twice, every test green, and the three things below unmeasured.
+    const doc = docs.get(`/board (${FULL_SEASON_REFUSED})`)!;
+    expect(doc, "the render is keyed as the sweep keys it").toBeDefined();
+    expect(doc).toMatch(/<li\b[^>]*\bdata-past="true"/);
+    expect(doc).toMatch(/<a\b[^>]*\bdata-upcoming-only\b/);
+    expect(doc).toMatch(/<p role="alert" data-day-refusal/);
+    // Control: the plain board render holds none of the three. Matched as markup, because each
+    // doc carries the whole stylesheet inline and the stylesheet names `[data-day-refusal]`.
+    const plain = docs.get("/board")!;
+    expect(plain).not.toMatch(/<li\b[^>]*\bdata-past="true"|<a\b[^>]*\bdata-upcoming-only\b|<p role="alert" data-day-refusal/);
   });
 });
 
