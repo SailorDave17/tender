@@ -15,6 +15,7 @@
     "vapid:keys": "node scripts/vapid-keys.mjs",
     "icons": "node scripts/render-icons.mjs",
     "perf:floor": "node scripts/lighthouse-floor.mjs",
+    "perf:field": "node scripts/field-vitals.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {

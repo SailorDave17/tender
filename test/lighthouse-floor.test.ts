@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   BENCHMARK_BAND,
+  SAILED_DATES,
   buildSummary,
   lighthouseArgs,
   parseArgs,
@@ -160,6 +162,90 @@ describe("fixturePlan", () => {
     for (const p of plan.people) expect(p.id).toMatch(UUID);
     // Two kinds at the same index must not collide — a person id and a post id are both #3.
     expect(fixtureId("person", 3)).not.toBe(fixtureId("post", 3));
+  });
+});
+
+/**
+ * Story #215 AC 1. `perf:field` loads two boards that must differ in their length and in nothing
+ * else, so the override is held to exactly that: 15 dates, the same people, boats, posts, matches,
+ * availability rows and answers, and a default plan that has not moved by a byte.
+ */
+describe("fixturePlan with a date-count override (#215)", () => {
+  const now = new Date("2026-09-20T12:00:00Z");
+  const base = fixturePlan({ now });
+  const short = fixturePlan({ now, dates: 15 });
+
+  it("returns 15 dates, five sailed and ten upcoming, whenever it is run", () => {
+    for (const at of [now, new Date("2027-03-01T12:00:00Z")]) {
+      const p = fixturePlan({ now: at, dates: 15 });
+      expect(p.dates).toHaveLength(15);
+      expect(p.dates.filter((d) => new Date(d.startsAt) < at)).toHaveLength(SAILED_DATES);
+      expect(p.dates.filter((d) => new Date(d.startsAt) >= at)).toHaveLength(10);
+    }
+    expect(SAILED_DATES).toBe(5);
+  });
+
+  it("leaves every other volume unchanged", () => {
+    // Literals, as in the default plan's test above: asserting against VOLUME pins nothing.
+    expect(short.people).toHaveLength(80);
+    expect(short.boats).toHaveLength(30);
+    expect(short.posts.filter((p) => !p.matched)).toHaveLength(20);
+    expect(short.posts.filter((p) => p.matched)).toHaveLength(30);
+    expect(short.matches).toHaveLength(30);
+    expect(short.availability).toHaveLength(1125);
+    expect(short.answers).toHaveLength(75);
+    // And the rows that do not name a date are the very same rows.
+    expect(short.people).toEqual(base.people);
+    expect(short.boats).toEqual(base.boats);
+    expect(short.matches).toEqual(base.matches);
+    expect(short.answers).toEqual(base.answers);
+    expect(short.posts.map(({ raceDateId: _date, ...rest }) => rest)).toEqual(
+      base.posts.map(({ raceDateId: _date, ...rest }) => rest),
+    );
+  });
+
+  it("spreads the posts over the ten upcoming dates and puts none on a sailed one", () => {
+    const upcoming = short.dates.slice(SAILED_DATES).map((d) => d.id);
+    const perDate = upcoming.map((id) => short.posts.filter((p) => p.raceDateId === id).length);
+    expect(perDate).toEqual([5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
+    expect(perDate.reduce((a, b) => a + b, 0)).toBe(50);
+  });
+
+  // 0006's `unique (boat_id, race_date_id)`. With ten upcoming dates and thirty boats the two
+  // strides meet: post 30 is boat 0 on the first upcoming date, and so was post 0. Before #215 a
+  // 15-date volume gave 30 distinct pairs for 50 posts and the seed died on the constraint.
+  it("gives every post a distinct (boat, race_date) pair where the strides collide", () => {
+    const pairs = new Set(short.posts.map((p) => `${p.boatId}|${p.raceDateId}`));
+    expect(pairs.size).toBe(50);
+    expect(short.posts[0].boatId).toBe(short.posts[30].boatId);
+    expect(short.posts[0].raceDateId).not.toBe(short.posts[30].raceDateId);
+  });
+
+  it("measures the same viewer and the same post on both boards", () => {
+    expect(measuredViewer(short)).toEqual(measuredViewer(base));
+    expect(measuredPost(short).id).toBe(measuredPost(base).id);
+  });
+
+  // The default plan's bytes, taken from `develop` before the override was written (the digest of
+  // `JSON.stringify(fixturePlan({ now }))` at the instant above). Every perf:floor reading since
+  // #44 was of this plan, so a change to it makes them readings of some other board.
+  it("leaves the default 45-date plan exactly as it was", () => {
+    const digest = createHash("sha256").update(JSON.stringify(base)).digest("hex");
+    expect(digest).toBe("fd521b996c0e2c60eeb59dfe300d5fad69282087cb52e896a299097ff8cc299a");
+    expect(fixturePlan({ now, dates: 45 })).toEqual(base);
+    expect(fixturePlan({ now, volume: VOLUME })).toEqual(base);
+  });
+
+  it("refuses a count that leaves no upcoming date, or is not a whole number", () => {
+    expect(() => fixturePlan({ now, dates: 5 })).toThrow(/more than 5 dates/);
+    expect(() => fixturePlan({ now, dates: 0 })).toThrow(/more than 5 dates/);
+    expect(() => fixturePlan({ now, dates: 15.5 })).toThrow(/more than 5 dates/);
+  });
+
+  // 50 posts on 30 boats is two posts on some boats, and a boat cannot have two posts on one date.
+  it("refuses a count with too few upcoming dates for one boat's posts", () => {
+    expect(() => fixturePlan({ now, dates: 6 })).toThrow(/too few for 2 posts on one boat/);
+    expect(fixturePlan({ now, dates: 7 }).posts).toHaveLength(50);
   });
 });
 

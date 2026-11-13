@@ -5,6 +5,8 @@ priced against them. Story #44 took the local reading; story #185 took the deplo
 **jump to [The deployed reading, 2026-09-22](#the-deployed-reading-2026-09-22--story-185)**.
 Story #216 added a `devtools` throttling mode and took the repo's first reading with it,
 [a different instrument from every other row here](#the-devtools-reading-2026-09-22--story-216).
+Story #215 asked which metrics a member's phone can report see the board's hydration cost at all:
+[Which field metrics can see the cost](#which-field-metrics-can-see-the-cost-2026-11-12--story-215).
 
 **The floors price levers; they do not decide the framework.** The performance floor of 80 began
 as ADR 002's lab kill condition, which fired on #185's deployed reading. On 2026-09-22 the owner
@@ -480,6 +482,232 @@ reading above this heading is of a different page from every reading after it.
   accessibility reading of `/board` therefore no longer covers it. `test/surfaces.test.ts` reads
   that button in the full-season view, for contrast and under axe.
 
+## Which field metrics can see the cost, 2026-11-12 — story #215
+
+**A different instrument again, and a different question.** ADR 002's framework trigger is field
+data from members' phones, against thresholds written before any data exists. The cost that fired
+the lab condition is hydration, which Lighthouse reads as Total Blocking Time, and no phone reports
+TBT. So before a threshold names a metric, this asks which metrics a phone *can* report move at all
+when the board gets shorter.
+
+`npm run perf:field` (see *Running it*) loads `/board` in Chrome with the CPU slowed 4×, taps the
+first day's availability toggle at a fixed time after navigation start, and reads what Next's own
+`web-vitals` attribution build reports: LCP, INP with its three phases, and the blocking time of
+long animation frames (LoAF). It does that on two boards that differ only in their length:
+
+| board | fixture dates | day rows on the page | elements | hydrated at 4× | long-frame blocking, unslowed | at 4× |
+|---|---|---|---|---|---|---|
+| larger | 45 (5 sailed) | **40** | 681 | 677 ms | 0 ms | 208 ms |
+| smaller | 15 (5 sailed) | **10** | 351 | 657 ms | 0 ms | 168 ms |
+
+Both carry the same 80 people, 30 boats, 50 posts, 30 matches and 75 answers, and 1,126 and 1,125
+availability rows. Unslowed, either board hydrates at about 170 ms, or at about 420 ms: single
+loads come in those two groups, on both boards, and none shows a long frame.
+
+The issue was written when the board rendered all 45 dates. Since #214 the default board hides the
+five already sailed, so the arms are 40 rows against 10 (owner decision at pickup: measure the
+page a member lands on, not the full-season view).
+
+**A metric is said to see the cost only if the larger board's median is above the smaller board's
+by more than the run-to-run spread** (largest run minus smallest) of whichever board's runs were
+further apart. Five runs of each board at each tap time, interleaved. Every other metric is
+labelled as unable to see it.
+
+### The finding
+
+**At 4× on this machine, no metric tells the two boards apart.** In the pass of record every
+metric is labelled as unable to see the cost. The command was run five times, and the one metric
+that came close crossed the bar in three of them and missed it in two, the pass of record among
+them.
+
+- **LCP cannot see it**, at either tap time, in any pass.
+- **INP sees hydration, and cannot tell the boards apart.** A tap during hydration read 176–320 ms
+  on either board, and a tap after it read 8–48 ms on either board. So INP moves by about 200 ms
+  when a member taps while the page is still hydrating, whichever board it is. Between the boards
+  its median differed by much less than that, and by less than the spread in most passes.
+- **A tap after hydration separates nothing.** INP's delta was 0 ms in all five passes.
+- **LoAF blocking time is the nearest thing to a metric that sees it**: 39–59 ms more on the larger
+  board with the early tap, above the spread in three passes of five. Only Chromium reports it, so
+  no iPhone and no Firefox would.
+- **At 8× the gap grows and the answer does not change.** LoAF blocking is 93–167 ms worse on the
+  larger board there, and clears the spread in three of six readings. INP and LCP still do not
+  separate the boards.
+
+**So the thresholds question goes back to the owner, and no metric is picked here.** Of the three
+a threshold could name, one cannot see the cost at all, one sees hydration but not the board's
+length, and the one that comes closest is unreliable at five runs and blind on every iPhone.
+
+### The pass of record
+
+Taken 2026-11-12 21:05–21:08 EST against `next build` + `next start` of `develop` at `769be42`
+(this story changes no app code), on localhost with the local stack beside it. Chrome 157, the
+viewport of Lighthouse's mobile preset (412 × 823), CPU slowed 4× with
+`Emulation.setCPUThrottlingRate`, network not throttled, cold cache every run. Machine-readable in
+`docs/performance-floor/2026-11-12/field-vitals.json`. Median, then every run. Times in ms.
+
+**Tap at 450 ms**, which landed before hydration finished in 10 of 10 runs (hydration finished at
+711 ms and 670 ms, medians). INP's largest phase was input delay in all ten.
+
+| metric | 45 dates (40 rows) | 15 dates (10 rows) | delta | spread | label |
+|---|---|---|---|---|---|
+| LCP | 200 (220 / 196 / 188 / 200 / 616) | 184 (184 / 172 / 180 / 192 / 188) | 16 | 428 | cannot see it |
+| INP | 248 (272 / 248 / 216 / 240 / 288) | 208 (208 / 208 / 216 / 192 / 216) | 40 | 72 | cannot see it |
+| INP input delay | 194 (252 / 189 / 194 / 180 / 271) | 158 (183 / 163 / 158 / 141 / 155) | 36 | 91 | cannot see it |
+| INP processing | 16 (16 / 55 / 14 / 60 / 16) | 47 (18 / 40 / 52 / 47 / 60) | −32 | 46 | cannot see it |
+| INP presentation delay | 4 (4 / 4 / 8 / 0 / 2) | 5 (7 / 5 / 6 / 4 / 2) | −1 | 8 | cannot see it |
+| LoAF blocking, whole run | 207 (207 / 207 / 180 / 209 / 251) | 169 (182 / 139 / 169 / 155 / 192) | 39 | 71 | cannot see it |
+| LoAF blocking, before the tap | 178 (106 / 185 / 153 / 178 / 191) | 154 (154 / 126 / 155 / 140 / 169) | 24 | 85 | cannot see it |
+| FCP | 200 (220 / 196 / 188 / 200 / 204) | 184 (184 / 172 / 180 / 192 / 188) | 16 | 32 | cannot see it |
+| TTFB | 38 | 39 | −1 | 6 | cannot see it |
+| CLS | 0.000 | 0.000 | 0.000 | 0.000 | cannot see it |
+
+**Tap at 4,000 ms**, after hydration in 10 of 10 runs.
+
+| metric | 45 dates (40 rows) | 15 dates (10 rows) | delta | spread | label |
+|---|---|---|---|---|---|
+| LCP | 608 (608 / 604 / 620 / 604 / 636) | 584 (600 / 656 / 584 / 580 / 576) | 24 | 80 | cannot see it |
+| INP | 40 (40 / 40 / 40 / 40 / 40) | 40 (8 / 40 / 40 / 40 / 40) | 0 | 32 | cannot see it |
+| INP input delay | 13 (13 / 13 / 13 / 13 / 13) | 13 (6 / 13 / 13 / 13 / 13) | 0 | 8 | cannot see it |
+| INP processing | 18 (19 / 16 / 21 / 18 / 18) | 17 (0 / 16 / 17 / 17 / 19) | 2 | 19 | cannot see it |
+| INP presentation delay | 9 (8 / 11 / 7 / 9 / 9) | 10 (2 / 11 / 10 / 11 / 7) | −2 | 9 | cannot see it |
+| LoAF blocking, whole run | 214 (185 / 190 / 225 / 214 / 243) | 168 (189 / 164 / 169 / 167 / 168) | 47 | 58 | cannot see it |
+| LoAF blocking, before the tap | 156 (145 / 151 / 178 / 156 / 196) | 146 (166 / 138 / 148 / 146 / 146) | 10 | 52 | cannot see it |
+| FCP | 184 (184 / 192 / 180 / 184 / 196) | 176 (176 / 176 / 172 / 184 / 176) | 8 | 16 | cannot see it |
+| TTFB | 39 | 38 | 2 | 5 | cannot see it |
+| CLS | 0.000 | 0.000 | 0.000 | 0.000 | cannot see it |
+
+The tap took the day back as a client-side transition in all 20 runs. None was a plain form post,
+so React was already listening at 450 ms and held the tap until it had hydrated the form.
+
+### The labels did not hold from pass to pass
+
+The command was run five times that evening, 20 runs each, on the same build, between 20:44 and
+21:08 EST. The pass of record is the fifth: the only one taken with the command exactly as
+committed, and named as the record before it ran. The earlier passes measure a run the same way.
+What changed between them is what the command checks around the runs (how it proves the CPU was
+slowed, and how it reports what saw the cost). Passes 2 to 4 are committed beside the record as
+`field-vitals-pass-2.json` to `-pass-4.json`; their `boards` entries carry an older form of the
+unslowed reading. Pass 1 predates the summary's shape and is not committed. Each cell is the delta
+over the spread, bold where the metric was labelled as seeing the cost.
+
+| metric, tap at 450 ms | pass 1 | pass 2 | pass 3 | pass 4 | pass 5 (record) | saw it |
+|---|---|---|---|---|---|---|
+| INP | 32 / 96 | **80 / 56** | 56 / 64 | 72 / 72 | 40 / 72 | 1 of 5 |
+| INP input delay | 25 / 80 | **84 / 72** | 20 / 98 | 26 / 93 | 36 / 91 | 1 of 5 |
+| LoAF blocking, whole run | **56 / 43** | **59 / 52** | 55 / 76 | **43 / 42** | 39 / 71 | 3 of 5 |
+| LoAF blocking, before the tap | 49 / 54 | **52 / 33** | 33 / 82 | 15 / 82 | 24 / 85 | 1 of 5 |
+| LCP | −8 / 36 | 16 / 464 | 16 / 440 | 32 / 432 | 16 / 428 | 0 of 5 |
+
+With the tap at 4,000 ms no metric saw the cost in any pass: INP's delta was 0 in all five, and
+LoAF blocking's was 39, 22, 32, 58 and 47 against spreads of 64, 70, 51, 59 and 58.
+
+The medians point the same way every time: the larger board is 39–59 ms worse on LoAF blocking and
+32–80 ms worse on an early tap's INP. What changes from pass to pass is the spread, which is as
+large as the gap. A rule that needs the gap to clear the spread therefore flips with five runs. That
+is the result, not a fault in the rule: on this machine the two boards are about 50 ms of main-thread
+time apart, and one run differs from the next by that much.
+
+### The same boards at 8×, three passes
+
+A slower phone stretches hydration, so the command was run three more times at 8×, between 21:08
+and 21:24 EST, with the taps moved to match (`--cpu-rate 8 --tap-at 1200 --tap-at 8000 --settle
+6000`). The page hydrated at about 1.6 s and 1.5 s there, and the early tap landed before that in
+30 of 30 runs. Machine-readable in `field-vitals-8x.json`, `-8x-pass-2.json` and
+`-8x-pass-3.json`. The first pass, as median and range:
+
+| metric | tap | 45 dates (40 rows) | 15 dates (10 rows) | delta | spread | label |
+|---|---|---|---|---|---|---|
+| LoAF blocking, whole run | 1,200 ms | 967 (917–1,030) | 826 (746–869) | 141 | 123 | **sees the cost** |
+| LoAF blocking, whole run | 8,000 ms | 807 (784–872) | 673 (654–724) | 135 | 87 | **sees the cost** |
+| LoAF blocking, before the tap | 8,000 ms | 591 (571–607) | 533 (527–570) | 59 | 42 | **sees the cost** |
+| INP | 1,200 ms | 408 (360–560) | 320 (272–384) | 88 | 200 | cannot see it |
+| INP | 8,000 ms | 80 (72–80) | 80 (72–80) | 0 | 8 | cannot see it |
+| LCP | 1,200 ms | 1,252 (1,240–1,420) | 1,168 (428–1,228) | 84 | 800 | cannot see it |
+| LCP | 8,000 ms | 1,272 (1,248–1,316) | 1,192 (1,176–1,260) | 80 | 84 | cannot see it |
+
+And all three, as delta over spread:
+
+| metric | tap | pass 1 | pass 2 | pass 3 | saw it |
+|---|---|---|---|---|---|
+| LoAF blocking, whole run | 1,200 ms | **141 / 123** | 149 / 171 | 167 / 174 | 1 of 3 |
+| LoAF blocking, whole run | 8,000 ms | **135 / 87** | 93 / 146 | **107 / 83** | 2 of 3 |
+| LoAF blocking, before the tap | 1,200 ms | 49 / 115 | 84 / 129 | 58 / 137 | 0 of 3 |
+| LoAF blocking, before the tap | 8,000 ms | **59 / 42** | 21 / 153 | 31 / 68 | 1 of 3 |
+| INP | 1,200 ms | 88 / 200 | 64 / 112 | 104 / 184 | 0 of 3 |
+| INP | 8,000 ms | 0 / 8 | 16 / 24 | 8 / 40 | 0 of 3 |
+| LCP | 1,200 ms | 84 / 800 | 56 / 160 | 116 / 168 | 0 of 3 |
+| LCP | 8,000 ms | 80 / 84 | 64 / 200 | 68 / 80 | 0 of 3 |
+
+So at twice the slowdown the gap in long-frame blocking grows to 93–167 ms, and it still clears
+the spread in only three of its six readings. INP and LCP do not separate the boards in any. INP
+read 272–568 ms for a tap during hydration and 72–120 ms after it, on either board, the same shape
+as at 4×. Its largest phase was processing in all thirty early taps, not input delay as at 4×. In
+one run of sixty the library reported no element for the tap, though the tap had taken the day
+back; the command counts such a run on that evidence.
+
+### Why each metric reads as it does
+
+- **LCP is painted before hydration matters.** With the late tap the board's content painted at
+  608–628 ms on the larger board and 584–620 ms on the smaller (medians of the five passes).
+  *Reasoned*: LCP is the server's HTML being painted, and React hydrating that HTML afterwards does
+  not repaint it.
+- **An early tap cuts LCP short.** LCP stops being measured at the first interaction. With the tap
+  at 450 ms it read 172–224 ms in most runs, the shell's header, and 616–648 ms in the five runs
+  of fifty where the content painted before the tap was handled. That is where the 428–464 ms
+  spreads above come from. A member who taps early therefore reports a *lower* LCP, which is one more reason
+  it cannot carry this threshold.
+- **INP is the wait for the main thread.** With the early tap its largest phase was input delay in
+  every run of every pass: the tap arrives, the page is busy hydrating, and the handler runs when it
+  is done. The two boards finish hydrating about 40–70 ms apart (medians of 702–735 ms against
+  646–681 ms), and that is the most INP could show.
+- **INP's `loadState` does not mark these taps.** It read `complete` on all fifty early taps: on
+  localhost the page's load event fires before hydration ends. A reporter could not use it to pick
+  out taps made during hydration here.
+- **Most of the hydration cost is not the rows.** Unslowed, neither board shows a long frame at
+  all. At 4× both show 160–240 ms of LoAF blocking, and the 30 extra rows add about 50 ms of it. *Reasoned*: the rest is the framework's own start-up, which both boards pay and
+  this comparison therefore cannot see. ADR 002's stay decision reads the same way from the lab side
+  (a near-empty board still read 77).
+
+### What this cannot tell you
+
+- **It is this machine slowed 4×, not a phone.** The page hydrates in about 170 ms unslowed here,
+  which is a fast desktop. Lighthouse read this host's `benchmarkIndex` at **3,474** that evening
+  (one `perf:floor --throttling-method devtools` run at 21:15 EST, taken to check that command
+  after this story moved its stack helpers), against the 920–1,680 band the 4× multiplier is
+  calibrated for. *Reasoned*: a host about twice as fast as the band's top edge, slowed 8×, is
+  roughly a band-edge host slowed 4×. So the 8× passes above are nearer to what "4×" is meant to
+  describe than the 4× passes are, and a mid-range phone is slower still.
+- **The network is not throttled.** Lighthouse's `devtools` mode throttles both, and read 0.71 s of
+  TBT on this board on this host (#216). These numbers are not comparable with that row.
+- **Nobody taps at 450 ms.** The early tap is a probe of what INP reads when an interaction lands in
+  hydration, not a model of a member. On this machine that window closes at about 0.7 s.
+- **It is Chrome.** The support table below says which of these a member's phone reports at all.
+- **The instrument listens from the first byte.** A real reporter mounted by React starts after
+  hydration and sees earlier entries only through the browser's buffer, so it can see no more than
+  this and may see less.
+- **Both boards read 1,000 availability rows, not 1,125.** The API caps one read at 1,000 rows
+  (`max_rows`; *measured* on the local stack: 1,000 of 1,126 returned, 67 of 75 people). It is the
+  same on both arms, so the comparison stands, but it is a defect in the board at this volume and is
+  noted here because the command has to work around it (it writes the viewer's row first).
+
+### Browser support, checked 2026-11-12
+
+From MDN's browser-compat-data (the data behind MDN's compatibility tables), read that day, and
+web.dev's Baseline announcement of 2025-12-17.
+
+| metric | API | Android Chrome | iOS Safari | Firefox Android | source |
+|---|---|---|---|---|---|
+| LCP | `LargestContentfulPaint` | supported (77) | **partial**: supported from Safari 26.2 (2025-12-12), unsupported before | supported (122) | [MDN data](https://github.com/mdn/browser-compat-data/blob/main/api/LargestContentfulPaint.json) |
+| INP | Event Timing with `interactionId` | supported (96) | **partial**: supported from Safari 26.2, unsupported before | **partial**: supported from 144; 89–143 have Event Timing without `interactionId` | [MDN data](https://github.com/mdn/browser-compat-data/blob/main/api/PerformanceEventTiming.json) |
+| LoAF blocking | `PerformanceLongAnimationFrameTiming` | supported (123) | **unsupported** | **unsupported** | [MDN data](https://github.com/mdn/browser-compat-data/blob/main/api/PerformanceLongAnimationFrameTiming.json) |
+
+Two things the table needs beside it, both from
+[web.dev](https://web.dev/blog/lcp-and-inp-are-now-baseline-newly-available): every browser on iOS
+is WebKit, Chrome included, so an iPhone below iOS 26.2 reports neither LCP nor INP whatever the
+member installed; and Safari and Firefox time LCP and INP to a slightly earlier point in the frame
+than Chrome does, a few milliseconds apart. *Not measured here*: none of these numbers was taken on
+Safari or Firefox.
+
 ## Running it
 
 ```
@@ -598,3 +826,49 @@ present:
 `docs/performance-floor/summary.json` is the machine-readable form of the table above, written by
 the same run. The full Lighthouse reports are ~3.7 MB for one pass and are deliberately not
 committed; `--out <dir>` is where they land.
+
+### Which field metrics see the cost: `perf:field` (#215)
+
+Steps 1 and 2 as above (a local stack, and a build made and served with its keys). Then:
+
+```
+STACK_ANON_KEY=<anon> STACK_SERVICE_ROLE_KEY=<service> \
+  npm run perf:field -- --db-container supabase_db_<dir> --base-url http://localhost:3100
+```
+
+It needs no `perf:floor` run first: it mints the same 80 people and seeds its own two boards. It
+takes about four minutes for the default five rounds, and prints both boards' runs side by side
+with a label per metric. `--out <dir>` (default `field-vitals`) receives `summary.json`, which is
+what gets committed, and `runs.json`, every run's own record.
+
+- `--runs <n>`: rounds, each one run of every board at every tap time. **Below five nothing is
+  labelled** and the command exits 1, so a short run cannot report that no metric saw the cost.
+- `--tap-at <ms>`, repeatable: when the toggle is tapped, from navigation start. The defaults, 450
+  and 4,000, are tuned to the owner's machine at 4×: the first lands during hydration and the
+  second after it. Each run records where its own tap fell, so read the "before hydration / after
+  hydration" counts in the report before reading anything else.
+- `--cpu-rate <n>` (default 4) and `--settle <ms>` (default 4,000, the quiet time after the tap).
+  At another rate the tap times have to move with it: at 8× this page hydrates at about 1.5 s, and
+  the passes above used `--cpu-rate 8 --tap-at 1200 --tap-at 8000 --settle 6000`.
+
+Four guards, each proven able to refuse in `test/field-vitals.test.ts`:
+
+- It **refuses a Supabase URL that is not loopback**, before minting or writing anything. Every run
+  starts with `truncate table public.race_date cascade`, which empties the race dates and every
+  table hanging off them (posts, availability, matches, answers, suggestions, messages, the
+  notification log), so that every run reads the same rows in the same order.
+- It **refuses a run that measured something else**: a board with the wrong number of day rows, a
+  page that reported no LCP or no interaction, a tap that landed on anything but the first day's
+  toggle, or a tap that did not take the day back. The command stops there, and the runs already
+  taken are in `runs.json`.
+- It **refuses a run set whose CPU was not visibly slowed.** Each board is also loaded three times
+  unslowed, and the slowed runs' long frames must block for more than 1.5 times as long as those
+  loads' did. A slowdown that silently failed to apply would otherwise read as "cannot see it".
+- It **labels nothing from fewer than five runs** of either board.
+
+Two things it does that a reader should know before trusting a number. **Every run reseeds**, and
+the seed writes the viewer's availability for the tapped day *first*: the board's availability
+read stops at 1,000 rows, and a row written after the other 1,125 is never shown. And **the
+`web-vitals` build is Next's own compiled copy**, injected before the page's scripts, because
+tender has no reporter yet. `test/field-vitals.test.ts` loads that file from `node_modules`, so an
+upgrade of Next that moves or reshapes it reddens there.

@@ -1,0 +1,904 @@
+{
+  "takenAt": "2026-11-13T02:12:45.698Z",
+  "target": {
+    "baseUrl": "http://localhost:3215",
+    "route": "/board",
+    "seeded": true
+  },
+  "instrument": {
+    "command": "perf:field",
+    "browser": "Chrome 157.0.8103.51",
+    "cpuRate": 8,
+    "networkThrottling": "none",
+    "viewport": {
+      "width": 412,
+      "height": 823,
+      "deviceScaleFactor": 1.75
+    },
+    "webVitals": "next@16.4.1 dist/compiled/web-vitals-attribution",
+    "settleMs": 6000,
+    "runsPerCell": 5,
+    "metrics": [
+      "lcp",
+      "inp",
+      "inpInputDelay",
+      "inpProcessingDuration",
+      "inpPresentationDelay",
+      "loafBlocking",
+      "loafBlockingBeforeTap",
+      "fcp",
+      "ttfb",
+      "cls"
+    ]
+  },
+  "boards": [
+    {
+      "name": "45 dates",
+      "dates": 45,
+      "rows": 40,
+      "elements": 681,
+      "hydratedAt": {
+        "unslowed": 172.09999999962747,
+        "slowed": 1595.7999999998137
+      },
+      "loafBlocking": {
+        "unslowed": 0,
+        "slowed": 894.05
+      },
+      "people": 80,
+      "posts": 50,
+      "matches": 30,
+      "availability": 1126
+    },
+    {
+      "name": "15 dates",
+      "dates": 15,
+      "rows": 10,
+      "elements": 351,
+      "hydratedAt": {
+        "unslowed": 158.20000000018626,
+        "slowed": 1477.25
+      },
+      "loafBlocking": {
+        "unslowed": 0,
+        "slowed": 734.5
+      },
+      "people": 80,
+      "posts": 50,
+      "matches": 30,
+      "availability": 1125
+    }
+  ],
+  "rule": "a metric sees the cost only if (larger board's median - smaller board's median) > the larger of the two boards' run-to-run spreads (max - min)",
+  "conditions": [
+    {
+      "tapAt": 1200,
+      "arms": [
+        {
+          "runs": 5,
+          "metrics": {
+            "lcp": {
+              "median": 1252,
+              "spread": 180,
+              "values": [
+                1256,
+                1252,
+                1248,
+                1420,
+                1240
+              ]
+            },
+            "inp": {
+              "median": 408,
+              "spread": 200,
+              "values": [
+                392,
+                408,
+                424,
+                560,
+                360
+              ]
+            },
+            "inpInputDelay": {
+              "median": 86.80000000074506,
+              "spread": 188.5,
+              "values": [
+                89.80000000074506,
+                86.80000000074506,
+                85,
+                253,
+                64.5
+              ]
+            },
+            "inpProcessingDuration": {
+              "median": 302.40000000037253,
+              "spread": 36.19999999925494,
+              "values": [
+                295,
+                308.69999999925494,
+                326.59999999962747,
+                302.40000000037253,
+                290.40000000037253
+              ]
+            },
+            "inpPresentationDelay": {
+              "median": 7.199999999254942,
+              "spread": 7.900000000372529,
+              "values": [
+                7.199999999254942,
+                12.5,
+                12.400000000372529,
+                4.599999999627471,
+                5.099999999627471
+              ]
+            },
+            "loafBlocking": {
+              "median": 966.9000000000001,
+              "spread": 113.80000000000007,
+              "values": [
+                950.5,
+                975.4,
+                916.6,
+                1030.4,
+                966.9000000000001
+              ]
+            },
+            "loafBlockingBeforeTap": {
+              "median": 582.8000000000001,
+              "spread": 115,
+              "values": [
+                593,
+                564.9,
+                555.3,
+                670.3,
+                582.8000000000001
+              ]
+            },
+            "fcp": {
+              "median": 376,
+              "spread": 164,
+              "values": [
+                376,
+                236,
+                400,
+                388,
+                288
+              ]
+            },
+            "ttfb": {
+              "median": 36.299999999813735,
+              "spread": 13.099999999627471,
+              "values": [
+                28,
+                33.90000000037253,
+                41.09999999962747,
+                38.39999999944121,
+                36.299999999813735
+              ]
+            },
+            "cls": {
+              "median": 0,
+              "spread": 0,
+              "values": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "tapAt": {
+            "median": 1204.199999999255,
+            "values": [
+              1204.199999999255,
+              1215.2999999998137,
+              1202.7000000001863,
+              1202.199999999255,
+              1215.2999999998137
+            ]
+          },
+          "hydratedAt": {
+            "median": 1625.9000000003725,
+            "values": [
+              1597.5,
+              1625.9000000003725,
+              1630,
+              1782,
+              1594.5999999996275
+            ]
+          },
+          "tapPhase": {
+            "before hydration": 5
+          },
+          "outcome": {
+            "client transition": 5
+          },
+          "inpPhase": {
+            "processing": 5
+          },
+          "inpLoadState": {
+            "complete": 3,
+            "dom-content-loaded": 2
+          }
+        },
+        {
+          "runs": 5,
+          "metrics": {
+            "lcp": {
+              "median": 1168,
+              "spread": 800,
+              "values": [
+                428,
+                1228,
+                1164,
+                1176,
+                1168
+              ]
+            },
+            "inp": {
+              "median": 320,
+              "spread": 112,
+              "values": [
+                384,
+                344,
+                272,
+                320,
+                304
+              ]
+            },
+            "inpInputDelay": {
+              "median": 42.90000000037253,
+              "spread": 98.79999999981374,
+              "values": [
+                137.29999999981374,
+                41.5,
+                38.5,
+                44.799999999813735,
+                42.90000000037253
+              ]
+            },
+            "inpProcessingDuration": {
+              "median": 256.8999999994412,
+              "spread": 67.40000000037253,
+              "values": [
+                236.90000000037253,
+                293.29999999981374,
+                225.8999999994412,
+                272.29999999981374,
+                256.8999999994412
+              ]
+            },
+            "inpPresentationDelay": {
+              "median": 7.6000000005587935,
+              "spread": 6.8999999994412065,
+              "values": [
+                9.799999999813735,
+                9.200000000186265,
+                7.6000000005587935,
+                2.900000000372529,
+                4.2000000001862645
+              ]
+            },
+            "loafBlocking": {
+              "median": 825.7,
+              "spread": 123.00000000000011,
+              "values": [
+                825.7,
+                848.9,
+                745.5,
+                868.5000000000001,
+                757.3
+              ]
+            },
+            "loafBlockingBeforeTap": {
+              "median": 533.6,
+              "spread": 92.19999999999999,
+              "values": [
+                586,
+                560,
+                512,
+                533.6,
+                493.8
+              ]
+            },
+            "fcp": {
+              "median": 376,
+              "spread": 64,
+              "values": [
+                428,
+                372,
+                376,
+                364,
+                380
+              ]
+            },
+            "ttfb": {
+              "median": 40.39999999944121,
+              "spread": 24.999999999068677,
+              "values": [
+                60.69999999925494,
+                40.39999999944121,
+                35.700000000186265,
+                39.40000000037253,
+                41.80000000074506
+              ]
+            },
+            "cls": {
+              "median": 0,
+              "spread": 0,
+              "values": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "tapAt": {
+            "median": 1204.2999999998137,
+            "values": [
+              1204.2999999998137,
+              1215.7000000001863,
+              1201.4000000003725,
+              1201.2000000001863,
+              1205.4000000003725
+            ]
+          },
+          "hydratedAt": {
+            "median": 1534.7000000001863,
+            "values": [
+              1597.699999999255,
+              1585.0999999996275,
+              1470.7000000001863,
+              1534.7000000001863,
+              1521.300000000745
+            ]
+          },
+          "tapPhase": {
+            "before hydration": 5
+          },
+          "outcome": {
+            "client transition": 5
+          },
+          "inpPhase": {
+            "processing": 5
+          },
+          "inpLoadState": {
+            "complete": 5
+          }
+        }
+      ],
+      "labels": {
+        "lcp": {
+          "delta": 84,
+          "threshold": 800,
+          "spreads": [
+            180,
+            800
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inp": {
+          "delta": 88,
+          "threshold": 200,
+          "spreads": [
+            200,
+            112
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inpInputDelay": {
+          "delta": 43.90000000037253,
+          "threshold": 188.5,
+          "spreads": [
+            188.5,
+            98.79999999981374
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inpProcessingDuration": {
+          "delta": 45.50000000093132,
+          "threshold": 67.40000000037253,
+          "spreads": [
+            36.19999999925494,
+            67.40000000037253
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inpPresentationDelay": {
+          "delta": -0.4000000013038516,
+          "threshold": 7.900000000372529,
+          "spreads": [
+            7.900000000372529,
+            6.8999999994412065
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "loafBlocking": {
+          "delta": 141.20000000000005,
+          "threshold": 123.00000000000011,
+          "spreads": [
+            113.80000000000007,
+            123.00000000000011
+          ],
+          "sees": true,
+          "label": "sees the cost"
+        },
+        "loafBlockingBeforeTap": {
+          "delta": 49.200000000000045,
+          "threshold": 115,
+          "spreads": [
+            115,
+            92.19999999999999
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "fcp": {
+          "delta": 0,
+          "threshold": 164,
+          "spreads": [
+            164,
+            64
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "ttfb": {
+          "delta": -4.099999999627471,
+          "threshold": 24.999999999068677,
+          "spreads": [
+            13.099999999627471,
+            24.999999999068677
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "cls": {
+          "delta": 0,
+          "threshold": 0,
+          "spreads": [
+            0,
+            0
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        }
+      }
+    },
+    {
+      "tapAt": 8000,
+      "arms": [
+        {
+          "runs": 5,
+          "metrics": {
+            "lcp": {
+              "median": 1272,
+              "spread": 68,
+              "values": [
+                1272,
+                1268,
+                1248,
+                1316,
+                1300
+              ]
+            },
+            "inp": {
+              "median": 80,
+              "spread": 8,
+              "values": [
+                80,
+                80,
+                72,
+                80,
+                72
+              ]
+            },
+            "inpInputDelay": {
+              "median": 28.300000000745058,
+              "spread": 3.3999999994412065,
+              "values": [
+                29.40000000037253,
+                30.899999999441206,
+                27.5,
+                27.699999999254942,
+                28.300000000745058
+              ]
+            },
+            "inpProcessingDuration": {
+              "median": 38.700000000186265,
+              "spread": 6.000000000931323,
+              "values": [
+                39.90000000037253,
+                42.40000000037253,
+                38.700000000186265,
+                38,
+                36.39999999944121
+              ]
+            },
+            "inpPresentationDelay": {
+              "median": 7.2999999998137355,
+              "spread": 8.500000000931323,
+              "values": [
+                10.699999999254942,
+                6.7000000001862645,
+                5.7999999998137355,
+                14.300000000745058,
+                7.2999999998137355
+              ]
+            },
+            "loafBlocking": {
+              "median": 807.3000000000001,
+              "spread": 87.30000000000007,
+              "values": [
+                803.5,
+                871.5,
+                807.3000000000001,
+                815.1999999999999,
+                784.1999999999999
+              ]
+            },
+            "loafBlockingBeforeTap": {
+              "median": 591.1999999999999,
+              "spread": 36.09999999999991,
+              "values": [
+                585.3,
+                593.5999999999999,
+                570.7,
+                606.8,
+                591.1999999999999
+              ]
+            },
+            "fcp": {
+              "median": 368,
+              "spread": 68,
+              "values": [
+                400,
+                364,
+                356,
+                424,
+                368
+              ]
+            },
+            "ttfb": {
+              "median": 35.799999999813735,
+              "spread": 6.199999999254942,
+              "values": [
+                41.39999999944121,
+                35.200000000186265,
+                35.799999999813735,
+                36.10000000055879,
+                35.69999999925494
+              ]
+            },
+            "cls": {
+              "median": 0,
+              "spread": 0,
+              "values": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "tapAt": {
+            "median": 8012.799999999814,
+            "values": [
+              8012.399999999441,
+              8014.200000000186,
+              8012.799999999814,
+              8012.800000000745,
+              8011.699999999255
+            ]
+          },
+          "hydratedAt": {
+            "median": 1532.5,
+            "values": [
+              1532.5,
+              1502.0999999996275,
+              1445.8999999994412,
+              1597,
+              1548.7999999998137
+            ]
+          },
+          "tapPhase": {
+            "after hydration": 5
+          },
+          "outcome": {
+            "client transition": 5
+          },
+          "inpPhase": {
+            "processing": 5
+          },
+          "inpLoadState": {
+            "complete": 5
+          }
+        },
+        {
+          "runs": 5,
+          "metrics": {
+            "lcp": {
+              "median": 1192,
+              "spread": 84,
+              "values": [
+                1192,
+                1232,
+                1260,
+                1176,
+                1188
+              ]
+            },
+            "inp": {
+              "median": 80,
+              "spread": 8,
+              "values": [
+                80,
+                80,
+                80,
+                80,
+                72
+              ]
+            },
+            "inpInputDelay": {
+              "median": 28.59999999962747,
+              "spread": 2,
+              "values": [
+                29.700000000186265,
+                29.199999999254942,
+                27.700000000186265,
+                27.90000000037253,
+                28.59999999962747
+              ]
+            },
+            "inpProcessingDuration": {
+              "median": 39,
+              "spread": 1.8999999994412065,
+              "values": [
+                39,
+                39.30000000074506,
+                38.19999999925494,
+                39.5,
+                37.60000000055879
+              ]
+            },
+            "inpPresentationDelay": {
+              "median": 11.5,
+              "spread": 8.300000000745058,
+              "values": [
+                11.299999999813735,
+                11.5,
+                14.100000000558794,
+                12.599999999627471,
+                5.7999999998137355
+              ]
+            },
+            "loafBlocking": {
+              "median": 672.6999999999999,
+              "spread": 69.89999999999998,
+              "values": [
+                663.9,
+                715.3999999999999,
+                723.5,
+                653.6,
+                672.6999999999999
+              ]
+            },
+            "loafBlockingBeforeTap": {
+              "median": 532.5999999999999,
+              "spread": 42.19999999999993,
+              "values": [
+                532.5999999999999,
+                560.6999999999999,
+                569.5999999999999,
+                527.4,
+                529.1999999999999
+              ]
+            },
+            "fcp": {
+              "median": 356,
+              "spread": 128,
+              "values": [
+                380,
+                352,
+                388,
+                260,
+                356
+              ]
+            },
+            "ttfb": {
+              "median": 36,
+              "spread": 7.2000000001862645,
+              "values": [
+                41.90000000037253,
+                34.90000000037253,
+                39.59999999962747,
+                34.700000000186265,
+                36
+              ]
+            },
+            "cls": {
+              "median": 0,
+              "spread": 0,
+              "values": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "tapAt": {
+            "median": 8007.100000000559,
+            "values": [
+              8014.100000000559,
+              8007.100000000559,
+              8011,
+              8007,
+              8001.4000000003725
+            ]
+          },
+          "hydratedAt": {
+            "median": 1430.9000000003725,
+            "values": [
+              1424.2000000001863,
+              1453.7999999998137,
+              1483.7999999998137,
+              1430.9000000003725,
+              1398.7000000001863
+            ]
+          },
+          "tapPhase": {
+            "after hydration": 5
+          },
+          "outcome": {
+            "client transition": 5
+          },
+          "inpPhase": {
+            "processing": 5
+          },
+          "inpLoadState": {
+            "complete": 5
+          }
+        }
+      ],
+      "labels": {
+        "lcp": {
+          "delta": 80,
+          "threshold": 84,
+          "spreads": [
+            68,
+            84
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inp": {
+          "delta": 0,
+          "threshold": 8,
+          "spreads": [
+            8,
+            8
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inpInputDelay": {
+          "delta": -0.2999999988824129,
+          "threshold": 3.3999999994412065,
+          "spreads": [
+            3.3999999994412065,
+            2
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inpProcessingDuration": {
+          "delta": -0.2999999998137355,
+          "threshold": 6.000000000931323,
+          "spreads": [
+            6.000000000931323,
+            1.8999999994412065
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "inpPresentationDelay": {
+          "delta": -4.2000000001862645,
+          "threshold": 8.500000000931323,
+          "spreads": [
+            8.500000000931323,
+            8.300000000745058
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "loafBlocking": {
+          "delta": 134.60000000000014,
+          "threshold": 87.30000000000007,
+          "spreads": [
+            87.30000000000007,
+            69.89999999999998
+          ],
+          "sees": true,
+          "label": "sees the cost"
+        },
+        "loafBlockingBeforeTap": {
+          "delta": 58.60000000000002,
+          "threshold": 42.19999999999993,
+          "spreads": [
+            36.09999999999991,
+            42.19999999999993
+          ],
+          "sees": true,
+          "label": "sees the cost"
+        },
+        "fcp": {
+          "delta": 12,
+          "threshold": 128,
+          "spreads": [
+            68,
+            128
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "ttfb": {
+          "delta": -0.20000000018626451,
+          "threshold": 7.2000000001862645,
+          "spreads": [
+            6.199999999254942,
+            7.2000000001862645
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        },
+        "cls": {
+          "delta": 0,
+          "threshold": 0,
+          "spreads": [
+            0,
+            0
+          ],
+          "sees": false,
+          "label": "cannot see it"
+        }
+      }
+    }
+  ],
+  "finding": {
+    "seen": [
+      {
+        "tapAt": 1200,
+        "metric": "loafBlocking",
+        "label": "LoAF blocking, whole run",
+        "delta": 141.20000000000005,
+        "threshold": 123.00000000000011
+      },
+      {
+        "tapAt": 8000,
+        "metric": "loafBlocking",
+        "label": "LoAF blocking, whole run",
+        "delta": 134.60000000000014,
+        "threshold": 87.30000000000007
+      },
+      {
+        "tapAt": 8000,
+        "metric": "loafBlockingBeforeTap",
+        "label": "LoAF blocking, before the tap",
+        "delta": 58.60000000000002,
+        "threshold": 42.19999999999993
+      }
+    ],
+    "none": false
+  }
+}
