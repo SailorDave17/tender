@@ -314,9 +314,10 @@ export const UNSLOWED_LOADS = 3;
  * bar the slowed runs must clear, so the least flattering load sets it.
  *
  * Hydration time is deliberately not that bar. Measured 2026-11-12: unslowed loads of one board
- * hydrate at about 170 ms or about 420 ms, in two groups, and all three loads landed in the slow
- * group twice in five tries. Against 420 ms a sound 4x run set (about 650 ms) barely clears any
- * useful factor. Long-frame blocking read 0 ms on every unslowed load in both groups.
+ * hydrate at about 170 ms or about 420 ms, in two groups, and the soonest of three loads was
+ * still in the slow group in 3 sets of 14. Against 420 ms a sound 4x run set (about 650 ms)
+ * barely clears any useful factor. Long-frame blocking read 0 ms on every unslowed load in
+ * both groups.
  */
 export function unslowedReference(loads) {
   const numbers = (key) => loads.map((l) => l[key]).filter((v) => typeof v === "number" && Number.isFinite(v));
