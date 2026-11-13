@@ -30,6 +30,15 @@ against a line drawn after seeing it. No thresholds are set yet. The condition a
 written because it records what was decided in phase 6. The lab reading stays a useful instrument
 for pricing levers; it is no longer the trigger.
 
+*2026-11-12 (#215):* which field metrics can see the board's hydration cost was measured before
+any threshold is written. On two boards differing only in length (40 day rows against 10), with
+the CPU slowed 4×, no metric told them apart in the pass of record. LCP cannot. INP sees hydration
+when a member taps during it and cannot tell the boards apart. Long-animation-frame blocking comes
+closest (it cleared the bar in three passes of five at 4×, and in three readings of six at 8×) and
+only Chromium reports it.
+No metric is picked and the thresholds are still unset. See
+[Which field metrics can see the cost](../performance-floor.md#which-field-metrics-can-see-the-cost-2026-11-12--story-215).
+
 ### Stay decision, 2026-09-22
 
 **The owner decided on 2026-09-22 to stay on Next.js 16**, after the lab condition fired. The

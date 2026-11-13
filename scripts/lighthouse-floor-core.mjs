@@ -159,6 +159,12 @@ export const VOLUME = {
 };
 
 /**
+ * How many of a plan's dates have already sailed, whatever its length. The board hides them by
+ * default since #214, so a plan of N dates renders N minus this many rows.
+ */
+export const SAILED_DATES = 5;
+
+/**
  * A deterministic uuid for fixture row `n` of `kind`. The shape satisfies
  * `src/post/post-form.ts`'s UUID regex, which is what /post/[id] checks before it reads anything.
  * Distinct `kind` values keep two tables' ids from colliding when a person id and a post id are
@@ -183,8 +189,23 @@ export function fixtureId(kind, n) {
  * SHAPE of the board, so the shape is what is pinned: five dates already sailed, forty upcoming,
  * whenever it is run. The ids stay deterministic because they are derived from an index, which is
  * the half the runner needs when it puts a post id in a URL.
+ *
+ * `dates` overrides the date count alone (story #215): `fixturePlan({ dates: 15 })` is five sailed
+ * and ten upcoming with every other volume as it was, so two boards can differ by their length and
+ * by nothing else. Passing a `volume` with a smaller `dates` did not do that before #215. The post
+ * stride below repeated a (boat, date) pair once the upcoming dates were fewer than the boats, and
+ * 0006's unique constraint then failed the seed halfway.
  */
-export function fixturePlan({ volume = VOLUME, now = new Date() } = {}) {
+export function fixturePlan({ volume = VOLUME, dates: dateCount = volume.dates, now = new Date() } = {}) {
+  const upcomingCount = dateCount - SAILED_DATES;
+  if (!Number.isInteger(dateCount) || upcomingCount < 1) {
+    throw new Error(`a plan needs more than ${SAILED_DATES} dates (${SAILED_DATES} are already sailed), not ${JSON.stringify(dateCount)}`);
+  }
+  // One post per (boat, date): a boat cannot carry more posts than there are upcoming dates.
+  const postsPerBoat = volume.boats ? Math.ceil((volume.openPosts + volume.matchedPosts) / volume.boats) : 0;
+  if (postsPerBoat > upcomingCount) {
+    throw new Error(`${dateCount} dates leave ${upcomingCount} upcoming, too few for ${postsPerBoat} posts on one boat`);
+  }
   const WEEK = 7 * 24 * 3600 * 1000;
   // Two days clear of `now`, so the fifth date is unambiguously upcoming and the fourth
   // unambiguously sailed. Landing one exactly on `now` would make the board's past/future split
@@ -199,11 +220,11 @@ export function fixturePlan({ volume = VOLUME, now = new Date() } = {}) {
     rating: i % 17 === 0 ? null : (i % 4) + 1,
   }));
 
-  const dates = Array.from({ length: volume.dates }, (_, i) => ({
+  const dates = Array.from({ length: dateCount }, (_, i) => ({
     id: fixtureId("race_date", i),
     // Weekly, five of them behind the anchor. Since #214 the default board hides those five and
     // counts them in its full-season link, so that arm is on the measured page.
-    startsAt: new Date(seasonAnchor + (i - 5) * WEEK).toISOString(),
+    startsAt: new Date(seasonAnchor + (i - SAILED_DATES) * WEEK).toISOString(),
     title: `Sunday Series ${i + 1}`,
   }));
 
@@ -217,16 +238,23 @@ export function fixturePlan({ volume = VOLUME, now = new Date() } = {}) {
   }));
 
   // 50 posts over unique (boat, race_date) pairs — `post` carries that unique constraint (0006).
-  // Walking boat and date on co-prime-ish strides keeps every pair distinct without a set.
+  // Boat and date each walk their own stride. At 45 dates the two strides never meet inside 50
+  // posts, so every post keeps the date it has always had. With fewer upcoming dates than boats
+  // (#215's 15-date plan) they do meet, and the post then takes the boat's next free date.
   const total = volume.openPosts + volume.matchedPosts;
+  const takenPairs = new Set();
   const posts = Array.from({ length: total }, (_, i) => {
     const matched = i >= volume.openPosts;
+    const boatId = boats[i % boats.length].id;
+    let slot = i % upcomingCount;
+    while (takenPairs.has(`${boatId}|${slot}`)) slot = (slot + 1) % upcomingCount;
+    takenPairs.add(`${boatId}|${slot}`);
     return {
       id: fixtureId("post", i),
-      boatId: boats[i % boats.length].id,
+      boatId,
       // Spread over the FUTURE dates: a post on a date that has sailed is not what the board is
       // for, and the pool for a past date is empty, so it would measure less work than it should.
-      raceDateId: dates[5 + (i % (volume.dates - 5))].id,
+      raceDateId: dates[SAILED_DATES + slot].id,
       minimum: (i % 3) + 1,
       note: matched ? "" : `Crew wanted for race ${i + 1}. Bring foulies.`,
       matched,

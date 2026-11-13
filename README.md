@@ -45,6 +45,7 @@ npm run migrate:live supabase/migrations/0015_anon_revoke.sql  # applies it; -- 
 npm run verify:migrations # reads pg_catalog: is the live project in the state the files describe?
 npm run icons     # re-render public/*.png from brand/hsc-mark-primary.svg (rarely)
 npm run perf:floor -- --db-container supabase_db_<dir>  # Lighthouse on /board and /post, at a fixture volume
+npm run perf:field -- --db-container supabase_db_<dir>  # which field metrics tell a 40-row board from a 10-row one
 npm run smoke -- --db-container supabase_db_<dir>       # the core path in a real browser (CI runs it on every PR)
 ```
 
@@ -301,6 +302,17 @@ Two traps it guards, both of which produce a *reassuring* number rather than an 
 Everything that decides an outcome is in `scripts/lighthouse-floor-core.mjs`, exercised by
 `test/lighthouse-floor.test.ts` with no stack, no browser and no network — the same split as
 `check-live.mjs` and `verify-migrations.mjs`.
+
+**`npm run perf:field` asks a different question (#215): which metrics a phone can report see the
+board's hydration cost at all.** Lighthouse's Total Blocking Time is a lab number, and ADR 002's
+framework trigger is field data. So this loads `/board` in Chrome with the CPU slowed 4×, on two
+fixtures that differ only in length (40 day rows against 10), taps an availability toggle, and
+reads LCP, INP and long-animation-frame blocking time as Next's own `web-vitals` build reports
+them. A metric is said to see the cost only when the two boards' medians are further apart than
+one board's runs are from each other. It seeds, and every run truncates the race dates first, so
+it refuses any Supabase that is not loopback. The finding, the browser-support table and how to
+run it are in [`docs/performance-floor.md`](docs/performance-floor.md#which-field-metrics-can-see-the-cost-2026-11-12--story-215);
+the half that decides is `scripts/field-vitals-core.mjs`, under `test/field-vitals.test.ts`.
 
 ## The smoke
 
