@@ -2,6 +2,7 @@ import Link from "next/link";
 import { explainAvailabilityRefusal, isPast, summarise } from "@/availability/rules";
 import { loadBoardData } from "@/board/load";
 import { poolForDate, viewPost } from "@/board/post-view";
+import { DEFAULT_VIEW, boardHref, boardView, windowDates } from "@/board/view";
 import { formatStartsAt } from "@/dates/race-date";
 import { InstallBanner } from "@/install/InstallBanner";
 import { RegisterServiceWorker } from "@/install/RegisterServiceWorker";
@@ -23,10 +24,17 @@ export const dynamic = "force-dynamic";
  * lets an admin read unpublished rows (so the admin list can show them), and the board must
  * not — an admin looking at the board sees what a crew sees (story #17 AC 3).
  *
+ * Since #214 the default view starts at the next race: the dates already sailed are left out
+ * and a link above the list counts them and opens the full-season view (`?view=season`), which
+ * shows every published date. The window is applied here, over what loadBoardData() read; the
+ * loader is unchanged, so /post/[id] still finds a post on a sailed date (src/board/view.ts).
+ * A refused toggle comes back to its own row with the reason shown inside that row.
+ *
  * Each date carries the count of crew who can sail it and the person's own toggle (story #18
  * AC 4). A person with no rating is sent to /profile first and the toggles are withheld
- * (AC 5); a date already started is shown but its toggle disabled. Both rules are applied
- * again in the Server Action, and the first in the database.
+ * (AC 5); a date already started is shown, in the full-season view, with its toggle disabled.
+ * Both rules are applied again in the Server Action, and the first in the database. Each toggle
+ * carries the view it was pressed in, so the action sends the member back to the same one.
  *
  * Under each date, every open post for it with its rung (story #19 AC 3) and how many have
  * answered it (story #20 — the count is all a non-skipper may know, 0007), and every matched
@@ -40,7 +48,7 @@ export const dynamic = "force-dynamic";
 export default async function BoardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; view?: string | string[]; on?: string | string[] }>;
 }) {
   const client = await supabaseServer();
   const {
@@ -59,8 +67,15 @@ export default async function BoardPage({
       : Promise.resolve({ data: null }),
   ]);
   const { dates, availability } = data;
-  const { error } = await searchParams;
+  const { error, view: viewParam, on } = await searchParams;
   const now = new Date();
+  const view = boardView(viewParam);
+  const { shown, hidden } = windowDates(dates ?? [], now, view);
+  // A refusal is shown ONCE: inside the row it is about when that row is listed, since the action
+  // sends the member to that row and the top of the list is then off their screen; otherwise
+  // above the list, as before. `on` is only ever compared with the ids of rows being rendered.
+  const refusal = error ? (error === "refused" ? explainPostRefusal(error) : explainAvailabilityRefusal(error)) : null;
+  const refusedRow = refusal !== null && shown.some((d) => d.id === on) ? on : null;
   const unrated = !me || me.rating == null;
   const byDate = summarise(availability, user?.id ?? "");
   // Open posts, and matched ones (closed by the acceptance, shown as crewed).
@@ -82,14 +97,34 @@ export default async function BoardPage({
           Before you can mark the days you can sail, <Link href="/profile" prefetch={false}>set your competence on your profile</Link>.
         </p>
       )}
-      {error && <p role="alert">{error === "refused" ? explainPostRefusal(error) : explainAvailabilityRefusal(error)}</p>}
+      {refusal !== null && refusedRow === null && <p role="alert">{refusal}</p>}
 
       <h2>Race days</h2>
       {!dates?.length ? (
         <p>The season has no dates yet.</p>
       ) : (
+        // Dates are published and every one has sailed: the board between seasons.
+        shown.length === 0 && <p data-no-upcoming>No upcoming race dates.</p>
+      )}
+      {/* The way to the other view sits ABOVE the list (owner decision at the #214 review): below
+          it, the full-season link was 4.8 screens down a mid-season board. */}
+      {hidden > 0 && (
+        <p>
+          <Link href={boardHref("season")} prefetch={false} data-full-season data-hidden-dates={hidden}>
+            Show the whole season ({hidden} already sailed)
+          </Link>
+        </p>
+      )}
+      {view === "season" && !!dates?.length && (
+        <p>
+          <Link href={boardHref(DEFAULT_VIEW)} prefetch={false} data-upcoming-only>
+            Upcoming dates only
+          </Link>
+        </p>
+      )}
+      {shown.length > 0 && (
         <ol data-list="stack" data-race-days>
-          {dates.map((d) => {
+          {shown.map((d) => {
             const f = formatStartsAt(d.starts_at);
             const s = byDate.get(d.id) ?? { count: 0, mine: false };
             const past = isPast(d.starts_at, now);
@@ -104,6 +139,11 @@ export default async function BoardPage({
                 data-available={s.mine}
                 data-row
               >
+                {refusedRow === d.id && (
+                  <p role="alert" data-day-refusal>
+                    {refusal}
+                  </p>
+                )}
                 <span data-grow data-day>
                   <strong>{f.date}</strong> {f.time} — {d.title}
                   <br />
@@ -116,6 +156,7 @@ export default async function BoardPage({
                   <form action={setAvailability}>
                     <input type="hidden" name="race_date_id" value={d.id} />
                     <input type="hidden" name="available" value={s.mine ? "false" : "true"} />
+                    {view !== DEFAULT_VIEW && <input type="hidden" name="view" value={view} />}
                     <button type="submit" disabled={past} aria-pressed={s.mine}>
                       {past ? "Already sailed" : s.mine ? "I can't make it after all" : "I can sail this day"}
                     </button>

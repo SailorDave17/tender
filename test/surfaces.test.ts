@@ -14,7 +14,9 @@ import { IDS, ME, NOW, fakeClient } from "./surfaces";
 /**
  * Story #155 — the six member-facing surfaces, rendered from the token layer and read in Chrome.
  * #147 added /support and /privacy to the contrast sweep (AC 8's cases below); the other ACs are
- * still about the six.
+ * still about the six. #214 added the board's full-season view, since the default board stopped
+ * painting a sailed day, and that view with a refusal in a row: eleven surfaces in the sweep and
+ * under axe.
  *
  * AC 1: no inline `style={{` survives on the surfaces except one the token layer cannot express,
  *       and that one carries a `token-exempt:` comment (a corpus scan; the needle is built from
@@ -27,7 +29,7 @@ import { IDS, ME, NOW, fakeClient } from "./surfaces";
  *       surface, in both schemes, with the ratio computed from Chrome's own `color` and the first
  *       opaque background behind it, and the lowest three printed per surface and scheme.
  *
- * #229: axe-core 4.13.0 (`AXE_VERSION`) runs over the same nine surfaces, in both schemes, under
+ * #229: axe-core 4.13.0 (`AXE_VERSION`) runs over the same surfaces, in both schemes, under
  *       the WCAG 2.2 A/AA tags, and any violation reddens that surface's test. It reads what the
  *       sweep reads: server HTML with no script run, so whatever a client effect adds after
  *       hydration (the install sheet, Google's button) is not in it, and neither is the head Next
@@ -68,8 +70,20 @@ const css = readFileSync(GLOBALS_CSS, "utf8");
 const SRC = fileURLToPath(new URL("../src/", import.meta.url)).replace(/[\\/]$/, "");
 
 type Surface = { name: string; as: string; render: () => Promise<ReactNode> };
+const FULL_SEASON = "/board (full season)";
+const SEASON_REFUSAL = "/board (season, refusal)";
 const SURFACES: Surface[] = [
   { name: "/board", as: ME, render: async () => (await import("@/app/board/page")).default({ searchParams: Promise.resolve({}) }) },
+  // #214: the default board no longer paints a sailed day, so the full-season view is swept as a
+  // surface of its own. It is the only place the disabled "Already sailed" toggle renders.
+  { name: FULL_SEASON, as: ME, render: async () => (await import("@/app/board/page")).default({ searchParams: Promise.resolve({ view: "season" }) }) },
+  // ...and a refused toggle's reason inside its row: the alert colour on a card's surface, which
+  // no other surface paints (everywhere else an alert sits on the page's paper).
+  {
+    name: SEASON_REFUSAL,
+    as: ME,
+    render: async () => (await import("@/app/board/page")).default({ searchParams: Promise.resolve({ view: "season", error: "past", on: "d-past" }) }),
+  },
   {
     name: "/post/[id] (skipper, open)",
     as: ME,
@@ -336,7 +350,9 @@ describe("/board on a 390px phone: rows, a separated day heading, legible withou
         scrollWidth: number;
       };
       console.log(JSON.stringify(read, null, 1).slice(0, 2000));
-      expect(read.days.map((d) => d.id)).toEqual(["d-past", "d-next", "d-later"]);
+      // #214 AC 1: the board opens at the next race. d-past sailed a week before the pinned
+      // `NOW`, and the default view leaves it to the full-season link (the next test).
+      expect(read.days.map((d) => d.id)).toEqual(["d-next", "d-later"]);
       expect(read.scrollWidth).toBeLessThanOrEqual(390);
       for (const d of read.days) {
         expect(d.border, `${d.id} is a card`).toBeGreaterThanOrEqual(1);
@@ -357,6 +373,105 @@ describe("/board on a 390px phone: rows, a separated day heading, legible withou
       const openRow = next.posts!.rows[0];
       expect(openRow.badgePx, "the rung badge").toBeGreaterThanOrEqual(14);
       expect(openRow.badgeBg).toBe("rgb(30, 84, 67)"); // rung 1's fill, from --rung
+    } finally {
+      await close();
+    }
+  });
+
+  /** What Chrome lays out for the board's day list and its two view links. */
+  const VIEW_READ = `(() => {
+    const link = (sel) => {
+      const a = document.querySelector(sel);
+      if (!a) return null;
+      const r = a.getBoundingClientRect();
+      return { text: a.innerText, href: a.getAttribute("href"), visible: r.width > 0 && r.height > 0, px: parseFloat(getComputedStyle(a).fontSize), bottom: r.bottom };
+    };
+    const days = [...document.querySelectorAll("[data-race-date]")];
+    return {
+      days: days.map((d) => {
+        const b = d.querySelector("form button");
+        return { id: d.getAttribute("data-race-date"), button: b ? b.innerText : null, disabled: b ? b.disabled : null, view: d.querySelector('form input[name="view"]')?.value ?? null };
+      }),
+      fullSeason: link("a[data-full-season]"),
+      upcomingOnly: link("a[data-upcoming-only]"),
+      headingBottom: [...document.querySelectorAll("main h2")].find((h) => h.innerText === "Race days").getBoundingClientRect().bottom,
+      firstDayTop: days.length ? days[0].getBoundingClientRect().top : null,
+      // Where a #anchor lands: the element the browser finds for each day's id.
+      anchors: days.map((d) => document.getElementById(d.getAttribute("data-race-date")) === d),
+      scrollWidth: document.documentElement.scrollWidth,
+    };
+  })()`;
+  type ViewLink = { text: string; href: string; visible: boolean; px: number; bottom: number } | null;
+  type ViewRead = {
+    days: { id: string; button: string | null; disabled: boolean | null; view: string | null }[];
+    fullSeason: ViewLink;
+    upcomingOnly: ViewLink;
+    headingBottom: number;
+    firstDayTop: number | null;
+    anchors: boolean[];
+    scrollWidth: number;
+  };
+  const LINK = { visible: true, px: expect.any(Number), bottom: expect.any(Number) };
+
+  it("#214: the default view starts at the next race, with the sailed date one visible link away", async () => {
+    const { page, close } = await open("/board", { width: 390, height: 800 }, "light");
+    try {
+      const read = (await page.evaluate(VIEW_READ)) as ViewRead;
+      expect(read.days.map((d) => d.id)).toEqual(["d-next", "d-later"]);
+      expect(read.days.every((d) => d.disabled === false), "every listed day can still be marked").toBe(true);
+      expect(read.days.map((d) => d.view), "the default view's toggles name no view").toEqual([null, null]);
+      expect(read.fullSeason).toEqual({ ...LINK, text: "Show the whole season (1 already sailed)", href: "/board?view=season" });
+      expect(read.fullSeason!.px).toBeGreaterThanOrEqual(16);
+      // Above the list, under its heading: at the foot it was 4.8 screens down a mid-season board.
+      expect(read.fullSeason!.bottom).toBeGreaterThan(read.headingBottom);
+      expect(read.fullSeason!.bottom).toBeLessThanOrEqual(read.firstDayTop!);
+      expect(read.upcomingOnly).toBeNull();
+      expect(read.anchors, "each day's id finds that day").toEqual([true, true]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("#214: the full-season view lists every date, the sailed one with its disabled 'Already sailed' toggle", async () => {
+    const { page, close } = await open(FULL_SEASON, { width: 390, height: 800 }, "light");
+    try {
+      const read = (await page.evaluate(VIEW_READ)) as ViewRead;
+      expect(read.days).toEqual([
+        { id: "d-past", button: "Already sailed", disabled: true, view: "season" },
+        { id: "d-next", button: "I can't make it after all", disabled: false, view: "season" },
+        { id: "d-later", button: "I can sail this day", disabled: false, view: "season" },
+      ]);
+      expect(read.fullSeason, "nothing is hidden here, so no full-season link").toBeNull();
+      expect(read.upcomingOnly).toEqual({ ...LINK, text: "Upcoming dates only", href: "/board" });
+      expect(read.upcomingOnly!.bottom).toBeGreaterThan(read.headingBottom);
+      expect(read.upcomingOnly!.bottom).toBeLessThanOrEqual(read.firstDayTop!);
+      expect(read.anchors, "each day's id finds that day").toEqual([true, true, true]);
+      expect(read.scrollWidth).toBeLessThanOrEqual(390);
+    } finally {
+      await close();
+    }
+  });
+
+  it("#214: a refused toggle's reason is on screen when the browser is at that date's anchor", async () => {
+    // The action sends the member to `#<date>`. Scroll there as the browser would, in a short
+    // viewport, and read where the alert is. Above the list, as it was first built, it was
+    // 1,470px off-screen on the running board.
+    const { page, close } = await open(SEASON_REFUSAL, { width: 390, height: 420 }, "light");
+    try {
+      const read = (await page.evaluate(`(() => {
+        const row = document.getElementById("d-past");
+        row.scrollIntoView();
+        const alerts = [...document.querySelectorAll('[role="alert"]')];
+        const a = alerts[0].getBoundingClientRect();
+        const r = row.getBoundingClientRect();
+        const heading = row.querySelector("[data-day]").getBoundingClientRect();
+        return {
+          alerts: alerts.map((el) => el.innerText), inRow: row.contains(alerts[0]),
+          onScreen: a.top >= 0 && a.bottom <= innerHeight, aboveTheDate: a.bottom <= heading.top,
+          fullWidth: Math.round(a.width) >= Math.round(r.width) - 2 * 16 - 2, rowTop: Math.round(r.top),
+        };
+      })()`)) as { alerts: string[]; inRow: boolean; onScreen: boolean; aboveTheDate: boolean; fullWidth: boolean; rowTop: number };
+      expect(read).toEqual({ alerts: ["That race day has already started."], inRow: true, onScreen: true, aboveTheDate: true, fullWidth: true, rowTop: expect.any(Number) });
     } finally {
       await close();
     }

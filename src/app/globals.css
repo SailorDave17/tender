@@ -758,6 +758,12 @@ body:has([data-banner="install"][data-install-advice]) {
 [data-day] > strong {
   font-size: var(--text-lg);
 }
+/* A refused toggle's reason, shown in the day it is about (#214): a line of its own across the
+   top of the card, above the date and the button it explains. */
+[data-race-date] > [data-day-refusal] {
+  flex-basis: 100%;
+  margin: 0;
+}
 /* `ul` and `li` by name (#251): the hooks are also on /admin's `<td data-posts>`, /admin/dates/[id]'s
    `<tr data-post>` and /post/[id]'s `<p data-post>`. Unscoped, these two rules made that row a flex
    box (its cells stacked, one per line), that cell a grid with a rule across its top, and that
