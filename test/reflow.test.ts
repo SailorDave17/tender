@@ -38,6 +38,10 @@ import { AVAILABILITY, IDS, MATCHES, ME, NOW, PEOPLE, POSTS, RACE_DATES, TABLES,
  *         element at the centre of what Tab scrolled into view is the control itself: not the
  *         docked nav, the install sheet or the header.
  *
+ * And a fourth, from #224, in its own `describe`: before anything has focus, every control in
+ * `<main>` has its box on the page. AC 3 cannot see a control a focus-only rule brings back on
+ * screen, which is how /welcome's "Skip for now" sat at `top: -100vh` on production.
+ *
  * WHICH 200% THIS IS. The issue reasoned that a `rem` in a media query follows the browser's
  * default font size and not the page's root font size. *Measured 2026-10-11, Chrome 154*: it does.
  * `documentElement.style.fontSize = "200%"` (what `test/join-reflow.test.ts` sets) doubles every
@@ -530,6 +534,29 @@ const READ_TABLE_PARTS = `(() => { ${LABEL}
     .map((el) => label(el) + " is " + getComputedStyle(el).display);
 })()`;
 
+/**
+ * Every control in `<main>` drawn on the page while nothing has focus (#224). The welcome form's
+ * "Skip for now" carried `data-skip`, the skip link's hook, so the skip link's rule put it at
+ * `top: -100vh` on production with its hint still showing beneath "Save". AC 3 below could not see
+ * it: Tab focuses the button, `[data-skip]:focus-visible` brings it back, and the stop reads as on
+ * top. So this reads the page before anything is focused. `checkVisibility()` is true for a box
+ * moved off the page, which is why the reading is the box's place in the document, not visibility.
+ */
+const READ_OFF_PAGE = `(() => { ${LABEL}
+  const main = document.querySelector("#main main") || document.querySelector("main");
+  if (!main) return [];
+  const root = document.documentElement;
+  return [...main.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea, summary')]
+    .filter((el) => el.checkVisibility())
+    .filter((el) => {
+      const r = el.getBoundingClientRect();
+      const top = r.top + scrollY, left = r.left + scrollX;
+      return top + r.height <= 0 || left + r.width <= 0 || top >= root.scrollHeight || left >= root.scrollWidth;
+    })
+    .slice(0, 4)
+    .map((el) => { const r = el.getBoundingClientRect(); return label(el) + " at " + Math.round(r.left + scrollX) + "," + Math.round(r.top + scrollY); });
+})()`;
+
 describe("no page scrolls sideways at 320, 360, 390, 768, 1280 or 1920px (#251 AC 1)", () => {
   it.each(RENDERS.map((r) => ({ name: nameOf(r), r })))("$name", async ({ r }) => {
     const { page, close } = await open(r, { viewport: { width: WIDTHS[0], height: 800 } });
@@ -547,6 +574,47 @@ describe("no page scrolls sideways at 320, 360, 390, 768, 1280 or 1920px (#251 A
       }
       console.log(`#251 AC 1 ${nameOf(r)}: ${failed.length ? failed.join("; ") : "fits at every width"}`);
       expect(failed, `${nameOf(r)} scrolls sideways: ${failed.join("; ")}`).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe("every control in <main> is drawn on the page before anything has focus (#224)", () => {
+  it.each(RENDERS.map((r) => ({ name: nameOf(r), r })))("$name", async ({ r }) => {
+    const { page, close } = await open(r, { viewport: { width: WIDTHS[0], height: 800 } });
+    try {
+      const focused = (await page.evaluate(`document.activeElement === document.body`)) as boolean;
+      const offPage = focused ? ((await page.evaluate(READ_OFF_PAGE)) as string[]) : [];
+      console.log(`#224 ${nameOf(r)}: ${!focused ? "something had focus before the reading" : offPage.length ? offPage.join(" | ") : "every control on the page"}`);
+      // A page that focused something on load would let a focus-only rule bring its control back,
+      // which is the very case this reading exists for, so that is a failure here, not a pass.
+      expect(focused, `${nameOf(r)}: nothing is focused before the reading`).toBe(true);
+      expect(offPage, `${nameOf(r)}, a control in <main> drawn off the page: ${offPage.join(" | ")}`).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("/welcome: 'Skip for now' is outlined beside the filled 'Save and go to the board'", async () => {
+    const { page, close } = await open(RENDERS.find((r) => r.route === "/welcome")!, { viewport: { width: 390, height: 800 } });
+    try {
+      const read = (await page.evaluate(`(() => {
+        const root = getComputedStyle(document.documentElement);
+        // Each token resolved to the computed colour the browser draws, through a probe element.
+        const probe = document.createElement("i");
+        document.body.append(probe);
+        const as = (v) => { probe.style.color = "var(" + v + ")"; return getComputedStyle(probe).color; };
+        const tokens = { surface: as("--surface"), accent: as("--accent") };
+        probe.remove();
+        const style = (sel) => { const cs = getComputedStyle(document.querySelector(sel)); return { bg: cs.backgroundColor, fg: cs.color }; };
+        return { tokens, save: style("button[data-finish]"), skip: style("button[data-welcome-skip]") };
+      })()`)) as { tokens: { surface: string; accent: string }; save: { bg: string; fg: string }; skip: { bg: string; fg: string } };
+      console.log(`#224 /welcome buttons: ${JSON.stringify(read)}`);
+      expect(read.skip).toEqual({ bg: read.tokens.surface, fg: read.tokens.accent });
+      // Control: Save is the filled one, so the reading can tell the two styles apart.
+      expect(read.save.bg).toBe(read.tokens.accent);
+      expect(read.save.bg).not.toBe(read.skip.bg);
     } finally {
       await close();
     }

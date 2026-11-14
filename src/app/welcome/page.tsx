@@ -75,7 +75,12 @@ export default async function WelcomePage({
         <button type="submit" data-finish>
           Save and go to the board
         </button>
-        <button type="submit" name="skip" value="1" data-skip>
+        {/*
+          #224: not `data-skip`. That is the skip link's hook (src/shell/AppShell.tsx), and its rule
+          in globals.css puts anything carrying it at `top: -100vh` until focused, so on production
+          this button was off the page while its hint below still showed.
+        */}
+        <button type="submit" name="skip" value="1" data-welcome-skip>
           Skip for now
         </button>
         <p data-hint>
