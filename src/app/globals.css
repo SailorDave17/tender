@@ -626,6 +626,14 @@ button[data-already-member] {
   font-size: var(--text-lg);
 }
 
+/* /welcome's "Skip for now" (#224): outlined, like the button above, so "Save and go to the board"
+   stays the form's one filled action and skipping reads as the lesser path. Accent text on the
+   surface is a listed pair; the 2px accent border is the generic button's. */
+button[data-welcome-skip] {
+  background: var(--surface);
+  color: var(--accent);
+}
+
 /* the invite code panel (#220): the one thing the sign-up screen is about, before any other input.
    Bordered in the accent and tinted --accent-soft, on which --ink and --ink-muted are both listed
    pairs; the heading is the page's largest type and the input a step up from every other box. */
